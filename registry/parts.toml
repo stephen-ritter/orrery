@@ -171,9 +171,10 @@ epoch = "strict"                       # same TICK: at 0.08 rad/s one second is 
 name = "opnav"
 display = "Optical navigation (planet knowledge from rendered images, CAM)"
 landed = false
-# no bskforge_type: the presence gate is the craft's [[camera]] section, and
-# that section is not a sensor/effector-union device. The catalog-before-
-# factory law stays intact - unions remain catalog-checked for devices.
+# The presence gate is the craft's [[camera]] section - a top-level module
+# section, not a sensor/effector-union device, and the test_parts catalog
+# seam learned that door (catalog before factory, one law, new shape).
+bskforge_type = "camera"
 plant_output = "opNavOutMsg"           # horizonOpNav's knowledge message
 zmq_topic = "OPNAV"
 eds_container = "BSK_LINK/OpNavState"

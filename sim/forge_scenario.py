@@ -59,7 +59,10 @@ from typing import Any
 
 import numpy as np
 from Basilisk.architecture import messaging
+from Basilisk.fswAlgorithms import horizonOpNav, limbFinding
+from Basilisk.utilities import macros
 from bskforge import ScenarioRunner
+from bskforge.build.context import DYN_PROCESS
 
 # The law and the sensor error model are a mission decision, not a plant
 # decision: one set of constants, shared by both build paths, pinned by tests.
@@ -107,6 +110,13 @@ PART_ROWS = {p.name: p for p in load_registry()}
 FIT_ROWS = frame_rows(load_registry())
 FIT_HASH = registry_digest(load_registry())
 
+# The celestial id this Basilisk's message stream assigns Earth (CAM). Not a
+# guess and not a name: the Vizard scene tags its limb findings with it
+# (measured: planetIds sample == 2), and horizonOpNav reads its planet RADIUS
+# through the same index - aiming it elsewhere keeps the LOS honest but
+# silently borrows another body's radius for the range.
+OPNAV_PLANET_TARGET = 2
+
 
 def plant_observers(
     body: ForgeBody, clock: Callable[[], tuple[float, int]]
@@ -130,6 +140,12 @@ def plant_observers(
         observers[PART_ROWS["gnss"].zmq_topic] = lambda: body.nav_state_bytes(*clock())
     if body.has_plant_attitude:
         observers[PART_ROWS["attitude"].zmq_topic] = lambda: body.attitude_state_bytes(*clock())
+    if body.has_plant_opnav:
+        # The rig itself refuses this wiring until the registry row lands
+        # (RigChannel validates every provider against the landed topics):
+        # the camera world is pinned to the registry's phase line, and the
+        # refusal is the point - no silent unlanded traffic, no TODO.
+        observers[PART_ROWS["opnav"].zmq_topic] = lambda: body.opnav_state_bytes(*clock())
     return observers
 
 
@@ -289,8 +305,14 @@ class ForgeBody:
         # The manifest's own claim (OB), kept as data: WHICH hardware this
         # vehicle's TOML declares, independent of the providers that publish
         # its frames. The handshake exists to catch the two disagreeing, so it
-        # must not be computed from the thing it judges.
-        self.fitted_types = frozenset(str(sensor.type) for sensor in sc_cfg.sensors)
+        # must not be computed from the thing it judges. The rendered eye
+        # joins as manifest hardware (CAM): a vehicle with a [[camera]] line
+        # would stream the OPNAV frame, and the fit vocabulary asks exactly
+        # that question of every part.
+        cams = [c for c in ctx.config.camera if c.parent == sc_cfg.name]
+        self.fitted_types = frozenset(str(sensor.type) for sensor in sc_cfg.sensors) | (
+            {"camera"} if cams else frozenset()
+        )
         self._sim = ctx.sim
 
         restore_effector_order(ctx.sim, bundle.ext_ft)
@@ -367,6 +389,76 @@ class ForgeBody:
             out_msg, _ = bundle.sensor_msgs[gps.name]
             self._gps_sub = out_msg.addSubscriber()
 
+        # CAM: the estimators that turn Vizard's pixels into a planet vector.
+        # [[camera]] is plant hardware the forge builds (module, Vizard
+        # registration, render-rate task); limbFinding and horizonOpNav are
+        # the onboard knowledge model riding it - the harness's half of D7 -
+        # so they join here, between the build and InitializeSimulation, on a
+        # task created AFTER the forge's camera task: each tick reads the
+        # frame the camera just received.
+        self._opnav: tuple[Any, Any, Any, Any] | None = None
+        if cams:
+            self._opnav = self._build_opnav(ctx, cams)
+
+    def _build_opnav(
+        self,
+        ctx: Any,  # noqa: ANN401 - bskforge SimContext (SWIG types inside)
+        cams: list[Any],
+    ) -> tuple[Any, Any, Any, Any]:
+        """Wire limbFinding -> horizonOpNav onto this body's rendered camera.
+
+        The trimmed wheel's spellings are the API (``limbFinding.LimbFinding``,
+        ``horizonOpNav.horizonOpNav`` - proven on the matched wheel), and
+        ``attInMsg`` wants a ``NavAttMsg`` the harness writes per tick from
+        the plant state: this wheel ships no relative-navigation module to
+        build one, and the lockstep harness is the only party holding tick
+        truth anyway. The estimators ride their own task at the render rate,
+        created after the forge's camera task so the frame they read was
+        received in the same tick.
+
+        Returns the tuple ``(camera_id, horizon module, attitude message,
+        knowledge subscriber)``.
+
+        Raises:
+            ForgeError: The plant mounts more than one camera for this body
+                (v1 knowledge channels are single-eyed), or the forge built
+                no module for a ``[[camera]]`` line naming this vehicle.
+        """
+        if len(cams) > 1:
+            raise ForgeError(
+                f"{self.name}: the OPNAV frame carries one camera's knowledge; "
+                f"this plant mounts {len(cams)}"
+            )
+        cam = cams[0]
+        cam_module = ctx.modules_by_tag.get(f"{cam.parent}_camera{cam.camera_id}")
+        if cam_module is None:
+            raise ForgeError(
+                f"{self.name}: the forge built no camera module "
+                f"'{cam.parent}_camera{cam.camera_id}' for this body"
+            )
+        limb = limbFinding.LimbFinding()
+        limb.ModelTag = f"{self.name}_limbFinder"
+        horizon = horizonOpNav.horizonOpNav()
+        horizon.ModelTag = f"{self.name}_horizonNav"
+        limb.imageInMsg.subscribeTo(cam_module.imageOutMsg)
+        horizon.limbInMsg.subscribeTo(limb.opnavLimbOutMsg)
+        horizon.cameraConfigInMsg.subscribeTo(cam_module.cameraConfigOutMsg)
+        att_msg = messaging.NavAttMsg()
+        horizon.attInMsg.subscribeTo(att_msg)
+        horizon.planetTarget = OPNAV_PLANET_TARGET
+        task = f"{self.name}OpNavTask"
+        process = ctx.ensure_process(DYN_PROCESS, priority=3)
+        process.addTask(ctx.sim.CreateNewTask(task, macros.sec2nano(cam.render_rate)))
+        ctx.sim.AddModelToTask(task, limb)
+        ctx.sim.AddModelToTask(task, horizon)
+        # This wheel's Python read door is msg.recorder() (field arrays on
+        # the recorder); addSubscriber does not exist on OpNavMsg_C. The
+        # recorder rides last in the task so each tick records the write
+        # horizon just made.
+        recorder = horizon.opNavOutMsg.recorder()
+        ctx.sim.AddModelToTask(task, recorder)
+        return (cam.camera_id, horizon, att_msg, recorder)
+
     @property
     def has_plant_state(self) -> bool:
         """Whether this plant fitted anything the OnboardState frame reports."""
@@ -396,6 +488,43 @@ class ForgeBody:
         return self._st_sub is not None
 
     @property
+    def has_plant_opnav(self) -> bool:
+        """Whether this plant mounts the rendered camera that feeds OPNAV."""
+        return self._opnav is not None
+
+    def opnav_state_bytes(self, sim_time_s: float, frame: int) -> bytes:
+        """Pack one ``OpNavState``: what this body's camera pixels say (CAM).
+
+        Knowledge-channel content, nothing else - the body-frame estimate,
+        its target and eye, and the estimator's own verdict flags. The image
+        never travels: pixels that crossed the airgap would stop being a
+        knowledge channel and start being a bandwidth problem.
+        """
+        assert self._opnav is not None, "opnav_state_bytes without a rendered eye"
+        camera_id, _, _, recorder = self._opnav
+        if recorder.size():
+            latest = recorder.size() - 1
+            los = tuple(float(v) for v in recorder.r_BN_B[latest])
+            planet_id = int(recorder.planetID[latest])
+            valid = int(bool(recorder.valid[latest]))
+            faulted = int(bool(recorder.faultDetected[latest]))
+        else:
+            # No frame has come back yet: the channel reports its own silence.
+            los, planet_id, valid, faulted = (0.0, 0.0, 0.0), OPNAV_PLANET_TARGET, 0, 0
+        return encode_container(
+            "BSK_LINK/OpNavState",
+            {
+                "SimTimeS": float(sim_time_s),
+                "Frame": int(frame),
+                "RBnB": los,
+                "PlanetId": planet_id,
+                "CameraId": int(camera_id),
+                "Valid": valid,
+                "FaultDetected": faulted,
+            },
+        )
+
+    @property
     def sim_time_s(self) -> float:
         """The shared world's instant (the sim owns time; this only reads it)."""
         return self._sim.TotalSim.CurrentNanos * 1e-9
@@ -418,6 +547,19 @@ class ForgeBody:
             )
         else:
             self._torque_msg.write(messaging.CmdTorqueBodyMsgPayload(torqueRequestBody=values))
+        if self._opnav is not None:
+            # The knowledge channel's attitude truth rides the same door:
+            # horizonOpNav reads the LAST-written NavAttMsg on its own task,
+            # and this is the only per-tick write point the rig gives a body.
+            # The estimate was 0.73 degrees from truth with exactly this
+            # feed - one tick old, which at these rates is this tick.
+            _, _, att_msg, _ = self._opnav
+            state = self._state_sub()
+            payload = messaging.NavAttMsgPayload()
+            payload.timeTag = self.sim_time_s
+            payload.sigma_BN = np.asarray(state.sigma_BN, dtype=float).reshape(-1).tolist()
+            payload.omega_BN_B = np.asarray(state.omega_BN_B, dtype=float).reshape(-1).tolist()
+            att_msg.write(payload)
 
     def truth(self) -> Truth:
         """The simulator's own solution: ideal, unbiased, never on the sensor feed."""

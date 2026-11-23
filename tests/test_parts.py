@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import get_args
+from typing import get_args, get_origin
 
 import pytest
 
@@ -109,9 +109,13 @@ def test_bskforge_types_exist_in_the_catalog() -> None:
     The catalog is the schema's SENSOR union *and* its EFFECTOR union: a wheel
     set is a part as much as a star tracker is (the P4b bundle's frame carries
     wheel bytes), and a registry that could only name sensors would push
-    actuator meaning back into hand-written code.
+    actuator meaning back into hand-written code. It is also the ROOT's module
+    sections (CAM): [[camera]] mounts instrument hardware on a craft exactly
+    as a union device does, without belonging to either union - the opnav row
+    claims it, so the catalog must see it.
     """
     from bskforge.schema.effectors import EffectorConfig
+    from bskforge.schema.root import ScenarioConfig
     from bskforge.schema.sensors import SensorConfig
 
     catalog: set[str] = set()
@@ -120,6 +124,9 @@ def test_bskforge_types_exist_in_the_catalog() -> None:
             default = cls.model_fields["type"].default
             if isinstance(default, str):
                 catalog.add(default)
+    for name, field in ScenarioConfig.model_fields.items():
+        if name != "spacecraft" and get_origin(field.annotation) is list:
+            catalog.add(name)  # list-Sections are module sections; spacecraft is not hardware
     claimed = {t for p in PARTS for t in p.bskforge_types}
     assert claimed <= catalog, f"registry names types the schema lacks: {claimed - catalog}"
 
