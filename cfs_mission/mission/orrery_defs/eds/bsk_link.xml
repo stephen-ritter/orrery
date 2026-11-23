@@ -133,6 +133,27 @@
         </EntryList>
       </ContainerDataType>
 
+      <!-- Basilisk -> cFS: knowledge derived by the camera from rendered images
+           (CAM). This is a KNOWLEDGE channel, not an image pipe: the 512x512
+           frame never leaves the Basilisk process; what crosses the airgap is
+           the OpNav estimator's planet vector. Opinion by construction - the
+           camera joins no control loop, fcs subscribes nothing, and the
+           trajectory digests must print unchanged with the renderer on or off.
+           The uint64 flags keep every field an 8-byte scalar, so the container
+           packs to exactly 72 B with no padding question for the C twin
+           (uint8 exists - StepAck's Mode - but mixes scales into the row). -->
+      <ContainerDataType name="OpNavState" shortDescription="OpNav planet knowledge for one render instant (opinion, never truth)">
+        <EntryList>
+          <Entry name="SimTimeS" type="float64" shortDescription="sim time [s]" />
+          <Entry name="Frame" type="uint64" shortDescription="sim frame counter" />
+          <Entry name="RBnB" type="Vector3" shortDescription="planet vector estimate, body frame, from limb pixels [m]" />
+          <Entry name="PlanetId" type="uint64" shortDescription="target body id (Basilisk celestial index)" />
+          <Entry name="CameraId" type="uint64" shortDescription="source [[camera]] id" />
+          <Entry name="Valid" type="uint64" shortDescription="1 while the estimator holds a valid fix" />
+          <Entry name="FaultDetected" type="uint64" shortDescription="1 when the estimator has faulted the image" />
+        </EntryList>
+      </ContainerDataType>
+
       <!-- cFS -> Basilisk: what the flight software commands. -->
       <ContainerDataType name="TorqueCommand" shortDescription="Direct body torque for one control tick">
         <EntryList>
@@ -221,6 +242,15 @@
       <ContainerDataType name="AttitudeStateTlm" baseType="CFE_HDR/TelemetryHeader">
         <EntryList>
           <Entry name="Payload" type="AttitudeState" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- The bus twin joins the TopicId + interface region only when the
+           registry row lands (codegen/emit_frames.py renders that part; an
+           unlanded container has no identity on the bus by design). -->
+      <ContainerDataType name="OpNavStateTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="OpNavState" />
         </EntryList>
       </ContainerDataType>
 

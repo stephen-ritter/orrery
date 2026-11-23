@@ -155,6 +155,53 @@ def test_nav_state_codec_round_trip() -> None:
     assert payload == struct.pack("<dQ6d", 6.5, 13, *pos, *vel)
 
 
+def test_opnav_container_bytes_pinned_before_landing() -> None:
+    """CAM knowledge frame: the byte layout is pinned today, the encode door opens with the row.
+
+    The container ships before the part lands (the registry's phase line), so
+    what is testable today is the WIRE: 72 bytes packing exactly as the
+    rendered-pixel probe measured, and decoding to the fields it promises.
+    The registry's encode door must stay shut - a provider packing a frame
+    the spacecraft never agreed to decode is a bug, raised at the edge of
+    the world rather than a fiction inside it.
+    """
+    if not (DIST / "EdsLib.so").is_file():
+        pytest.skip("run edslink/build.sh to build the EdsLib database and binding")
+    import struct
+
+    from sim.eds_link import (
+        LinkUnavailable,
+        _lib,
+        decode_opnav_state,
+        encode_container,
+        entry,
+    )
+
+    los = (1.2e7, -3.4e5, 5.6e4)
+    lib = _lib()
+    obj = entry("BSK_LINK/OpNavState")()
+    obj["SimTimeS"] = 3.5
+    obj["Frame"] = 7
+    for index, value in enumerate(los):
+        obj["RBnB"][index] = value
+    obj["PlanetId"] = 1
+    obj["CameraId"] = 2
+    obj["Valid"] = 1
+    obj["FaultDetected"] = 0
+    payload = bytes(lib.PackedObject(obj))
+
+    assert payload == struct.pack("<dQ3d4Q", 3.5, 7, *los, 1, 2, 1, 0)
+    assert len(payload) == 72, "the registry row and the XML container must agree on 72 B"
+    fix = decode_opnav_state(payload)
+    assert (fix.sim_time_s, fix.frame) == (3.5, 7)
+    assert fix.r_bn_b == pytest.approx(los)
+    assert (fix.planet_id, fix.camera_id) == (1, 2)
+    assert fix.valid and not fix.fault_detected
+
+    with pytest.raises(LinkUnavailable, match="not a landed registry container"):
+        encode_container("BSK_LINK/OpNavState", {"SimTimeS": 3.5})
+
+
 def test_container_codec_refuses_unregistered_containers() -> None:
     """Observability codecs come from the registry (REG): no row, no codec.
 

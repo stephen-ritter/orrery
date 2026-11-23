@@ -154,3 +154,35 @@ truth_pos = "SIGMA_BN"                 # truth: MRP of the same rotation
 floor = 0.2                            # under 0.2*sigma: the ST reads an oracle
 ceiling = "3sqrt3"                     # per-axis Gaussian: |theta| beyond 3sqrt3*sigma is a second world
 epoch = "strict"                       # same TICK: at 0.08 rad/s one second is 4 degrees
+
+# --- camera knowledge (CAM) ---------------------------------------------------
+# The OpNav circuit: Vizard paints, Basilisk's camera module receives, the
+# limb/horizon estimators turn pixels into a planet vector, and ONLY that
+# estimate crosses the airgap. Knowledge-channel rules by construction: the
+# frame carries no actuator meaning, fcs subscribes nothing, and the pair
+# digests must print unchanged with the renderer on or off.
+# The row is deliberately UNLANDED: codegen, the C table, the TopicId, the
+# COSMOS defs and the fit mask learn this part only when a plant actually
+# streams the frame (the registry's phase-line rule - declared reality is
+# not landed reality). Landing adds: the TopicId/interface via codegen, and
+# the two-sided LOS exhibit row the p5 rule demands of every landed part.
+
+[[part]]
+name = "opnav"
+display = "Optical navigation (planet knowledge from rendered images, CAM)"
+landed = false
+# no bskforge_type: the presence gate is the craft's [[camera]] section, and
+# that section is not a sensor/effector-union device. The catalog-before-
+# factory law stays intact - unions remain catalog-checked for devices.
+plant_output = "opNavOutMsg"           # horizonOpNav's knowledge message
+zmq_topic = "OPNAV"
+eds_container = "BSK_LINK/OpNavState"
+container_bytes = 72                   # SimTimeS + Frame + RBnB[3] + four uint64 flags
+topic_offset = 209                     # 205/206 are OBC_HK/SPS's hand-written rows
+topic_name = "BSK_LINK_OPNAV_STATE_TLM_TOPICID"
+mid_name = "BSK_LINK_OPNAV_STATE_TLM"
+evs_info = "BSK_LINK_OPNAV_INF_EID"
+evs_info_id = 20                       # 14..19 serve ONBOARD/NAV/ATTSTATE and the FIT verdict
+evs_label = "OpNav knowledge"
+consumer = "bsk_link"                  # the generic consumer: zero C edits at landing
+subscribers = []                       # knowledge channel: ground watches; fcs never reads it

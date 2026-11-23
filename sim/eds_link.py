@@ -38,12 +38,14 @@ __all__ = [
     "FitManifest",
     "NavState",
     "OnboardState",
+    "OpNavState",
     "StepAck",
     "TorqueCommand",
     "available",
     "decode_fit_manifest",
     "decode_nav_state",
     "decode_onboard_state",
+    "decode_opnav_state",
     "decode_step_ack",
     "decode_torque_command",
     "encode_container",
@@ -286,6 +288,34 @@ def decode_nav_state(payload: bytes) -> NavState:
         frame=obj["Frame"](),
         r_bn_n=tuple(obj["RBnN"][i]() for i in range(3)),
         v_bn_n=tuple(obj["VBnN"][i]() for i in range(3)),
+    )
+
+
+@dataclass(frozen=True)
+class OpNavState:
+    """A decoded ``BSK_LINK/OpNavState`` frame (CAM: planet knowledge from pixels)."""
+
+    sim_time_s: float
+    frame: int
+    r_bn_b: tuple[float, float, float]
+    planet_id: int
+    camera_id: int
+    valid: bool
+    fault_detected: bool
+
+
+def decode_opnav_state(payload: bytes) -> OpNavState:
+    """Decode the body of a ``BSK_LINK/OpNavState`` frame."""
+    lib = _lib()
+    obj = entry("BSK_LINK/OpNavState")(lib.PackedObject(payload))
+    return OpNavState(
+        sim_time_s=obj["SimTimeS"](),
+        frame=obj["Frame"](),
+        r_bn_b=tuple(obj["RBnB"][i]() for i in range(3)),
+        planet_id=int(obj["PlanetId"]()),
+        camera_id=int(obj["CameraId"]()),
+        valid=bool(obj["Valid"]()),
+        fault_detected=bool(obj["FaultDetected"]()),
     )
 
 
