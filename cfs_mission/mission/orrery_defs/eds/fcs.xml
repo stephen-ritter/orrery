@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    orrery flight control (fcs_app) - hand-authored per D3: the EDS XML here
+    is the single definition source for ground defs (codegen/eds2cosmos), the
+    EdsLib link DB, and - via cfe-topicids.xml topics - the runtime MsgIds
+    mirrored in orrery_defs/inc/orrery_msgids.h. tests/test_eds2cosmos.py
+    pins the XML topics against that header so the two sources cannot drift.
+
+    Control law (P3c): direct rate damping, torque = -Kp * omega_measured,
+    computed by fcs on every BSK_LINK_SENSOR_FRAME_TLM and published as
+    BSK_LINK_TORQUE_COMMAND_TLM for bsk_link to forward to the sim. Ground
+    commands arriving on the :5051 uplink own the authority: ENABLE / DISABLE /
+    SET_GAIN / SET_WHEEL_LIMIT / NOOP. Payload bytes are target-native
+    little-endian (D6).
+
+    Mode supervisor (P4b-2): fcs also ingests BSK_LINK_ONBOARD_STATE_TLM -
+    knowledge of its OWN actuators and instruments - and trips ENABLED -> SAFE
+    when any |wheel speed| reaches the SET_WHEEL_LIMIT threshold: torque stops,
+    acks continue (the lockstep gate never depends on the law), and recovery
+    needs ground: ENABLE while SAFE is refused until the wheels are back under
+    the limit. A plant without onboard state (the hand-written witness) never
+    arms the supervisor: no knowledge, no trip.
+-->
+<PackageFile xmlns="http://www.ccsds.org/schema/sois/seds">
+  <Package name="FCS" shortDescription="Orrery flight control (rate damping)">
+    <DataTypeSet>
+
+      <ContainerDataType name="CommandBase" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ContainerDataType name="SendHkCmd" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ContainerDataType name="NoopCmd" baseType="CommandBase">
+        <ConstraintSet>
+          <ValueConstraint entry="Sec.FunctionCode" value="0" />
+        </ConstraintSet>
+      </ContainerDataType>
+
+      <ContainerDataType name="EnableCmd" baseType="CommandBase">
+        <ConstraintSet>
+          <ValueConstraint entry="Sec.FunctionCode" value="1" />
+        </ConstraintSet>
+      </ContainerDataType>
+
+      <ContainerDataType name="DisableCmd" baseType="CommandBase">
+        <ConstraintSet>
+          <ValueConstraint entry="Sec.FunctionCode" value="2" />
+        </ConstraintSet>
+      </ContainerDataType>
+
+      <!-- Ground-owned control parameters. Its OWN interface (own MsgId) on
+           purpose: the payloadless FC-subtype pattern (CF TxFileCmd) loses
+           argument fields in codegen, so an argument-bearing command here is
+           a separate packet like HK_SEND_COMBINED_PKT. tests pin the wire
+           length of this exact packet. -->
+      <ContainerDataType name="SetGainCmd" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ContainerDataType name="SetGainPayload" shortDescription="fcs gain parameters">
+        <EntryList>
+          <Entry name="Kp" type="BSK_LINK/Vector3" shortDescription="per-axis proportional gain [N m per rad/s]" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="SetGainPkt" baseType="SetGainCmd">
+        <EntryList>
+          <Entry name="Payload" type="SetGainPayload" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- Wheel-supervisor threshold (P4b-2). Its own interface for the same
+           reason as SetGainPkt: an argument-bearing command needs its own
+           packet, not the FC-subtype pattern. The supervisor in fcs trips
+           ENABLED -> SAFE when any |wheel speed| on the onboard state frame
+           reaches this value; ground recovers by raising it and ENABLEing. -->
+      <ContainerDataType name="SetWheelLimitCmd" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ContainerDataType name="SetWheelLimitPayload" shortDescription="fcs wheel supervisor threshold">
+        <EntryList>
+          <Entry name="WheelLimit" type="BSK_LINK/float64" shortDescription="per-wheel |speed| trip threshold [rad/s]" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="SetWheelLimitPkt" baseType="SetWheelLimitCmd">
+        <EntryList>
+          <Entry name="Payload" type="SetWheelLimitPayload" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="HkTlm_Payload" shortDescription="fcs housekeeping">
+        <EntryList>
+          <Entry name="CommandCounter" type="BASE_TYPES/uint8" shortDescription="valid commands received" />
+          <Entry name="CommandErrorCounter" type="BASE_TYPES/uint8" shortDescription="invalid commands received" />
+          <Entry name="Mode" type="BASE_TYPES/uint8" shortDescription="0 disabled, 1 enabled, 2 safe (supervisor latched)">
+            <Constraints>
+              <EnumeratedValueConstraint>
+                <EnumerationList>
+                  <Enumeration label="DISABLED" value="0" />
+                  <Enumeration label="ENABLED" value="1" />
+                  <Enumeration label="SAFE" value="2" />
+                </EnumerationList>
+              </EnumeratedValueConstraint>
+            </Constraints>
+          </Entry>
+          <Entry name="Unused" type="BASE_TYPES/uint8" shortDescription="alignment" />
+          <Entry name="SensorFramesReceived" type="BASE_TYPES/uint32" shortDescription="ingested sensor frames" />
+          <Entry name="TorqueCommandsIssued" type="BASE_TYPES/uint32" shortDescription="torque frames issued" />
+          <PaddingEntry sizeInBits="32" shortDescription="64-bit alignment padding" />
+          <Entry name="LastSimTimeS" type="BSK_LINK/float64" shortDescription="sim time of the last sensor frame [s]" />
+          <Entry name="LastTorqueB" type="BSK_LINK/Vector3" shortDescription="last issued body torque [N m]" />
+          <Entry name="Kp" type="BSK_LINK/Vector3" shortDescription="current per-axis gain [N m per rad/s]" />
+          <Entry name="OnboardFramesReceived" type="BASE_TYPES/uint32" shortDescription="ingested onboard state frames" />
+          <PaddingEntry sizeInBits="32" shortDescription="64-bit alignment padding" />
+          <Entry name="WheelLimit" type="BSK_LINK/float64" shortDescription="wheel |speed| trip threshold [rad/s]" />
+          <Entry name="WheelSpeeds" type="BSK_LINK/Vector3" shortDescription="latest wheel speeds from the onboard state [rad/s]" />
+          <Entry name="SunCosine" type="BSK_LINK/float64" shortDescription="largest CSS cosine seen (0 = no sun in any eye)" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="HkTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="HkTlm_Payload" />
+        </EntryList>
+      </ContainerDataType>
+
+    </DataTypeSet>
+
+    <ComponentSet>
+      <Component name="Application">
+        <RequiredInterfaceSet>
+          <Interface name="CMD" shortDescription="Software bus telecommand interface" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="CommandBase" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="SEND_HK" shortDescription="Send housekeeping command interface" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="SendHkCmd" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="SET_GAIN" shortDescription="Set rate-damping gain command interface" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="SetGainPkt" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="SET_WHEEL_LIMIT" shortDescription="Set wheel supervisor trip threshold command interface" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="SetWheelLimitPkt" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="HK_TLM" shortDescription="Software bus housekeeping telemetry interface" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="HkTlm" />
+            </GenericTypeMapSet>
+          </Interface>
+        </RequiredInterfaceSet>
+        <Implementation>
+          <VariableSet>
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="CmdTopicId" initialValue="${CFE_MISSION/FCS_CMD_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="SendHkTopicId" initialValue="${CFE_MISSION/FCS_SEND_HK_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="SetGainTopicId" initialValue="${CFE_MISSION/FCS_SET_GAIN_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="SetWheelLimitTopicId" initialValue="${CFE_MISSION/FCS_SET_WHEEL_LIMIT_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="HkTlmTopicId" initialValue="${CFE_MISSION/FCS_HK_TLM_TOPICID}" />
+          </VariableSet>
+          <ParameterMapSet>
+            <ParameterMap interface="CMD" parameter="TopicId" variableRef="CmdTopicId" />
+            <ParameterMap interface="SEND_HK" parameter="TopicId" variableRef="SendHkTopicId" />
+            <ParameterMap interface="SET_GAIN" parameter="TopicId" variableRef="SetGainTopicId" />
+            <ParameterMap interface="SET_WHEEL_LIMIT" parameter="TopicId" variableRef="SetWheelLimitTopicId" />
+            <ParameterMap interface="HK_TLM" parameter="TopicId" variableRef="HkTlmTopicId" />
+          </ParameterMapSet>
+        </Implementation>
+      </Component>
+    </ComponentSet>
+  </Package>
+</PackageFile>

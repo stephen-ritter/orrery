@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    orrery OBC health & status (hk_app, P4b-3) - hand-authored per D3.
+
+    The spacecraft's own housekeeping: what the OBC can see on its own bus,
+    sampled by the OBC, stamped with mission time (D8). Everything here is
+    knowledge the satellite has of ITSELF - link frame counts it ingested,
+    actuator feedback it decoded, the mode its controller last reported on
+    the bus - never navigator truth (that lives on the truth stream, P5).
+
+    Design rule: hk_app touches no other app's memory and sends no requests.
+    It counts what passes its pipe and mirrors the freshest bus reports, so
+    its liveness never depends on cooperation from the apps it watches -
+    a crashed fcs silences FCS_HK_TLM, and "FcsTorquesIssued stops growing"
+    becomes the symptom ground reads, not a second bug to debug.
+-->
+<PackageFile xmlns="http://www.ccsds.org/schema/sois/seds">
+  <Package name="OBC" shortDescription="Orrery OBC health and status">
+    <DataTypeSet>
+
+      <ContainerDataType name="CommandBase" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ContainerDataType name="SendHkCmd" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ContainerDataType name="NoopCmd" baseType="CommandBase">
+        <ConstraintSet>
+          <ValueConstraint entry="Sec.FunctionCode" value="0" />
+        </ConstraintSet>
+      </ContainerDataType>
+
+      <ContainerDataType name="HkTlm_Payload" shortDescription="OBC housekeeping">
+        <EntryList>
+          <Entry name="CommandCounter" type="BASE_TYPES/uint8" shortDescription="valid commands received" />
+          <Entry name="CommandErrorCounter" type="BASE_TYPES/uint8" shortDescription="invalid commands received" />
+          <Entry name="FcsMode" type="BASE_TYPES/uint8" shortDescription="mode from the latest FCS_HK_TLM on the bus">
+            <Constraints>
+              <EnumeratedValueConstraint>
+                <EnumerationList>
+                  <Enumeration label="DISABLED" value="0" />
+                  <Enumeration label="ENABLED" value="1" />
+                  <Enumeration label="SAFE" value="2" />
+                </EnumerationList>
+              </EnumeratedValueConstraint>
+            </Constraints>
+          </Entry>
+          <Entry name="Unused" type="BASE_TYPES/uint8" shortDescription="alignment" />
+          <Entry name="SensorFramesSeen" type="BASE_TYPES/uint32" shortDescription="sensor frames observed on the bus" />
+          <Entry name="OnboardFramesSeen" type="BASE_TYPES/uint32" shortDescription="onboard state frames observed" />
+          <Entry name="TorquePacketsSeen" type="BASE_TYPES/uint32" shortDescription="torque commands observed" />
+          <Entry name="FcsTorquesIssued" type="BASE_TYPES/uint32" shortDescription="issued counter from the latest FCS_HK_TLM" />
+          <PaddingEntry sizeInBits="32" shortDescription="64-bit alignment padding" />
+          <Entry name="LastSensorSimTimeS" type="BSK_LINK/float64" shortDescription="sim time of the last sensor frame [s]" />
+          <Entry name="LastOnboardSimTimeS" type="BSK_LINK/float64" shortDescription="sim time of the last onboard state [s]" />
+          <Entry name="WheelSpeeds" type="BSK_LINK/Vector3" shortDescription="latest wheel feedback, from onboard state [rad/s]" />
+          <Entry name="SunCosine" type="BSK_LINK/float64" shortDescription="largest CSS cosine seen (0 = no sun in any eye)" />
+          <Entry name="MagFieldNormT" type="BSK_LINK/float64" shortDescription="|B| from the magnetometer [T]" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="HkTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="HkTlm_Payload" />
+        </EntryList>
+      </ContainerDataType>
+
+    </DataTypeSet>
+
+    <ComponentSet>
+      <Component name="Application">
+        <RequiredInterfaceSet>
+          <Interface name="CMD" shortDescription="Software bus telecommand interface" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="CommandBase" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="SEND_HK" shortDescription="Send housekeeping command interface" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="SendHkCmd" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="HK_TLM" shortDescription="OBC housekeeping telemetry interface" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="HkTlm" />
+            </GenericTypeMapSet>
+          </Interface>
+        </RequiredInterfaceSet>
+        <Implementation>
+          <VariableSet>
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="CmdTopicId" initialValue="${CFE_MISSION/OBC_HK_CMD_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="SendHkTopicId" initialValue="${CFE_MISSION/OBC_HK_SEND_HK_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="HkTlmTopicId" initialValue="${CFE_MISSION/OBC_HK_TLM_TOPICID}" />
+          </VariableSet>
+          <ParameterMapSet>
+            <ParameterMap interface="CMD" parameter="TopicId" variableRef="CmdTopicId" />
+            <ParameterMap interface="SEND_HK" parameter="TopicId" variableRef="SendHkTopicId" />
+            <ParameterMap interface="HK_TLM" parameter="TopicId" variableRef="HkTlmTopicId" />
+          </ParameterMapSet>
+        </Implementation>
+      </Component>
+    </ComponentSet>
+  </Package>
+</PackageFile>

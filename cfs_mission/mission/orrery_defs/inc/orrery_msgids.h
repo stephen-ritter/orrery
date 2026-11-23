@@ -1,0 +1,67 @@
+/*
+ * orrery custom-app Software Bus message IDs.
+ *
+ * Same construction as the mission's sbn_msgids.h: target MID base (from
+ * global_core_api_base_msgid_values.h: cpu1 cmd 0x1800, tlm 0x0800) plus the
+ * topic ID mirrored from the mission EDS XML. Ground definitions generated
+ * by codegen/eds2cosmos carry the identical numbers, pinned by golden tests.
+ * Registered part MsgIds (REG) are generated from registry/parts.toml into
+ * orrery_part_msgids.h and included below - landing a part edits no C.
+ */
+#ifndef ORRERY_MSGIDS_H
+#define ORRERY_MSGIDS_H
+
+#include "cfe_core_api_base_msgids.h"
+#include "orrery_topicids.h"
+#include "orrery_part_msgids.h"
+
+/** \brief Ingested Basilisk sensor frame (bsk_link -> fcs, beacon) */
+#define BSK_LINK_SENSOR_FRAME_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_SENSOR_FRAME_TLM_TOPICID)
+
+/** \brief FCS torque command (fcs -> bsk_link -> sim, beacon) */
+#define BSK_LINK_TORQUE_COMMAND_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_TORQUE_COMMAND_TLM_TOPICID)
+
+/** \brief fcs housekeeping telemetry (fcs -> beacon) */
+#define FCS_HK_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_FCS_HK_TLM_TOPICID)
+
+/** \brief lockstep step ack (fcs -> bsk_link -> sim; bus-internal, never beacon) */
+#define BSK_LINK_STEP_ACK_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_STEP_ACK_TLM_TOPICID)
+
+/** \brief fcs ground commands: NOOP / ENABLE / DISABLE */
+#define FCS_CMD_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_FCS_CMD_TOPICID)
+
+/** \brief fcs housekeeping request (scheduler) */
+#define FCS_SEND_HK_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_FCS_SEND_HK_TOPICID)
+
+/** \brief fcs gain upload with payload (ground only) */
+#define FCS_SET_GAIN_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_FCS_SET_GAIN_TOPICID)
+
+/** \brief fcs wheel supervisor threshold with payload (ground only, P4b-2) */
+#define FCS_SET_WHEEL_LIMIT_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_FCS_SET_WHEEL_LIMIT_TOPICID)
+
+/** \brief OBC housekeeping telemetry (hk_app -> beacon, P4b-3) */
+#define OBC_HK_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_OBC_HK_TLM_TOPICID)
+
+/** \brief OBC hk ground commands: NOOP */
+#define OBC_HK_CMD_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_OBC_HK_CMD_TOPICID)
+
+/** \brief OBC housekeeping request (scheduler) */
+#define OBC_HK_SEND_HK_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_OBC_HK_SEND_HK_TOPICID)
+
+/** \brief sps ground commands: NOOP / ENABLE / DISABLE / FLUSH (P6) */
+#define SPS_CMD_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_SPS_CMD_TOPICID)
+
+/** \brief time-tagged command upload with payload (ground only, P6) */
+#define SPS_SCHEDULE_CMD_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_SPS_SCHEDULE_CMD_TOPICID)
+
+/** \brief sps housekeeping request (scheduler) */
+#define SPS_SEND_HK_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_SPS_SEND_HK_TOPICID)
+
+/** \brief sps housekeeping telemetry (sps -> beacon, P6) */
+#define SPS_HK_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_SPS_HK_TLM_TOPICID)
+
+/** \brief cFS TIME service commands (link uses SET_MET to slave MET to the
+ * sim timecode, D8) */
+#define ORRERY_TIME_CMD_MID (SAMPLE_CPU1_CMD_MID_BASE + ORRERY_TIME_CMD_TOPICID)
+
+#endif /* ORRERY_MSGIDS_H */

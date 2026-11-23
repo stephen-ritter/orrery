@@ -1,0 +1,45 @@
+[project]
+name = "orrery"
+version = "0.1.0"
+description = "Fake satellite in a box: Basilisk digital twin + cFS flight software + COSMOS ground control"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "bsk[all]~=2.12",
+    "pyzmq",
+    "bskforge",
+]
+
+[tool.uv.sources]
+# Published, pinned, provenance-visible: the forge is a library dependency of
+# the yard, resolved from its GitHub tag - not a sibling checkout a stranger
+# must happen to have lying around. uv.lock records the exact commit behind
+# the tag, so "v0.3.0" means one immutable thing forever; bumping it is a
+# deliberate, journaled act, exactly like the cFS and COSMOS pins. (The wheel
+# line still matches: bskforge requires >=2.12.0, we pin ~=2.12.)
+bskforge = { git = "https://github.com/stephen-ritter/bskforge.git", tag = "v0.3.0" }
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pyyaml>=6.0.3",
+    "ruff",
+    "ty",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["cfs_mission"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "D", "RUF", "ANN"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

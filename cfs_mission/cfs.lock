@@ -1,0 +1,49 @@
+# The cFS core this mission builds against. A pin, not a checkout.
+#
+# cFS is not part of this repository. It is NASA's, it is unmodified, and the
+# only reason it appears here at all is that the mission cannot be built without
+# knowing which commit of it to build on: a flight binary's identity includes the
+# core underneath it. So the pin is committed and the source is not, and
+# `scripts/fetch_cfs.sh` is the only thing that fills in `cfs_mission/cFS/`
+# (which `.gitignore` keeps out of the tree).
+#
+# Why a lock file instead of a git submodule: a submodule makes the upstream
+# repository a participant in `git status`. Any drift inside cFS — a stray edit,
+# a stray checkout — arrives as `modified: cfs_mission/cFS (new commits)`, which
+# is the exact signal this project's "the core is pristine" rule exists to catch.
+# A pin in a file keeps the fact and drops the noise: the directory cannot appear
+# in a diff, so a dirty core has to be reported by a tool that means it
+# (`scripts/fetch_cfs.sh --verify`) rather than by a status line nobody reads.
+#
+# Nothing here should be edited by hand except to move the mission to a new cFS
+# release, which is a deliberate act: it changes the firmware provenance stamp
+# (`scripts/firmware.sh`), which refuses to let a stale yard fly.
+
+repository = "https://github.com/nasa/cFS.git"
+
+# `tag` is the human fact; `commit` is the machine fact. Both are recorded
+# because a tag can be moved and a commit cannot, and because "v7.0.1" is what a
+# person reads while "088b2fa…" is what `fetch_cfs.sh` actually checks out.
+tag = "v7.0.1"
+commit = "088b2fa828db9ff7e00733f1908e0eeb59f66ce3"
+
+# Filled in by `scripts/fetch_cfs.sh`; never tracked, never edited by hand.
+checkout = "cfs_mission/cFS"
+
+# Paths whose presence proves the fetch finished the whole way, including the
+# nested repositories that are not submodules of this repo and so cannot be
+# checked by it. Every one is a build dependency, not a courtesy:
+#
+#   cfe.h            cFE core API        — every app compiles against it
+#   osapi.h          OSAL                — the port abstraction the PSP builds on
+#   psp pc-linux     native PSP          — the platform this mission runs on
+#   tools/eds        EdsLib + edstool    — `edslink/` compiles the link schema with it
+#   apps/hk          HK application      — a real upstream app, to catch a partial checkout
+[verify]
+required_paths = [
+    "cfe/modules/core_api/fsw/inc/cfe.h",
+    "osal/src/os/inc/osapi.h",
+    "psp/fsw/pc-linux/inc/cfe_psp_config.h",
+    "tools/eds/CMakeLists.txt",
+    "apps/hk/fsw/src/hk_app.c",
+]

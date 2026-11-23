@@ -1,0 +1,44 @@
+# The ground station, pinned: fetched by scripts/get_cosmos.sh, never vendored.
+#
+# Two version facts must agree, and "latest" quietly guarantees they do not:
+# the CHECKOUT (openc3.sh, compose templates - what deploys) and the IMAGES
+# (OPENC3_TAG in the checkout's .env - what runs). The deployment that inspired
+# this pin ran a v6.4-era checkout against 7.5-era images, because the checkout
+# was cloned in May and the images were pulled in October. Every other component
+# of this yard refuses to run on an unverified version; the ground station was
+# the one place that trusted a tag line. cfs.lock is the sibling: same shape,
+# same reason, different fetcher (the core is a build input; this is a
+# deployment).
+
+[cosmos]
+repository = "https://github.com/openc3/openc3.git"
+tag = "v7.5.1"
+# the peeled commit behind the annotated tag - what a checkout actually lands on
+commit = "2f523d57c9fc846b090ac3074e16f81a5d2571d2"
+# the image tag the checkout's .env must carry: containers and checkout move together
+image_tag = "7.5.1"
+# Names this repository has answered to. The deployment this pin was written
+# for was cloned when the project lived at OpenC3/cosmos; a year moved the
+# project twice (OpenC3/cosmos -> Cosmos/OpenC3 -> openc3/openc3, the old paths
+# now demanding credentials - GitHub's polite not-found). --force accepts an
+# origin on this lineage and refuses anything else: a rename is a fact worth
+# recording, an unknown origin is someone else's deployment.
+renames_from = [
+    "https://github.com/OpenC3/cosmos.git",
+    "https://github.com/Cosmos/OpenC3.git",
+]
+# The checkout is a live deployment (volumes, buckets, loaded gems) and lives
+# OUTSIDE this repository on purpose; COSMOS_HOME points at it.
+checkout = "~/Projects/cosmos"
+
+[verify]
+# Each of these is a thing the stack launch touches; a partial fetch fails here,
+# not minutes later inside `openc3.sh run`. Proven present at the pinned commit
+# by a shallow clone of the tag, not by memory of an older tree - the layout
+# moved between 6.x (docker/, operator/) and 7.x (root compose.yaml, openc3/).
+required_paths = [
+    "openc3.sh",
+    ".env",
+    "compose.yaml",
+    "openc3/Gemfile",
+]

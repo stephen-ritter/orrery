@@ -1,0 +1,277 @@
+# Parts coverage ledger (D13): every asset bskforge exposes, classified.
+#
+# registry/parts.toml says what a part MEANS on the wire. This file answers the
+# adjacent question, which is the one operators keep asking and which no other
+# file could answer honestly: which parts does this project actually support,
+# which does it refuse, and what is the first missing hop for the rest.
+#
+# AUTHORITATIVE and machine-checked (tests/test_coverage.py):
+#
+#   * every first-class bskforge SENSOR and EFFECTOR type must appear here
+#     exactly once, so a part added upstream fails OUR build until we classify
+#     it - catalog before factory, pointed at ourselves;
+#   * every scenario section in bskforge's root schema must appear in [[area]];
+#   * status = "landed" agrees both ways with registry/parts.toml (a row that
+#     landed without a classification, or a classification that outlived its
+#     row, both fail);
+#   * every unlanded part names its FIRST missing hop from a fixed vocabulary
+#     and carries a reason - "we haven't gotten to it" is not a classification;
+#   * docs/coverage.md is this file rendered, byte-checked, so the summary
+#     number can never be better than the ledger.
+#
+# Upstream is NOT the constraint: bskforge builds all twelve of these types
+# today (schema + builder, verified against build/sensors.py, build/effectors.py
+# and build/disturbances.py). Every gap below is ours.
+
+# --- status vocabulary ------------------------------------------------------
+#
+#   landed            a landed registry row exists and the circuit flies
+#   barrier           crosses as the D5 tick itself; deliberately never a row
+#   catalog-unlanded  schema + builder exist, no row, no wire yet
+#   command-path      not knowledge: it actuates, so it lands through fcs/sps
+#                     and never earns a MsgId of its own
+#   refused           a decision with a reason, not a gap
+
+# --- sensors ----------------------------------------------------------------
+
+[[type]]
+name = "imuSensor"
+kind = "sensor"
+status = "barrier"
+bskforge = "schema+builder"
+wire = "BSK_LINK/SensorFrame (the tick itself)"
+first_hop = ""
+scenarios = ["chief.toml", "twin_ops.toml"]
+phase = ""
+why = """Rate knowledge is the lockstep tick, not an observability part: it is the
+frame every control law is frame-exact against. Giving it a registry row would
+put the barrier on the same footing as a payload instrument (sim/lockstep.py
+keeps SENSOR/ACK/CMD hardcoded on purpose)."""
+
+[[type]]
+name = "coarseSunSensor"
+kind = "sensor"
+status = "landed"
+bskforge = "schema+builder"
+wire = "BSK_LINK/OnboardState -> BSK_LINK_ONBOARD_STATE_TLM"
+first_hop = ""
+scenarios = ["chief.toml", "twin_ops.toml"]
+phase = ""
+why = """Four sun sensors, cosines in TOML order, inside the housekeeping bundle row."""
+
+[[type]]
+name = "magnetometer"
+kind = "sensor"
+status = "landed"
+bskforge = "schema+builder"
+wire = "BSK_LINK/OnboardState -> BSK_LINK_ONBOARD_STATE_TLM"
+first_hop = ""
+scenarios = ["chief.toml", "twin_ops.toml"]
+phase = ""
+why = """Measured field body-frame, in the bundle row. Its actuator counterpart
+(mtb) is still command-path, so we sense the field without yet pushing on it."""
+
+[[type]]
+name = "starTracker"
+kind = "sensor"
+status = "landed"
+bskforge = "schema+builder"
+wire = "BSK_LINK/OnboardState + BSK_LINK/AttitudeState -> 0x08D0"
+first_hop = ""
+scenarios = ["chief.toml", "twin_ops.toml"]
+phase = ""
+why = """the device's own quaternion (scalar-first, C2EP),
+compared to truth's MRP as the representation-free angle gap at tick-exact
+epochs. Also the registry's own fan-out specimen - one TOML line, two frames."""
+
+[[type]]
+name = "gpsReceiver"
+kind = "sensor"
+status = "landed"
+bskforge = "schema+builder"
+wire = "BSK_LINK/NavState -> BSK_LINK_NAV_STATE_TLM"
+first_hop = ""
+scenarios = ["chief.toml", "twin_ops.toml"]
+phase = ""
+why = """a modelled receiver whose declared sigmas ARE the acceptance
+bounds, read out of the manifest that built the plant. The first part where the
+fleet's physics and the gate's rubric share one source."""
+
+[[type]]
+name = "camera"
+kind = "sensor"
+status = "catalog-unlanded"
+bskforge = "schema+builder"
+wire = ""
+first_hop = "registry-row"
+scenarios = []
+phase = "CAM"
+why = """bskforge builds the pinhole + landmark device today; what is missing is
+entirely ours: a row, a byte-segment container (EDS arrays flatten to _0.._n),
+a provider reading the device message, and a p5 compare mode for pixels - which
+p5 will REFUSE to run until it exists, by design."""
+
+# --- effectors --------------------------------------------------------------
+# An effector's telemetry is knowledge (and rides a row); its actuation is a
+# COMMAND path (and never does). reactionWheels is the only one where both halves
+# fly, which is why it is the reference case for the rest of this section.
+
+[[type]]
+name = "reactionWheels"
+kind = "effector"
+status = "landed"
+bskforge = "schema+builder"
+wire = "BSK_LINK/OnboardState -> BSK_LINK_ONBOARD_STATE_TLM (speeds back)"
+command_path = "COSMOS -> fcs law -> BSK_LINK/TorqueCommand -> the plant"
+first_hop = ""
+scenarios = ["chief.toml", "twin_ops.toml"]
+phase = ""
+why = """The closed loop the project is built on: FSW computes, the world
+applies, the digest records. Every other effector wants this same shape."""
+
+[[type]]
+name = "mtb"
+kind = "effector"
+status = "command-path"
+bskforge = "schema+builder"
+command_path = "missing: no FSW dipole law and no command frame to the plant"
+first_hop = "fsw-command"
+scenarios = []
+phase = "P9"
+why = """The magnetometer already streams the field, so sensing is done; what is
+missing is the torque rod and the law that commands it. Momentum management is
+attitude *supervision*, which is the safe-mode study - declaring the effector
+before the law exists would give the fleet a coil nobody drives."""
+
+[[type]]
+name = "thrusters"
+kind = "effector"
+status = "command-path"
+bskforge = "schema+builder"
+command_path = """partial: sps schedules pulses on the bus; nothing turns them into
+    forces world-side"""
+first_hop = "fsw-command"
+scenarios = []
+phase = "P9"
+why = """The cheapest-looking gap here: the SPS app exists and already uploads
+and runs a schedule, but the pulse terminates at the bus. Closing it needs a
+force path (and then pulse-width physics inside a 1 Hz lockstep tick, which is
+the actual hard part - a thruster wants a faster tick than attitude does)."""
+
+[[type]]
+name = "drag"
+kind = "disturbance"
+status = "refused"
+bskforge = "schema+builder"
+command_path = "disturbance model, not a command"
+first_hop = "decision"
+scenarios = []
+phase = "P7"
+why = """Not refused on principle - refused on evidence. Drag decays every
+pinned trajectory, and the project's whole argument is a digest ledger that
+means something; until per-configuration baselines exist, adding atmospheric
+decay would trade the audit for realism. Revisit when digests are keyed to
+sha256(TOML + registry + app list)."""
+
+[[type]]
+name = "solarRadiationPressure"
+kind = "disturbance"
+status = "refused"
+bskforge = "schema+builder"
+command_path = "disturbance model, not a command"
+first_hop = "decision"
+scenarios = []
+phase = "P7"
+why = """Same ruling as drag, same reason: a real orbit-secularizing
+disturbance lands with per-configuration baselines, not before them."""
+
+[[type]]
+name = "gravityGradient"
+kind = "disturbance"
+status = "refused"
+bskforge = "schema+builder"
+command_path = "disturbance model, not a command"
+first_hop = "decision"
+scenarios = []
+phase = "P7"
+why = """Gravity-gradient torque on an extended body would change the attitude
+trajectory the ledger pins - and unlike drag it is a TORQUE, so it lands in the
+control loop rather than beside it."""
+
+# --- scenario areas ---------------------------------------------------------
+# The other half of "all assets": whole sections of bskforge's root schema.
+# These are classified too, because a section added upstream is a capability we
+# have not decided about.
+
+[[area]]
+name = "simulation"
+status = "used"
+why = """Schedule, stop time, seed: the world's clock is a scenario decision,
+never a code constant."""
+
+[[area]]
+name = "world"
+status = "used"
+why = """Gravity and ephemeris: the trajectory every baseline pins is a world
+file's output."""
+
+[[area]]
+name = "environment"
+status = "used"
+why = """centered_dipole is the magnetic field the magnetometer reads - which is
+why that sensor's numbers mean something."""
+
+[[area]]
+name = "spacecraft"
+status = "used"
+why = """The vehicle manifest itself: every [[spacecraft]] block is a mission
+container, a truth target, and a slot in one world."""
+
+[[area]]
+name = "comm_links"
+status = "unused-with-reason"
+why = """No inter-satellite link is modelled; the twins are graded as one world
+through truth, not through each other. Constellation work is where a
+cross-link becomes a first-class wire."""
+
+[[area]]
+name = "formations"
+status = "unused-with-reason"
+why = """Relative-motion holding would move the anchored twin digests, and the
+project would lose the strongest artifact it has - a pair of trajectories that
+reproduce bit-for-bit. Revisit when relative motion is the mission, and
+re-found the pair deliberately when it does."""
+
+[[area]]
+name = "logging"
+status = "unused-with-reason"
+why = """The harness records its own ledgers (trajectory digests, wire audits,
+truth gateways); bskforge's recorders would be a second, less audited copy of
+the same story."""
+
+[[area]]
+name = "visualization"
+status = "unused-with-reason"
+why = """The operator's window is COSMOS, and it is graded: a viz path that no
+gate reads is decoration, and decoration in this repo tends to become a claim."""
+
+[[area]]
+name = "custom"
+status = "banned"
+why = """Hardware is declared by naming a type, never wired in by hand. Fleets are
+read through bskforge's audited profile, which sim/fleet_policy.py asks for, so
+this is refused at load rather than by omission. The reason is mechanical:
+hardware no schema type names cannot have a registry row, so the fit manifest
+never declares it, this ledger has no union to classify it under, no defs carry
+it, and no exhibit could judge its numbers - its readings would be a wire nothing
+grades. The route for hardware upstream cannot model yet is the one gpsReceiver
+took: grow the type upstream, with its own tests, and land a row here afterwards.
+This ledger is what makes that route survivable: it names every gap a hand-wired
+device would have papered over, and who owns each one."""
+
+[[area]]
+name = "monte_carlo"
+status = "unused-with-reason"
+why = """Dispersion studies need per-configuration digests (a distribution is
+meaningless against one pinned trajectory), so this is the per-configuration digest round's customer rather than
+a gap today."""

@@ -1,0 +1,48 @@
+# orrery detumble plant, built by bskforge (ROADMAP W3, decision D7).
+#
+# Pure plant on purpose: NO [spacecraft.fsw] section. The control law is
+# flight software - it lives in cFS fcs_app and reaches this body through the
+# lockstep link (sim/lockstep.py). sim/forge_scenario.py rejects any TOML that
+# grows an onboard bskforge law.
+#
+# Every constant mirrors sim/detumble_scenario.py 1:1 so the W3 parity test can
+# demand a BIT-IDENTICAL trajectory sha256 from the two build paths.
+
+[simulation]
+name = "orrery detumble (forge plant)"
+duration = 120.0
+
+[simulation.dt]
+# Single-rate plant: the scan grid equals the control period. The rig supports
+# dynamics faster than FSW (ticks only land on control boundaries); parity with
+# the hand-written single-task plant needs identical integration steps.
+dynamics = 1.0
+fsw = 1.0
+
+[world]
+central_body = "earth"
+
+[[spacecraft]]
+name = "w0"  # the parity witness vehicle (digest-only: never COSMOS-facing)
+
+[spacecraft.hub]
+mass = 300.0
+
+[spacecraft.hub.inertia]
+# Asymmetric inertia so a tumble actually couples axes.
+ixx = 750.0
+iyy = 620.0
+izz = 540.0
+
+[spacecraft.orbit]
+type = "rv"
+
+[spacecraft.orbit.rv]
+position = [7.0e6, 0.0, 0.0]
+# SI - circular speed at r=7000 km is 7546 m/s (see chief.toml's note: a
+# km/s decimal once passed here and gravity did the rest).
+velocity = [0.0, 7546.1, 0.0]
+
+[spacecraft.attitude.initial]
+sigma_BN = [0.05, -0.08, 0.11]
+omega_BN_B = [0.05, -0.04, 0.03]

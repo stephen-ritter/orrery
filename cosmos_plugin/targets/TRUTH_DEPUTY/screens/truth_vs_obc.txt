@@ -1,0 +1,67 @@
+deputy truth-vs-knowledge comparison (P5). Hand-written operator UI -
+# screens are not wire definitions; the generated-defs rule governs cmd/tlm.
+# Provenance (docs/data_provenance.md): LEFT column = Basilisk truth, via
+# the ground gateway, never through the satellite. RIGHT column = what the
+# satellite itself senses (0x08C8 SensorFrame via the cFS beacon): the same
+# rates, biased and noisy, because gyro knowledge is not the world.
+
+SCREEN AUTO AUTO 1.0
+
+  LABELLINE "deputy - TRUTH (left) vs onboard knowledge (right)"
+
+  HORIZONTALBOX
+    TBOX "Truth (gateway :5152, ground-only)"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM SIM_TIME_S "sim time [s]"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM OMEGA_BN_B_0 "rate x [rad/s]"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM OMEGA_BN_B_1 "rate y [rad/s]"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM OMEGA_BN_B_2 "rate z [rad/s]"
+    END
+    TBOX "Knowledge (0x08C8 via cFS, biased+noisy)"
+      LABELVALUE SAT_DEPUTY BSK_LINK_SENSOR_FRAME_TLM SIM_TIME_S "sim time [s]"
+      LABELVALUE SAT_DEPUTY BSK_LINK_SENSOR_FRAME_TLM OMEGA_BN_B_0 "rate x [rad/s]"
+      LABELVALUE SAT_DEPUTY BSK_LINK_SENSOR_FRAME_TLM OMEGA_BN_B_1 "rate y [rad/s]"
+      LABELVALUE SAT_DEPUTY BSK_LINK_SENSOR_FRAME_TLM OMEGA_BN_B_2 "rate z [rad/s]"
+    END
+  END
+
+  HORIZONTALBOX
+    TBOX "Truth: position r_BN_N [m]"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM R_BN_N_0 "x"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM R_BN_N_1 "y"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM R_BN_N_2 "z"
+    END
+    TBOX "Truth: velocity v_BN_N [m/s]"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM V_BN_N_0 "x"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM V_BN_N_1 "y"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM V_BN_N_2 "z"
+    END
+    TBOX "Truth: attitude sigma_BN (MRP)"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM SIGMA_BN_0 "s1"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM SIGMA_BN_1 "s2"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM SIGMA_BN_2 "s3"
+      LABELVALUE TRUTH_DEPUTY TRUTH_STATE_TLM SIGMA_BN_3 "s4"
+    END
+  END
+
+  HORIZONTALBOX
+    TBOX "GNSS fix (0x08CF via cFS, KN)"
+      LABELVALUE SAT_DEPUTY BSK_LINK_NAV_STATE_TLM SIM_TIME_S "sim time [s]"
+      LABELVALUE SAT_DEPUTY BSK_LINK_NAV_STATE_TLM RBN_N_0 "pos x [m]"
+      LABELVALUE SAT_DEPUTY BSK_LINK_NAV_STATE_TLM RBN_N_1 "pos y [m]"
+      LABELVALUE SAT_DEPUTY BSK_LINK_NAV_STATE_TLM RBN_N_2 "pos z [m]"
+      LABELVALUE SAT_DEPUTY BSK_LINK_NAV_STATE_TLM VBN_N_0 "vel x [m/s]"
+      LABELVALUE SAT_DEPUTY BSK_LINK_NAV_STATE_TLM VBN_N_1 "vel y [m/s]"
+      LABELVALUE SAT_DEPUTY BSK_LINK_NAV_STATE_TLM VBN_N_2 "vel z [m/s]"
+    END
+    TBOX "Instruments/actuators (0x08CC ONBOARD)"
+      LABELVALUE SAT_DEPUTY BSK_LINK_ONBOARD_STATE_TLM SIM_TIME_S "sim time [s]"
+      LABELVALUE SAT_DEPUTY BSK_LINK_ONBOARD_STATE_TLM WHEEL_SPEEDS_0 "wheel x"
+      LABELVALUE SAT_DEPUTY BSK_LINK_ONBOARD_STATE_TLM WHEEL_SPEEDS_1 "wheel y"
+      LABELVALUE SAT_DEPUTY BSK_LINK_ONBOARD_STATE_TLM WHEEL_SPEEDS_2 "wheel z"
+    END
+  END
+
+  LABELLINE "the gap between the columns IS the boundary: |difference| rides the gyro bias + noise, never zero"
+  LABELLINE "orbit rows (KN): caches hold their own instants - the p5 gate aligns epochs; |Δv| visible here rides receiver bias (~cm/s)"
+
+END

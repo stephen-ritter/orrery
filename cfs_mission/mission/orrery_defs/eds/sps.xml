@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    orrery time-tagged command execution (sps_app, P6) - hand-authored per
+    D3, mirroring the fcs.xml idiom: this XML is the single definition source
+    for the ground defs (codegen/eds2cosmos), and the topic numbers live in
+    cfe-topicids.xml with the flight-C mirror in orrery_topicids.h, pinned by
+    tests/test_eds2cosmos.py.
+
+    The stored program sequence (real mission term: JPL/ESA time-tagged
+    command queues): the ground uplinks "execute <command> at sim time T"
+    (SPS_SCHEDULE), the app validates it against the generated command
+    dictionary (sps_cmd_table.h - same EDS, so ground and flight can never
+    disagree about what is executable), and it fires the stored command on
+    the first sensor frame whose time is >= T. Execution rides the frame
+    strobe, never a wall timer (D8): a frozen sim freezes the clock, and a
+    schedule waits with it. A late schedule (T already passed) fires on the
+    next frame and is counted - the queue never pretends to time-travel.
+
+    Authority works like the control loop: the queue starts DISABLED, so a
+    schedule can sit aboard without the ability to move anything until an
+    operator ENABLEs it. Payload bytes are target-native little-endian (D6).
+-->
+<PackageFile xmlns="http://www.ccsds.org/schema/sois/seds">
+  <Package name="SPS" shortDescription="Orrery time-tagged command execution (stored program sequence)">
+    <DataTypeSet>
+
+      <ContainerDataType name="CommandBase" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ContainerDataType name="SendHkCmd" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ContainerDataType name="NoopCmd" baseType="CommandBase">
+        <ConstraintSet>
+          <ValueConstraint entry="Sec.FunctionCode" value="0" />
+        </ConstraintSet>
+      </ContainerDataType>
+
+      <ContainerDataType name="EnableCmd" baseType="CommandBase">
+        <ConstraintSet>
+          <ValueConstraint entry="Sec.FunctionCode" value="1" />
+        </ConstraintSet>
+      </ContainerDataType>
+
+      <ContainerDataType name="DisableCmd" baseType="CommandBase">
+        <ConstraintSet>
+          <ValueConstraint entry="Sec.FunctionCode" value="2" />
+        </ConstraintSet>
+      </ContainerDataType>
+
+      <!-- Drop every pending entry (armed or not): the operator's escape
+           hatch when a schedule goes stale. Visible in HK as QueueCount
+           falling to zero while ScheduledTotal keeps its history. -->
+      <ContainerDataType name="FlushCmd" baseType="CommandBase">
+        <ConstraintSet>
+          <ValueConstraint entry="Sec.FunctionCode" value="3" />
+        </ConstraintSet>
+      </ContainerDataType>
+
+      <!-- The time-tagged upload. Its OWN interface (own MsgId) per the
+           house rule: an argument-bearing command is a real packet, not an
+           FC-subtype (fcs.xml SetGainPkt reasoning). The envelope carries a
+           complete command image: the target MsgId, its function code, and
+           the payload bytes verbatim (up to 48 B, which covers every command
+           in the dictionary: the largest mission command is FCS_SET_GAIN at
+           24 B). sps validates (MsgId, Fc, length) against the generated
+           command table at SCHEDULE time - the ground learns about a typo on
+           the uplink, not three hours after the fire. The self-schedule
+           (sps scheduling its own SCHEDULE port) is refused at runtime: a
+           queue that feeds itself is a worm, not a feature. -->
+      <ContainerDataType name="ScheduleCmd" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ArrayDataType dataTypeRef="BSK_LINK/float64" name="Params6" shortDescription="up to 48 bytes of command payload, verbatim">
+        <DimensionList>
+          <Dimension size="6" />
+        </DimensionList>
+      </ArrayDataType>
+
+      <ContainerDataType name="SchedulePayload" shortDescription="sps schedule entry: execute the enclosed command at sim time T">
+        <EntryList>
+          <Entry name="ExecTimeS" type="BSK_LINK/float64" shortDescription="sim time to execute at; fires on the first sensor frame with time >= T [s]" />
+          <Entry name="CmdMsgId" type="BASE_TYPES/uint16" shortDescription="MsgId of the command to execute (validated against the EDS command table)" />
+          <Entry name="CmdFc" type="BASE_TYPES/uint8" shortDescription="function code of the command to execute" />
+          <Entry name="CmdDataLen" type="BASE_TYPES/uint8" shortDescription="payload bytes carried in CmdData (must equal the dictionary size for CmdMsgId/CmdFc)" />
+          <Entry name="CmdData" type="Params6" shortDescription="command payload bytes, verbatim (unused slots zero)" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="SchedulePkt" baseType="ScheduleCmd">
+        <EntryList>
+          <Entry name="Payload" type="SchedulePayload" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- Housekeeping: queue state, lifetime counters, and the firing
+           evidence (last fired MsgId + requested T + actual sim time of
+           the frame that carried it) so "fired on the first frame >= T"
+           is readable straight off the beacon. -->
+      <ContainerDataType name="HkTlm_Payload" shortDescription="sps housekeeping">
+        <EntryList>
+          <Entry name="CommandCounter" type="BASE_TYPES/uint8" shortDescription="valid commands received" />
+          <Entry name="CommandErrorCounter" type="BASE_TYPES/uint8" shortDescription="invalid commands received" />
+          <Entry name="Enabled" type="BASE_TYPES/uint8" shortDescription="0 queue armed-but-frozen, 1 queue evaluating on frames">
+            <Constraints>
+              <EnumeratedValueConstraint>
+                <EnumerationList>
+                  <Enumeration label="FROZEN" value="0" />
+                  <Enumeration label="ARMED" value="1" />
+                </EnumerationList>
+              </EnumeratedValueConstraint>
+            </Constraints>
+          </Entry>
+          <Entry name="Unused" type="BASE_TYPES/uint8" shortDescription="alignment" />
+          <Entry name="QueueCount" type="BASE_TYPES/uint32" shortDescription="entries pending execution" />
+          <Entry name="QueuePeak" type="BASE_TYPES/uint32" shortDescription="deepest the queue ever got (8 = full)" />
+          <Entry name="ScheduledTotal" type="BASE_TYPES/uint32" shortDescription="entries accepted onto the queue" />
+          <Entry name="FiredTotal" type="BASE_TYPES/uint32" shortDescription="commands executed (frame >= T)" />
+          <Entry name="RejectedUnknownTotal" type="BASE_TYPES/uint32" shortDescription="schedules refused: MsgId/Fc not in the command dictionary" />
+          <Entry name="RejectedFullTotal" type="BASE_TYPES/uint32" shortDescription="schedules refused: queue at capacity" />
+          <Entry name="RejectedParamTotal" type="BASE_TYPES/uint32" shortDescription="schedules refused: bad length, or self-schedule" />
+          <Entry name="LateFiredTotal" type="BASE_TYPES/uint32" shortDescription="entries whose T had already passed at upload (fire next frame)" />
+          <Entry name="FramesEvaluated" type="BASE_TYPES/uint32" shortDescription="sensor frames the queue was evaluated on" />
+          <Entry name="LastFiredMsgId" type="BASE_TYPES/uint32" shortDescription="MsgId of the most recent firing" />
+          <PaddingEntry sizeInBits="32" shortDescription="64-bit alignment padding" />
+          <Entry name="LastExecTimeS" type="BSK_LINK/float64" shortDescription="requested T of the most recent firing [s]" />
+          <Entry name="LastFiredSimTimeS" type="BSK_LINK/float64" shortDescription="sim time of the frame that carried it [s]" />
+          <Entry name="LastFrameSimTimeS" type="BSK_LINK/float64" shortDescription="sim time of the latest evaluated frame [s]" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="HkTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="HkTlm_Payload" />
+        </EntryList>
+      </ContainerDataType>
+
+    </DataTypeSet>
+
+    <ComponentSet>
+      <Component name="Application">
+        <RequiredInterfaceSet>
+          <Interface name="CMD" shortDescription="Software bus telecommand interface" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="CommandBase" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="SEND_HK" shortDescription="Send housekeeping command interface" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="SendHkCmd" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="SCHEDULE" shortDescription="Time-tagged command upload interface" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="SchedulePkt" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="HK_TLM" shortDescription="Software bus housekeeping telemetry interface" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="HkTlm" />
+            </GenericTypeMapSet>
+          </Interface>
+        </RequiredInterfaceSet>
+        <Implementation>
+          <VariableSet>
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="CmdTopicId" initialValue="${CFE_MISSION/SPS_CMD_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="SendHkTopicId" initialValue="${CFE_MISSION/SPS_SEND_HK_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="ScheduleTopicId" initialValue="${CFE_MISSION/SPS_SCHEDULE_CMD_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="HkTlmTopicId" initialValue="${CFE_MISSION/SPS_HK_TLM_TOPICID}" />
+          </VariableSet>
+          <ParameterMapSet>
+            <ParameterMap interface="CMD" parameter="TopicId" variableRef="CmdTopicId" />
+            <ParameterMap interface="SEND_HK" parameter="TopicId" variableRef="SendHkTopicId" />
+            <ParameterMap interface="SCHEDULE" parameter="TopicId" variableRef="ScheduleTopicId" />
+            <ParameterMap interface="HK_TLM" parameter="TopicId" variableRef="HkTlmTopicId" />
+          </ParameterMapSet>
+        </Implementation>
+      </Component>
+    </ComponentSet>
+  </Package>
+</PackageFile>

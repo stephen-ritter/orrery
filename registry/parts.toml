@@ -1,0 +1,156 @@
+# orrery parts registry (REG, D13 ladder) - the sensor circuit made data.
+#
+# One [[part]] row per cataloged part: the bskforge type the plant builds,
+# the wire identity the frame crosses on, the FSW that moves it, and the
+# acceptance exhibit it must arrive with. Generators and gates READ this
+# file (sim/parts.py); tests/test_parts.py pins that every row agrees with
+# reality surface by surface - a row that lies about a topic, a MsgId, an
+# EVS id, or a container fails CI exactly like a wrong C struct would.
+#
+# Law (D13): a part without a first-class bskforge type is not a part, and
+# the fleet never uses [custom]; the loader cross-checks every bskforge_type
+# against the bskforge schema union, so this file cannot outrun the catalog.
+#
+# Field notes:
+#   topic_offset  TELEMETRY_BASE_TOPICID + offset == the Define in
+#                 cfe-topicids.xml; the mirror headers derive the MsgId from
+#                 it (orrery_msgids.h), never the other way around.
+#   consumer      the FSW app that crosses the frame over the airgap
+#                 ("bsk_link" = the generic world-frame consumer).
+#   subscribers   bus consumers AFTER bsk_link republishes ([] = the frame
+#                 exists for ground observation only).
+#   exhibit       the acceptance promise, declaratively: kind truth_pair =
+#                 flight opinion vs truth must DIFFER at device scale and
+#                 AGREE as one world, bounded from the part's own declared
+#                 sigmas (floor x sigma .. ceiling x 3*sqrt(3) x sigma);
+#                 epoch strict = raw velocity pairs may not cross any skew.
+#   compare       how the pair becomes a verdict: "vector3" (componentwise,
+#                 bounds = (pos_sigma, vel_sigma), skew < 0.5 s) or
+#                 "rotation_mrp" (flight quaternion vs truth MRP as the
+#                 representation-free angle gap 2*acos(|dot|), skew < 1e-6 s:
+#                 at these tumble rates one second is 4 degrees, four orders
+#                 over a 1e-4 rad sigma). A mode the gate cannot execute stops
+#                 the run - it never skips a row quietly.
+#   declared      FIELD NAMES into the vehicle's own device block; p5 reads the
+#                 numbers from the manifest that built the device, so this file
+#                 restates no sigma a vehicle could outgrow. A fitted device
+#                 whose named sigma is missing or zero stops the gate: a bound
+#                 of nothing grades a tautology (an ideal device IS an oracle).
+
+schema_version = 1
+
+# --- registered circuits ----------------------------------------------------
+
+[[part]]
+name = "gnss"
+display = "GNSS receiver (orbital knowledge, KN/KN2)"
+landed = true                          # reality-checks run against landed rows (test_parts)
+bskforge_type = "gpsReceiver"
+plant_output = "transOutMsg"           # the device's fix message, one artifact
+zmq_topic = "NAVSTATE"
+eds_container = "BSK_LINK/NavState"
+container_bytes = 64
+topic_offset = 207
+topic_name = "BSK_LINK_NAV_STATE_TLM_TOPICID"
+mid_name = "BSK_LINK_NAV_STATE_TLM"
+evs_info = "BSK_LINK_NAV_INF_EID"
+evs_info_id = 15
+evs_label = "GNSS fix"
+consumer = "bsk_link"
+subscribers = []                       # ground watches; fcs has no opinion on orbits
+
+[part.declared]
+# the TOML lines that BUILD the device double as the bounds that ACCEPT it
+pos_sigma = "pos_sigma_m"
+vel_sigma = "vel_sigma_m_s"
+
+[part.exhibit]
+kind = "truth_pair"
+flight_packet = "BSK_LINK_NAV_STATE_TLM"
+truth_packet = "TRUTH_STATE_TLM"
+flight_pos = "RBN_N"
+truth_pos = "R_BN_N"
+flight_vel = "VBN_N"
+truth_vel = "V_BN_N"
+floor = 0.2                            # under 0.2 sigma: the flight side reads an oracle
+ceiling = "3sqrt3"                     # GM clamps each component at 3 sigma: norm <= 3*sqrt(3)*sigma
+epoch = "strict"                       # |skew| > 0.5 s is refused, not corrected
+
+# --- bundles (pre-REG legacy) ------------------------------------------------
+# One frame, many parts: the P4b OnboardState predates the registry and its
+# meaning is split across bsk_link (publisher), fcs (supervisor) and obc_hk
+# (mirror). It stays as-is through REG; OB gives presence semantics to every
+# row, bundles included. Recorded here so the registry is the COMPLETE map.
+
+[[part]]
+name = "onboard"
+display = "onboard knowledge bundle (P4b; wheels/ST/CSS/mag in one frame)"
+kind = "bundle"
+landed = true
+# Coverage = the hardware whose READINGS this frame carries: wheel speeds, ST
+# quaternion, CSS cosines, magnetometer field. The effector belongs in a row that
+# is otherwise a sensor list because its bytes are in the frame (OB's fit
+# vocabulary is exactly "would this vehicle stream this frame?"). The IMU does
+# NOT belong: its reading rides the barrier's SENSOR frame, which is physics and
+# not a registry part, so a vehicle with only an IMU streams no bundle - and a
+# row that claimed one would raise a false SILENT verdict at boot.
+bskforge_types = ["reactionWheels", "starTracker", "coarseSunSensor", "magnetometer"]
+zmq_topic = "ONBOARD"
+eds_container = "BSK_LINK/OnboardState"
+container_bytes = 128
+topic_offset = 204
+topic_name = "BSK_LINK_ONBOARD_STATE_TLM_TOPICID"
+mid_name = "BSK_LINK_ONBOARD_STATE_TLM"
+evs_info = "BSK_LINK_ONBOARD_INF_EID"
+evs_info_id = 14
+evs_label = "onboard state"
+consumer = "bsk_link"
+subscribers = ["fcs", "obc_hk"]
+
+# --- the exit part: registered AND landed (REG / D13) ------------------------
+#
+# This row is the exit criterion made concrete: fitting a star tracker on a
+# vehicle was already one TOML line (the P4b bundles have it); landing the
+# part meant THIS file plus the container XML, one provider method, and one
+# regen. The topic, MsgId, world-frame table row, beacon slot and p5 exhibit
+# all arrived on their own - zero C, zero rig edits.
+
+[[part]]
+name = "attitude"
+display = "star tracker (attitude knowledge, REG exit)"
+landed = true                          # R5: the circuit flew - device, provider, frame, exhibit
+bskforge_type = "starTracker"
+plant_output = "attitude"              # the device's own STSensorMsg: quaternion only
+zmq_topic = "ATTSTATE"
+eds_container = "BSK_LINK/AttitudeState"
+container_bytes = 48                   # SimTimeS + Frame + StqBn[4]; the ST's message
+#   carries quaternion ONLY (Basilisk STSensorMsgPayload) - rate knowledge is
+#   the gyro's business (SENSOR), and inventing a rate here would be the
+#   harness modelling a device output, not the device speaking. (R1 authored
+#   56 B with a RateBias field; first flight corrected the row to the wire -
+#   the registry's own audit caught it, R1's container-size test for the
+#   newly-landed row refused to pass a fiction.)
+topic_offset = 208
+topic_name = "BSK_LINK_ATTITUDE_STATE_TLM_TOPICID"
+mid_name = "BSK_LINK_ATTITUDE_STATE_TLM"
+evs_info = "BSK_LINK_ATTSTATE_INF_EID"
+evs_info_id = 16
+evs_label = "ST attitude"
+consumer = "bsk_link"                  # the generic consumer (R2): zero C edits
+subscribers = []                       # ground observation; fcs reads rates, not attitudes
+
+[part.declared]
+# the same TOML line that BUILDS the noise judges it: white_noise is the
+# per-axis attitude error sigma the plant device was configured with
+angle_sigma = "white_noise"
+
+[part.exhibit]
+kind = "truth_pair"
+compare = "rotation_mrp"               # quaternion (scalar-first) vs MRP: angle gap
+flight_packet = "BSK_LINK_ATTITUDE_STATE_TLM"
+truth_packet = "TRUTH_STATE_TLM"
+flight_pos = "STQ_BN"                  # flight opinion: ST quaternion
+truth_pos = "SIGMA_BN"                 # truth: MRP of the same rotation
+floor = 0.2                            # under 0.2*sigma: the ST reads an oracle
+ceiling = "3sqrt3"                     # per-axis Gaussian: |theta| beyond 3sqrt3*sigma is a second world
+epoch = "strict"                       # same TICK: at 0.08 rad/s one second is 4 degrees

@@ -1,0 +1,5 @@
+[environment]
+python = ".venv"
+
+[src]
+exclude = ["cfs_mission"]

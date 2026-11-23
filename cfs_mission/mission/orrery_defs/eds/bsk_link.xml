@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    orrery Basilisk <-> cFS link package.
+
+    These containers cross the ZMQ link (Basilisk publishes SENSOR; the flight
+    software answers with TORQUE_COMMAND; TRUTH goes to ground only). As of P3c
+    the SENSOR and TORQUE containers also live on the Software Bus: bsk_link
+    ingests the wire frame and republishes it as BSK_LINK_SENSOR_FRAME_TLM for
+    fcs_app, and forwards the BSK_LINK_TORQUE_COMMAND_TLM fcs_app publishes back
+    out to the sim. They therefore carry TopicIds, and codegen/eds2cosmos emits
+    ground defs for them: COSMOS watching SAT_OBC sees exactly what the onboard
+    computer senses and commands. TRUTH_STATE deliberately keeps NO TopicId -
+    it must never enter cFS (the two-target rule).
+
+    Endianness is the whole point of this file (D6). The non-EDS cFE runtime puts
+    payload bytes in target-native order (x86 little-endian) and CCSDS headers in
+    big-endian, so a payload container that crosses the link has to be declared
+    littleEndian or the two sides disagree:
+
+        Python (EdsLib) encode == C struct bytes == COSMOS LITTLE_ENDIAN items
+
+    Verified against the live mission in the EdsLib spike: the same declaration
+    round-trips byte-identically to struct.pack("<4dQ"). Do not "tidy" these to
+    inherit ${CFE_MISSION/DATA_BYTE_ORDER}. That define is bigEndian and EdsLib
+    honours it, which is precisely what broke the core-service payloads.
+
+    Bus-struct twins: orrery_defs/inc/orrery_bus_msg.h mirrors these
+    layouts as packed C; wire_audit re-checks the byte sizes on the live wire.
+-->
+<PackageFile xmlns="http://www.ccsds.org/schema/sois/seds">
+  <Package name="BSK_LINK" shortDescription="Basilisk to cFS link frames (target-native little endian)">
+    <DataTypeSet>
+
+      <FloatDataType name="float64" shortDescription="IEEE-754 double, target-native order">
+        <FloatDataEncoding sizeInBits="64" encodingAndPrecision="IEEE754_2008_double" byteOrder="littleEndian" />
+        <Range>
+          <PrecisionRange>double</PrecisionRange>
+        </Range>
+      </FloatDataType>
+
+      <IntegerDataType name="uint64" shortDescription="64 bit unsigned, target-native order">
+        <IntegerDataEncoding sizeInBits="64" encoding="unsigned" byteOrder="littleEndian" />
+      </IntegerDataType>
+
+      <IntegerDataType name="uint8" shortDescription="8 bit unsigned">
+        <IntegerDataEncoding sizeInBits="8" encoding="unsigned" byteOrder="littleEndian" />
+      </IntegerDataType>
+
+      <IntegerDataType name="uint32" shortDescription="32 bit unsigned, target-native order">
+        <IntegerDataEncoding sizeInBits="32" encoding="unsigned" byteOrder="littleEndian" />
+      </IntegerDataType>
+
+      <ArrayDataType dataTypeRef="float64" name="Vector3" shortDescription="3-axis body vector">
+        <DimensionList>
+          <Dimension size="3" />
+        </DimensionList>
+      </ArrayDataType>
+
+      <ArrayDataType dataTypeRef="float64" name="Quaternion" shortDescription="MRP attitude (euler axis times tan(phi/4))">
+        <DimensionList>
+          <Dimension size="4" />
+        </DimensionList>
+      </ArrayDataType>
+
+      <ArrayDataType dataTypeRef="float64" name="Vector4" shortDescription="four-component double vector">
+        <DimensionList>
+          <Dimension size="4" />
+        </DimensionList>
+      </ArrayDataType>
+
+      <!-- Basilisk -> cFS: what the satellite's own instruments report. -->
+      <ContainerDataType name="SensorFrame" shortDescription="Onboard knowledge for one control tick">
+        <EntryList>
+          <Entry name="SimTimeS" type="float64" shortDescription="sim time [s]" />
+          <Entry name="OmegaBnB" type="Vector3" shortDescription="body rate [rad/s]" />
+          <Entry name="Frame" type="uint64" shortDescription="sim frame counter" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- Basilisk -> cFS: everything else the OBC reads off its own buses for
+           one tick (P4b). The rate stays in SensorFrame - it is the control
+           loop's input and gate's witness; this container is the observability
+           companion, published alongside it, never gated. Wheel speeds are
+           actuator feedback (a real FSW reads them from the wheel drivers),
+           ST/CSS/MAG are sensor outputs: all legitimate onboard knowledge,
+           which is exactly why they cross the link while navigator truth
+           (TruthState, below) never does. Wheel axes fixed at three; four
+           CSS units in TOML order. -->
+      <ContainerDataType name="OnboardState" shortDescription="Actuator and instrument state for one sim instant">
+        <EntryList>
+          <Entry name="SimTimeS" type="float64" shortDescription="sim time [s]" />
+          <Entry name="Frame" type="uint64" shortDescription="sim frame counter" />
+          <Entry name="WheelSpeeds" type="Vector3" shortDescription="wheel speeds, body-axis-aligned set [rad/s]" />
+          <Entry name="StQuatBn" type="Vector4" shortDescription="star tracker attitude quaternion, scalar-first, CASE wrt inertial" />
+          <Entry name="CssCos" type="Vector4" shortDescription="CSS cosine outputs, TOML order [-]" />
+          <Entry name="MagB" type="Vector3" shortDescription="measured magnetic field, body frame [T]" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- Basilisk -> cFS: the satellite's OPINION of its orbital state
+           (KN). A modelled GPS receiver's fix — position and velocity with a
+           declared, seeded error model, produced scenario-side because
+           Basilisk core ships no receiver (the witness-gyro precedent: an
+           honest sensor model in the world, never truth with a relabeled
+           variable). It rides the observer path (published every tick,
+           never gated, never acked) beside OnboardState, so the knowledge
+           table loses its empty position/velocity rows the honest way: an
+           instrument earned them. Truth keeps its own wire (TruthState) —
+           the pair must differ (receiver scale) and agree (one world);
+           P5 asserts both halves. -->
+      <ContainerDataType name="NavState" shortDescription="GNSS receiver fix for one sim instant (opinion, not truth)">
+        <EntryList>
+          <Entry name="SimTimeS" type="float64" shortDescription="sim time [s]" />
+          <Entry name="Frame" type="uint64" shortDescription="sim frame counter" />
+          <Entry name="RBnN" type="Vector3" shortDescription="receiver position fix, inertial [m]" />
+          <Entry name="VBnN" type="Vector3" shortDescription="receiver velocity fix, inertial [m/s]" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- Basilisk -> cFS: the satellite's OPINION of its attitude (REG exit
+           part). The star tracker's OWN message (Basilisk STSensorMsgPayload:
+           quaternion in, nothing else) sampled off the fitted device with the
+           white-noise sigma the scenario TOML declared - so the wire says
+           exactly what this hardware knows, no invented rate channel. The
+           quaternion is scalar-first (rigidBodyKinematics C2EP: b[0] is the
+           scalar); p5 compares it against the navigator's MRP as a rotation
+           ANGLE GAP, bounded by that same declared sigma. -->
+      <ContainerDataType name="AttitudeState" shortDescription="Star tracker attitude fix for one sim instant (opinion, not truth)">
+        <EntryList>
+          <Entry name="SimTimeS" type="float64" shortDescription="sim time [s]" />
+          <Entry name="Frame" type="uint64" shortDescription="sim frame counter" />
+          <Entry name="StqBn" type="Vector4" shortDescription="ST quaternion, scalar-first, of B wrt N [unit]" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- cFS -> Basilisk: what the flight software commands. -->
+      <ContainerDataType name="TorqueCommand" shortDescription="Direct body torque for one control tick">
+        <EntryList>
+          <Entry name="SimTimeS" type="float64" shortDescription="sim time [s]" />
+          <Entry name="TorqueSumB" type="Vector3" shortDescription="commanded body torque [N m]" />
+          <Entry name="Frame" type="uint64" shortDescription="sim frame counter" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- cFS -> Basilisk: lockstep barrier acknowledgement (D5 amendment,
+           P3f). fcs answers EVERY sensor frame it processes - enabled or not -
+           so StepAck{N} proves "the satellite has seen frame N" and the sim
+           may take step N+1. This is a link-protocol message: bus-internal
+           (fcs -> bsk_link) and BEACON-EXCLUDED by codegen/eds2cosmos, so if
+           it ever leaked to the ground feed COSMOS stamps it UNKNOWN - the
+           absence of a def is the tripwire, not an oversight. -->
+      <ContainerDataType name="StepAck" shortDescription="Lockstep ack for one processed sensor frame">
+        <EntryList>
+          <Entry name="SimTimeS" type="float64" shortDescription="sim time of the acked frame [s]" />
+          <Entry name="Frame" type="uint64" shortDescription="acked sim frame counter" />
+          <Entry name="Mode" type="uint8" shortDescription="fcs mode when acking: 0 disabled, 1 enabled">
+            <Constraints>
+              <EnumeratedValueConstraint>
+                <EnumerationList>
+                  <Enumeration label="DISABLED" value="0" />
+                  <Enumeration label="ENABLED" value="1" />
+                </EnumerationList>
+              </EnumeratedValueConstraint>
+            </Constraints>
+          </Entry>
+          <PaddingEntry sizeInBits="24" shortDescription="alignment padding (the model packs sequentially)" />
+          <Entry name="TorquesIssued" type="uint32" shortDescription="torque commands issued so far (debug)" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- Basilisk -> ground truth stream (COSMOS target BSK_TRUTH). This is the
+           simulator's own solution: it never enters cFS, so nothing here can be
+           mistaken for something the satellite knows. -->
+      <ContainerDataType name="TruthState" shortDescription="Ideal navigators truth at one sim instant">
+        <EntryList>
+          <Entry name="SimTimeS" type="float64" shortDescription="sim time [s]" />
+          <Entry name="r_BN_N" type="Vector3" shortDescription="position B from N, inertial [m]" />
+          <Entry name="v_BN_N" type="Vector3" shortDescription="inertial velocity of B [m/s]" />
+          <Entry name="sigma_BN" type="Quaternion" shortDescription="attitude of B relative to N (MRP)" />
+          <Entry name="omega_BN_B" type="Vector3" shortDescription="body rate [rad/s]" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- Link CONTROL frame, not a part (OB): what the world's manifest
+           claims this vehicle is fitted with, shipped on the sensor socket
+           every tick so the spacecraft can compare three views at boot -
+           TOML claims (this frame), build contains (orrery_frames.h), bus
+           streams (per-row decode counts). The digest is the registry's
+           SEMANTICS, so a binary older than the catalog names itself instead
+           of mis-decoding a frame whose layout changed. Deliberately NO
+           TopicId: it is not telemetry, it is a handshake, and absence-of-def
+           is the tripwire that keeps handshake bytes off the ground. -->
+      <ContainerDataType name="FitManifest" shortDescription="Declared part fit for this vehicle (boot handshake)">
+        <EntryList>
+          <Entry name="SimTimeS" type="float64" shortDescription="sim time [s]" />
+          <Entry name="Frame" type="uint64" shortDescription="sim frame counter" />
+          <Entry name="DeclaredBits" type="uint32" shortDescription="fitted parts, bitmask over the generated frame table" />
+          <Entry name="RegistryHash" type="uint32" shortDescription="registry semantics digest this world was started with" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- Bus wrappers: CCSDS telemetry header over the (little-endian) link payload. -->
+      <ContainerDataType name="SensorFrameTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="SensorFrame" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="OnboardStateTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="OnboardState" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="NavStateTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="NavState" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="AttitudeStateTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="AttitudeState" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="TorqueCommandTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="TorqueCommand" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="StepAckTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="StepAck" />
+        </EntryList>
+      </ContainerDataType>
+
+    </DataTypeSet>
+
+    <ComponentSet>
+      <Component name="Application">
+        <RequiredInterfaceSet>
+          <Interface name="SENSOR_FRAME_TLM" shortDescription="Software bus ingested basilisk sensor frame" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="SensorFrameTlm" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="ONBOARD_STATE_TLM" shortDescription="Software bus ingested actuator and instrument state" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="OnboardStateTlm" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="NAV_STATE_TLM" shortDescription="Software bus ingested GNSS receiver fix (opinion, never truth)" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="NavStateTlm" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="ATTITUDE_STATE_TLM" shortDescription="Software bus ingested star tracker attitude fix (opinion, never truth)" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="AttitudeStateTlm" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="TORQUE_COMMAND_TLM" shortDescription="Software bus torque command from fcs for basilisk" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="TorqueCommandTlm" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="STEP_ACK_TLM" shortDescription="Software bus lockstep step ack from fcs for basilisk (never ground)" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="StepAckTlm" />
+            </GenericTypeMapSet>
+          </Interface>
+        </RequiredInterfaceSet>
+        <Implementation>
+          <VariableSet>
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="SensorFrameTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_SENSOR_FRAME_TLM_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="OnboardStateTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_ONBOARD_STATE_TLM_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="NavStateTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_NAV_STATE_TLM_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="AttitudeStateTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_ATTITUDE_STATE_TLM_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="TorqueCommandTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_TORQUE_COMMAND_TLM_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="StepAckTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_STEP_ACK_TLM_TOPICID}" />
+          </VariableSet>
+          <ParameterMapSet>
+            <ParameterMap interface="SENSOR_FRAME_TLM" parameter="TopicId" variableRef="SensorFrameTlmTopicId" />
+            <ParameterMap interface="ONBOARD_STATE_TLM" parameter="TopicId" variableRef="OnboardStateTlmTopicId" />
+            <ParameterMap interface="NAV_STATE_TLM" parameter="TopicId" variableRef="NavStateTlmTopicId" />
+            <ParameterMap interface="ATTITUDE_STATE_TLM" parameter="TopicId" variableRef="AttitudeStateTlmTopicId" />
+            <ParameterMap interface="TORQUE_COMMAND_TLM" parameter="TopicId" variableRef="TorqueCommandTlmTopicId" />
+            <ParameterMap interface="STEP_ACK_TLM" parameter="TopicId" variableRef="StepAckTlmTopicId" />
+          </ParameterMapSet>
+        </Implementation>
+      </Component>
+    </ComponentSet>
+  </Package>
+</PackageFile>

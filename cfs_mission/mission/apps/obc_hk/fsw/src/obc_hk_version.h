@@ -1,0 +1,8 @@
+#ifndef OBC_HK_VERSION_H
+#define OBC_HK_VERSION_H
+
+#define OBC_HK_APP_VERSION   1
+#define OBC_HK_APP_REV_MAJOR 0
+#define OBC_HK_APP_REV_MINOR 0
+
+#endif /* OBC_HK_VERSION_H */

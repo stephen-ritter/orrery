@@ -1,0 +1,172 @@
+# orrery yard - the fleet as compose services. This file is static and
+# hand-editable: to add a vehicle, copy the chief service pair below and
+# add a [[spacecraft]] block to your scenario (docs/adding_a_spacecraft.md).
+#
+# This document contains the WHOLE cold start. The two images carry `build:`
+# (compose builds a tagged image when it is absent), and two init services
+# run before the fleet: `mission` fetches the pinned cFS core and builds the
+# flight binary (stamping it), `sync` resolves the Python world. `up -d` on a
+# bare clone boots a fleet; scripts/fleet.sh stays the documented door for
+# scenario ports, the boot-proof wait, and the sweeps.
+#
+# scripts/fleet.sh derives the real port numbers from the scenario
+# (sim/fleet.py is the single authority) and passes them through the
+# environment; the ${...:-defaults} below are the stock twin_ops values,
+# so `docker compose up` also works by hand (export ORRERY_UID/ORRERY_GID
+# to your ids first: the init services build into this checkout).
+#
+# COSMOS is deliberately absent: the ground station is its own pinned world
+# (cosmos.lock, scripts/get_cosmos.sh).
+
+volumes:
+  orrery-bsk-venv:
+    name: orrery-bsk-venv
+  orrery-bsk-eds:
+    name: orrery-bsk-eds
+
+x-engine-volumes: &engine-volumes
+  - ${ORRERY_REPO:-.}:/work
+  - orrery-bsk-venv:/opt/engine
+  - orrery-bsk-eds:/opt/edslink
+
+x-engine-env: &engine-env
+  HOME: /tmp
+  OMP_NUM_THREADS: "1" # BLAS threads change float summation; digests are float
+  EDSLINK_DIST: /opt/edslink/dist # the binding THIS interpreter built
+
+services:
+  # the flight-side init: fetch the cFS core pinned in cfs_mission/cfs.lock,
+  # build the mission, stamp the binary (cfs_mission/build.sh). Incremental:
+  # a warm tree re-running this costs seconds. It runs as the host UID because
+  # its outputs are checked-in-adjacent build dirs in THIS checkout.
+  mission:
+    image: orrery-cfs:dev
+    build:
+      context: ${ORRERY_REPO:-.}/docker
+      dockerfile: cfs.Dockerfile
+    container_name: orrery-mission-build
+    network_mode: host
+    user: "${ORRERY_UID:-0}:${ORRERY_GID:-0}"
+    working_dir: /work
+    volumes:
+      - ${ORRERY_REPO:-.}:/work
+    environment:
+      HOME: /tmp # the build clones and hashes as this user: it needs a writable HOME
+      # the container's OWN edslink cache: the host one carries the CPython
+      # binding, and a CMake cache refuses to be reinterpreted across worlds
+      EDSLINK_BUILD_DIR: /work/edslink/build-fsw
+    command:
+      [
+        "bash",
+        "-c",
+        "scripts/fetch_cfs.sh && cd cfs_mission && ./build.sh all",
+      ]
+
+  # the engine-side init: the only ROOT service (named volumes are born
+  # root-owned, and only root can hand them to the host UID). Everything
+  # engine-side depends on it finishing; uv --frozen pins the world to
+  # this uv.lock.
+  sync:
+    image: orrery-bsk:dev
+    build:
+      context: ${ORRERY_REPO:-.}/docker
+      dockerfile: basilisk.Dockerfile
+    container_name: orrery-sync
+    network_mode: host
+    user: "0:0"
+    working_dir: /work
+    volumes: *engine-volumes
+    command:
+      [
+        "bash",
+        "-c",
+        "uv sync --frozen -q && EDSLINK_PYTHON=/opt/engine/venv/bin/python EDSLINK_BUILD_DIR=/opt/edslink/build EDSLINK_DIST=/opt/edslink/dist bash edslink/build.sh && chown -R ${ORRERY_UID:-0}:${ORRERY_GID:-0} /opt/engine /opt/edslink",
+      ]
+
+  # ---- vehicles: copy this pair (chief) to add one ------------------------
+  chief:
+    image: orrery-cfs:dev
+    container_name: orrery-chief
+    network_mode: host
+    user: "${ORRERY_UID:-0}:${ORRERY_GID:-0}"
+    working_dir: /work
+    volumes:
+      - ${ORRERY_REPO:-.}:/work
+    environment:
+      HOME: /tmp
+      ORRERY_TLM_PORT: "${CHIEF_BEACON:-5050}"
+      ORRERY_CMD_PORT: "${CHIEF_UPLINK:-5051}"
+      ORRERY_ZMQ_SENSOR_ENDPOINT: "tcp://127.0.0.1:${CHIEF_SENSOR:-5580}"
+      ORRERY_ZMQ_CMD_ENDPOINT: "tcp://127.0.0.1:${CHIEF_CMD:-5581}"
+    depends_on:
+      mission:
+        condition: service_completed_successfully
+    command: bash -c 'cd /work/cfs_mission/mission/build/exe/cpu1 && ./container-start'
+
+  truth-chief:
+    image: orrery-bsk:dev
+    container_name: orrery-truth-chief
+    network_mode: host
+    user: "${ORRERY_UID:-0}:${ORRERY_GID:-0}"
+    working_dir: /work
+    volumes: *engine-volumes
+    environment: *engine-env
+    depends_on:
+      sync:
+        condition: service_completed_successfully
+    command: /opt/engine/venv/bin/python -m sim.truth_gateway --instance 0 --name chief
+
+  deputy:
+    image: orrery-cfs:dev
+    container_name: orrery-deputy
+    network_mode: host
+    user: "${ORRERY_UID:-0}:${ORRERY_GID:-0}"
+    working_dir: /work
+    volumes:
+      - ${ORRERY_REPO:-.}:/work
+    environment:
+      HOME: /tmp
+      ORRERY_TLM_PORT: "${DEPUTY_BEACON:-5052}"
+      ORRERY_CMD_PORT: "${DEPUTY_UPLINK:-5053}"
+      ORRERY_ZMQ_SENSOR_ENDPOINT: "tcp://127.0.0.1:${DEPUTY_SENSOR:-5600}"
+      ORRERY_ZMQ_CMD_ENDPOINT: "tcp://127.0.0.1:${DEPUTY_CMD:-5601}"
+    depends_on:
+      mission:
+        condition: service_completed_successfully
+    command: bash -c 'cd /work/cfs_mission/mission/build/exe/cpu1 && ./container-start'
+
+  truth-deputy:
+    image: orrery-bsk:dev
+    container_name: orrery-truth-deputy
+    network_mode: host
+    user: "${ORRERY_UID:-0}:${ORRERY_GID:-0}"
+    working_dir: /work
+    volumes: *engine-volumes
+    environment: *engine-env
+    depends_on:
+      sync:
+        condition: service_completed_successfully
+    command: /opt/engine/venv/bin/python -m sim.truth_gateway --instance 1 --name deputy
+
+  # ---- the world: one Basilisk process gating every vehicle --------------
+  world:
+    image: orrery-bsk:dev
+    container_name: orrery-world
+    network_mode: host
+    user: "${ORRERY_UID:-0}:${ORRERY_GID:-0}"
+    working_dir: /work
+    volumes:
+      - ${ORRERY_REPO:-.}:/work
+      - ${ORRERY_STATE:-/tmp/opencode}:/state:ro # probe scenarios live here
+      - orrery-bsk-venv:/opt/engine
+      - orrery-bsk-eds:/opt/edslink
+    environment: *engine-env
+    depends_on:
+      sync:
+        condition: service_completed_successfully
+    command: >-
+      /opt/engine/venv/bin/python -m sim.forge_scenario
+      --scenario ${ORRERY_SCENARIO:-/work/sim/scenarios/twin_ops.toml}
+      --duration ${ORRERY_DURATION:-600} --zmq --pace
+      ${ORRERY_SIM_EXTRA:-} ${ORRERY_FIT_ARGS:-}
+    stop_grace_period: 30s # SIGTERM ends the world at its tick boundary

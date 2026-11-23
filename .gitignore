@@ -1,0 +1,38 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# generated protobuf bindings for C (generated in the docker build)
+cfs_mission/**/gen/*_pb-c.*
+!cfs_mission/**/gen/.gitkeep
+
+# the pinned cFS core — fetched by scripts/fetch_cfs.sh, never committed.
+# cfs_mission/cfs.lock is the fact; this directory is a local copy of it, and
+# keeping it out of the tree is the point (see the lock file's header).
+cfs_mission/cFS/
+
+# cFS build outputs (mission is built inside docker)
+cfs_mission/build*/
+cfs_mission/**/build*/
+
+# EdsLib runtime-database build (edslink/build.sh)
+edslink/build*/
+edslink/dist/
+
+# OS/editor
+.DS_Store
+
+# scratch
+*.zip
+.protoc_check/
+.scratch/
+*.log
+cfs_mission/mission/last_build.log
+*.gem
+
+# local working journal: publication-scope decisions, receipts - never shipped
+ROADMAP.md
