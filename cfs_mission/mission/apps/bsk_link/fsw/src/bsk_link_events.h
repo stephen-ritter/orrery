@@ -24,5 +24,6 @@
 #define BSK_LINK_FIT_INF_EID           17 /* fit verdict (OB, on change only)  */
 #define BSK_LINK_FIT_ERR_EID           18 /* stale firmware vs manifest: aborts */
 #define BSK_LINK_FIT_REPORT_EID        19 /* rows claimed-or-denied, named      */
+#define BSK_LINK_OPNAV_INF_EID         20 /* basilisk OpNav knowledge (CAM)     */
 
 #endif /* BSK_LINK_EVENTS_H */

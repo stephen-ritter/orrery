@@ -199,6 +199,7 @@
     <Define name="BSK_LINK_NAV_STATE_TLM_TOPICID"      value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 207" />
     <Define name="BSK_LINK_ONBOARD_STATE_TLM_TOPICID"  value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 204" />
     <Define name="BSK_LINK_ATTITUDE_STATE_TLM_TOPICID" value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 208" />
+    <Define name="BSK_LINK_OPNAV_STATE_TLM_TOPICID"    value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 209" />
     <!-- END GENERATED (codegen/emit_frames.py): registered part topics -->
 
   </Package>

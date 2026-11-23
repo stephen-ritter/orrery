@@ -26,7 +26,7 @@ hardware that is *not* a registry part. The page is generated from the ledger;
 
 <!-- BEGIN GENERATED (registry/coverage.toml via sim/coverage.py) -->
 
-**6 of 12 part types are supported on the bus** (5 landed, 1 as the barrier tick); **4 of 11 scenario sections are used**. Everything upstream builds; every gap below is ours. The counts are computed from `registry/coverage.toml`, and a hand-edit inside this region fails the coverage gate.
+**7 of 12 part types are supported on the bus** (6 landed, 1 as the barrier tick); **4 of 11 scenario sections are used**. Everything upstream builds; every gap below is ours. The counts are computed from `registry/coverage.toml`, and a hand-edit inside this region fails the coverage gate.
 
 ## Sensors
 
@@ -37,7 +37,7 @@ hardware that is *not* a registry part. The page is generated from the ledger;
 | `magnetometer` | landed | BSK_LINK/OnboardState -> BSK_LINK_ONBOARD_STATE_TLM | — | — |
 | `starTracker` | landed | BSK_LINK/OnboardState + BSK_LINK/AttitudeState -> 0x08D0 | — | — |
 | `gpsReceiver` | landed | BSK_LINK/NavState -> BSK_LINK_NAV_STATE_TLM | — | — |
-| `camera` | catalog-unlanded | — | `registry-row` | the imaging round |
+| `camera` | landed | BSK_LINK/OpNavState -> 0x08D1 | — | — |
 
 ## Effectors
 
@@ -74,7 +74,7 @@ which is exactly why they move every pinned trajectory.
 | `formations` | unused-with-reason | Relative-motion holding would move the anchored twin digests, and the project would lose the strongest artifact it has - a pair of trajectories that reproduce bit-for-bit. Revisit when relative motion is the mission, and re-found the pair deliberately when it does. |
 | `logging` | unused-with-reason | The harness records its own ledgers (trajectory digests, wire audits, truth gateways); bskforge's recorders would be a second, less audited copy of the same story. |
 | `visualization` | unused-with-reason | The operator's window is COSMOS, and it is graded: a viz path that no gate reads is decoration, and decoration in this repo tends to become a claim. |
-| `camera` | unused-with-reason | bskforge grew the instrument type (v0.4.0: Vizard renders into the camera module, images arrive on opnavImageOutMsg), but no scenario flies one yet and the OpNav knowledge channel it would feed has no exhibit grading its numbers. It lands with its own gates - the anchored digests must print unchanged with the camera on - not before. |
+| `camera` | unused-with-reason | the circuit landed (row, wire, firmware table, vizard.lock-pinned renderer), but this area measures YARD usage: it flips to `used` when camera_ops.toml has flown the pair gate - the LOS exhibit on the live fleet and the anchored digest printing unchanged with and without the trailing camera sections. Declared before flown: the ledger is a map, not a wish. |
 | `custom` | banned | Hardware is declared by naming a type, never wired in by hand. Fleets are read through bskforge's audited profile, which sim/fleet_policy.py asks for, so this is refused at load rather than by omission. The reason is mechanical: hardware no schema type names cannot have a registry row, so the fit manifest never declares it, this ledger has no union to classify it under, no defs carry it, and no exhibit could judge its numbers - its readings would be a wire nothing grades. The route for hardware upstream cannot model yet is the one gpsReceiver took: grow the type upstream, with its own tests, and land a row here afterwards. This ledger is what makes that route survivable: it names every gap a hand-wired device would have papered over, and who owns each one. |
 | `monte_carlo` | unused-with-reason | Dispersion studies need per-configuration digests (a distribution is meaningless against one pinned trajectory), so this is the per-configuration digest round's customer rather than a gap today. |
 
@@ -85,7 +85,7 @@ which is exactly why they move every pinned trajectory.
 - **`magnetometer`** — landed. Measured field body-frame, in the bundle row. Its actuator counterpart (mtb) is still command-path, so we sense the field without yet pushing on it.
 - **`starTracker`** — landed. the device's own quaternion (scalar-first, C2EP), compared to truth's MRP as the representation-free angle gap at tick-exact epochs. Also the registry's own fan-out specimen - one TOML line, two frames.
 - **`gpsReceiver`** — landed. a modelled receiver whose declared sigmas ARE the acceptance bounds, read out of the manifest that built the plant. The first part where the fleet's physics and the gate's rubric share one source.
-- **`camera`** — catalog-unlanded · owner: **the imaging round**. bskforge builds the pinhole + landmark device today; what is missing is entirely ours: a row, a byte-segment container (EDS arrays flatten to _0.._n), a provider reading the device message, and a p5 compare mode for pixels - which p5 will REFUSE to run until it exists, by design.
+- **`camera`** — landed. Vizard paints the frame, the Basilisk camera module receives it, and the limb/horizon estimators turn pixels into a planet vector - the OPNAV frame carries that KNOWLEDGE (LOS + verdict flags), never the image. The exhibit grades the LOS against truth rotated into body, bounded by the declared FOV; the renderer itself is pinned by vizard.lock and mounts as a compose profile.
 - **`reactionWheels`** — landed. The closed loop the project is built on: FSW computes, the world applies, the digest records. Every other effector wants this same shape.
 - **`mtb`** — command-path · owner: **the control-authority round**. The magnetometer already streams the field, so sensing is done; what is missing is the torque rod and the law that commands it. Momentum management is attitude *supervision*, which is the safe-mode study - declaring the effector before the law exists would give the fleet a coil nobody drives.
 - **`thrusters`** — command-path · owner: **the control-authority round**. The cheapest-looking gap here: the SPS app exists and already uploads and runs a schedule, but the pulse terminates at the bus. Closing it needs a force path (and then pulse-width physics inside a 1 Hz lockstep tick, which is the actual hard part - a thruster wants a faster tick than attitude does).

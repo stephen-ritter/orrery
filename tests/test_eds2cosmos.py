@@ -314,7 +314,7 @@ def test_topicids_header_mirrors_xml() -> None:
         assert c_topics.get(name) == value, (
             f"topic {name}: XML {value} != C header {c_topics.get(name)}"
         )
-    assert len(xml_topics) == len(c_topics) == 18  # 15 apps + 3 landed parts (REG)
+    assert len(xml_topics) == len(c_topics) == 19  # 15 apps + 4 landed parts (REG/CAM)
 
 
 def test_time_cmd_mid_derives_from_topicids() -> None:

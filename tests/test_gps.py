@@ -74,11 +74,11 @@ def _write(tmp_path: Path, name: str, body: str) -> Path:
 def test_fleet_manifests_fit_receivers() -> None:
     """Both fleet files carry the lines that build the plant receivers."""
     chief = declared_sigmas(CHIEF_TOML)
-    assert chief == {"chief": {"gnss": (15.0, 0.01), "attitude": (1.0e-4,)}}
+    assert chief == {"chief": {"gnss": (15.0, 0.01), "attitude": (1.0e-4,), "opnav": None}}
     twin = declared_sigmas(TWIN_TOML)
     assert twin == {
-        "chief": {"gnss": (15.0, 0.01), "attitude": (1.0e-4,)},
-        "deputy": {"gnss": (15.0, 0.01), "attitude": (1.0e-4,)},
+        "chief": {"gnss": (15.0, 0.01), "attitude": (1.0e-4,), "opnav": None},
+        "deputy": {"gnss": (15.0, 0.01), "attitude": (1.0e-4,), "opnav": None},
     }
     # and the sigmas p5 judges by are the schema's own defaults, restated
     # nowhere: a loaded config agrees with the raw-file read.

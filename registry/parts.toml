@@ -170,7 +170,7 @@ epoch = "strict"                       # same TICK: at 0.08 rad/s one second is 
 [[part]]
 name = "opnav"
 display = "Optical navigation (planet knowledge from rendered images, CAM)"
-landed = false
+landed = true                          # the circuit exists end to end (CAM ceremony)
 # The presence gate is the craft's [[camera]] section - a top-level module
 # section, not a sensor/effector-union device, and the test_parts catalog
 # seam learned that door (catalog before factory, one law, new shape).
@@ -187,3 +187,21 @@ evs_info_id = 20                       # 14..19 serve ONBOARD/NAV/ATTSTATE and t
 evs_label = "OpNav knowledge"
 consumer = "bsk_link"                  # the generic consumer: zero C edits at landing
 subscribers = []                       # knowledge channel: ground watches; fcs never reads it
+
+[part.declared]
+# the instrument's own angular scale: the LOS may err by nothing a bigger
+# lens would have resolved anyway - the bound rides the declared FOV
+angle_sigma = "field_of_view"
+
+[part.exhibit]
+kind = "truth_pair"
+compare = "los_angle"                  # flight Vector3 vs truth rotated into body: angle gap
+flight_packet = "BSK_LINK_OPNAV_STATE_TLM"
+truth_packet = "TRUTH_STATE_TLM"
+flight_pos = "RBN_B"                   # flight opinion: planet vector from pixels
+truth_pos = "R_BN_N"                   # truth: rotated by truth attitude into body frame
+floor = 0.0                            # the renderer device is NOISELESS by design: the
+#                                       oracle guard here is exactness itself - a gap of
+#                                       exactly zero means the wire copied the truth vector
+ceiling = "declared"                   # over 1 FOV the two wires describe different skies
+epoch = "strict"                       # knowledge rides the same world tick

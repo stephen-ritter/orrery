@@ -20,4 +20,7 @@
 /** \brief star tracker (attitude knowledge, REG exit) (part "attitude") */
 #define BSK_LINK_ATTITUDE_STATE_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_ATTITUDE_STATE_TLM_TOPICID)
 
+/** \brief Optical navigation (planet knowledge from rendered images, CAM) (part "opnav") */
+#define BSK_LINK_OPNAV_STATE_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_OPNAV_STATE_TLM_TOPICID)
+
 #endif /* ORRERY_PART_MSGIDS_H */

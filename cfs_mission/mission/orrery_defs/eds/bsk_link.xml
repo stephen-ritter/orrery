@@ -291,6 +291,11 @@
               <GenericTypeMap name="TelemetryDataType" type="AttitudeStateTlm" />
             </GenericTypeMapSet>
           </Interface>
+          <Interface name="OPNAV_STATE_TLM" shortDescription="Software bus ingested OpNav planet knowledge from rendered images (opinion, never truth)" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="OpNavStateTlm" />
+            </GenericTypeMapSet>
+          </Interface>
           <Interface name="TORQUE_COMMAND_TLM" shortDescription="Software bus torque command from fcs for basilisk" type="CFE_SB/Telemetry">
             <GenericTypeMapSet>
               <GenericTypeMap name="TelemetryDataType" type="TorqueCommandTlm" />

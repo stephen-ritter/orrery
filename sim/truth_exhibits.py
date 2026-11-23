@@ -81,16 +81,23 @@ def truth_pair_rows() -> list[Part]:
         executable = (
             ex.kind == "truth_pair"
             and len(part.bskforge_types) == 1
-            and ex.ceiling == "3sqrt3"
             and ex.epoch == "strict"
+            and (
+                (ex.ceiling == "3sqrt3" and ex.compare in {"vector3", "rotation_mrp"})
+                # CAM's noiseless device: the bound pair is zero-exactness vs
+                # the declared angular scale (FOV), not a Gaussian clamp
+                or (ex.ceiling == "declared" and ex.compare == "los_angle")
+            )
         )
         if executable:
             if ex.compare == "vector3":
                 executable = {"pos_sigma", "vel_sigma"} <= part.declared.keys()
             elif ex.compare == "rotation_mrp":
                 executable = "angle_sigma" in part.declared and bool(ex.flight_pos and ex.truth_pos)
+            elif ex.compare == "los_angle":
+                executable = "angle_sigma" in part.declared and bool(ex.flight_pos and ex.truth_pos)
             else:
-                executable = False  # e.g. CAM's truth-vs-image: joins at CAM
+                executable = False  # e.g. truth-vs-image joins later than CAM v1
         if not executable:
             raise NotImplementedError(
                 f"{part.name}: landed row promises an exhibit this gate cannot "
@@ -149,9 +156,14 @@ def declared_sigmas(
         per_part: dict[str, tuple[float, ...] | None] = {}
         for row in TRUTH_PAIR_ROWS:
             block = next((s for s in sc.sensors if s.type == row.bskforge_types[0]), None)
+            if block is None and row.bskforge_types[0] == "camera":
+                # the rendered eye is a module SECTION mounted on the craft
+                # (CAM), not a sensor line: its declared angular scale lives
+                # in the [[camera]] block that also built the instrument
+                block = next((c for c in config.camera if c.parent == sc.name), None)
             if block is None:
                 per_part[row.name] = None  # not fitted: declared absence, no bound needed
-            elif row.exhibit is not None and row.exhibit.compare == "rotation_mrp":
+            elif row.exhibit is not None and row.exhibit.compare in {"rotation_mrp", "los_angle"}:
                 angle = _sigma(block, row.declared["angle_sigma"], sc.name, row.name)
                 per_part[row.name] = (angle,)
             else:
@@ -253,6 +265,89 @@ def _run_rotation_pair(
     )
 
 
+def _mrp_to_body(sigma: tuple[float, float, float]) -> list[list[float]]:
+    """The body-frame rotation C(this wheel's MRP2C) as a nested list.
+
+    Formula verified against the wheel's ``RigidBodyKinematics.MRP2C`` on a
+    sample MRP: C = q2c(m2q(sigma))^T with scalar-first quaternions - the
+    matrix that carries inertial components into the body frame (the probe's
+    exact usage: truth ``r_BN_N`` through C matched ``r_BN_B`` to 0.73 deg).
+    """
+    sx, sy, sz = (float(c) for c in sigma)
+    s2 = sx * sx + sy * sy + sz * sz
+    d = 1.0 + s2
+    w, x, y, z = (1.0 - s2) / d, 2 * sx / d, 2 * sy / d, 2 * sz / d
+    # q2c transposed, written out (transpose of the standard scalar-first DCM)
+    return [
+        [1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w)],
+        [2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w)],
+        [2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y)],
+    ]
+
+
+def _unit_gap_rad(a: tuple[float, ...], b: tuple[float, ...]) -> float:
+    """Angle between two vectors [rad]; zero-length input is a bug, not 0."""
+    na, nb = norm3(a), norm3(b)
+    assert na > 0.0 and nb > 0.0, "unit gap asked of a zero-length vector"
+    dot = sum(x * y for x, y in zip(a, b, strict=True)) / (na * nb)
+    return math.acos(max(-1.0, min(1.0, dot)))
+
+
+def _run_los_pair(
+    token: str,
+    name: str,
+    flight: str,
+    truth: str,
+    row: Part,
+    sigma: float,
+) -> None:
+    """los_angle compare: planet vector from PIXELS vs truth rotated to body.
+
+    The rendered eye's knowledge is a direction, so the comparison is one
+    representation-free angle gap per tick. The device is NOISELESS by
+    construction (a deterministic renderer, no error model), which retires
+    the Gaussian floor: the oracle guard here is EXACTNESS - a gap of zero
+    would mean the wire copied the truth vector instead of measuring light.
+    The ceiling is the instrument's own DECLARED angular scale (FOV): an
+    estimate over one FOV off describes a different sky.
+    """
+    ex = row.exhibit
+    assert ex is not None
+    err_max = 0.0
+    pairs = 0
+    end = time.monotonic() + 90.0  # the knowledge stream rides the render rate
+    while pairs < 4 and time.monotonic() < end:
+        time.sleep(0.25)
+        t = sample(token, truth, ex.truth_packet)
+        k = sample(token, flight, ex.flight_packet)
+        if abs(num(k, "SIM_TIME_S") - num(t, "SIM_TIME_S")) > STRICT_EPOCH_S:
+            continue  # knowledge must ride the same world tick as its truth
+        if int(num(k, "VALID")) != 1:
+            continue  # no fix in hand yet: the estimate is silence, not data
+        r_b = _mrp_to_body(vec3(t, "SIGMA_BN"))
+        r_n = vec3(t, ex.truth_pos)
+        truth_body = tuple(sum(r_b[i][j] * r_n[j] for j in range(3)) for i in range(3))
+        err_max = max(err_max, _unit_gap_rad(vec3(k, ex.flight_pos), truth_body))
+        pairs += 1
+    assert pairs >= 4, (
+        f"{name}: truth/{row.name} caches never shared a comparable VALID epoch "
+        f"({pairs}/4 pairs) - the renderer is silent or the estimator is blind"
+    )
+    assert err_max > 0.0, (
+        f"{name}: LOS gap exactly zero across {pairs} ticks - pixels cannot "
+        "reproduce a vector; the wire copied the truth channel (oracle)"
+    )
+    assert err_max <= 1.01 * sigma, (
+        f"{name}: LOS gap {err_max:.3f} rad over the declared angular scale "
+        f"({sigma:.3f} rad FOV) - two eyes, two skies?"
+    )
+    print(
+        f"[{name}] truth LOS vs {row.name.upper()} (declared scale {sigma:.3f} rad): "
+        f"max LOS gap {math.degrees(err_max):.2f} deg - derived from light, "
+        "agrees as one world"
+    )
+
+
 def run_truth_pair(
     token: str,
     name: str,
@@ -281,6 +376,9 @@ def run_truth_pair(
     wait_stream(token, flight, ex.flight_packet, 90.0, f"{name} {row.name}")
     if ex.compare == "rotation_mrp":
         _run_rotation_pair(token, name, flight, truth, row, float(sigmas[0]))
+        return
+    if ex.compare == "los_angle":
+        _run_los_pair(token, name, flight, truth, row, float(sigmas[0]))
         return
     (pos_sigma, vel_sigma) = sigmas
     dr_max = dv_max = 0.0

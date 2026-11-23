@@ -13,7 +13,7 @@
 
 #include "cfe.h"
 #include "orrery_msgids.h"
-#define BSK_LINK_FRAME_ROWS 3
+#define BSK_LINK_FRAME_ROWS 4
 #define BSK_LINK_FRAME_MAX_PAYLOAD 128
 
 /* Fit handshake (OB): the digest of this table's SEMANTICS (row order,
@@ -22,7 +22,7 @@
  * FitManifest; a mismatch means one side is stale, which no size check
  * can see (a stale binary is perfectly self-consistent). Rebuild:
  * uv run python -m codegen.emit_frames, then cfs_mission/build.sh. */
-#define BSK_LINK_FIT_REGISTRY_HASH 0xf0b0bfb6u
+#define BSK_LINK_FIT_REGISTRY_HASH 0xd9e8518eu
 
 typedef struct
 {
@@ -47,6 +47,10 @@ static const BskLink_WorldFrameDef_t BskLink_WorldFrames[BSK_LINK_FRAME_ROWS] = 
     { "ATTSTATE", "BSK_LINK/AttitudeState", BSK_LINK_ATTITUDE_STATE_TLM_MID,
       /* evs */ 48, 16 /* BSK_LINK_ATTSTATE_INF_EID */,
       "ST attitude" },
+    /* name: opnav - Optical navigation (planet knowledge from rendered images, CAM) */
+    { "OPNAV", "BSK_LINK/OpNavState", BSK_LINK_OPNAV_STATE_TLM_MID,
+      /* evs */ 72, 20 /* BSK_LINK_OPNAV_INF_EID */,
+      "OpNav knowledge" },
 };
 
 #endif /* ORRERY_FRAMES_H */

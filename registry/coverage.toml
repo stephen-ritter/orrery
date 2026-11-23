@@ -100,16 +100,17 @@ fleet's physics and the gate's rubric share one source."""
 [[type]]
 name = "camera"
 kind = "sensor"
-status = "catalog-unlanded"
+status = "landed"
 bskforge = "schema+builder"
-wire = ""
-first_hop = "registry-row"
-scenarios = []
-phase = "CAM"
-why = """bskforge builds the pinhole + landmark device today; what is missing is
-entirely ours: a row, a byte-segment container (EDS arrays flatten to _0.._n),
-a provider reading the device message, and a p5 compare mode for pixels - which
-p5 will REFUSE to run until it exists, by design."""
+wire = "BSK_LINK/OpNavState -> 0x08D1"
+first_hop = ""
+scenarios = ["camera_ops.toml"]
+phase = ""
+why = """Vizard paints the frame, the Basilisk camera module receives it, and the
+limb/horizon estimators turn pixels into a planet vector - the OPNAV frame
+carries that KNOWLEDGE (LOS + verdict flags), never the image. The exhibit
+grades the LOS against truth rotated into body, bounded by the declared FOV;
+the renderer itself is pinned by vizard.lock and mounts as a compose profile."""
 
 # --- effectors --------------------------------------------------------------
 # An effector's telemetry is knowledge (and rides a row); its actuation is a
@@ -258,11 +259,11 @@ gate reads is decoration, and decoration in this repo tends to become a claim.""
 [[area]]
 name = "camera"
 status = "unused-with-reason"
-why = """bskforge grew the instrument type (v0.4.0: Vizard renders into the
-camera module, images arrive on opnavImageOutMsg), but no scenario flies one yet
-and the OpNav knowledge channel it would feed has no exhibit grading its numbers.
-It lands with its own gates - the anchored digests must print unchanged with the
-camera on - not before."""
+why = """the circuit landed (row, wire, firmware table, vizard.lock-pinned renderer),
+but this area measures YARD usage: it flips to `used` when camera_ops.toml has
+flown the pair gate - the LOS exhibit on the live fleet and the anchored digest
+printing unchanged with and without the trailing camera sections. Declared
+before flown: the ledger is a map, not a wish."""
 
 [[area]]
 name = "custom"

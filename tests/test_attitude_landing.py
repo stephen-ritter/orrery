@@ -95,7 +95,7 @@ def test_an_undeclared_sigma_stops_the_truth_gate(tmp_path: Path) -> None:
 
     bare = tmp_path / "bare_sigmas.toml"
     bare.write_text(_MINIMAL_TOML.format(name="sc1", extra=""), encoding="utf-8")
-    assert declared_sigmas(bare)["sc1"] == {"gnss": None, "attitude": None}
+    assert declared_sigmas(bare)["sc1"] == {"gnss": None, "attitude": None, "opnav": None}
 
     for label, extra in (("ideal", _IDEAL_ST), ("zero", _IDEAL_ST + "white_noise = 0.0\n")):
         path = tmp_path / f"st_{label}.toml"

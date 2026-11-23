@@ -9,10 +9,10 @@ is dialed:
 * the estimators ride the built camera module (image -> limb -> horizon),
   on the Earth index the message stream itself carries;
 * the manifest's camera line claims the part in the fit vocabulary;
-* the OPNAV provider joins the observer set only for camera plants;
-* the provider's frame stays LOCKED until the registry row lands - the
-  encode door is the phase line (the rig's topic validation is the second
-  one, and it fires at run wiring, not here).
+* the OPNAV provider joins the observer set only for camera plants, and
+  before any Vizard frame has arrived it reports SILENCE (valid=0 with a
+  zero vector) - a knowledge channel that ships a plausible default would
+  be inventing a planet.
 """
 
 from __future__ import annotations
@@ -20,11 +20,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pytest
 from bskforge import load_scenario
 
 import sim.forge_scenario as fz
-from sim.eds_link import LinkUnavailable
 
 REPO = Path(__file__).resolve().parents[1]
 CAMERA_SCENARIO = REPO / "sim" / "scenarios" / "camera_ops.toml"
@@ -86,14 +84,21 @@ def test_the_opnav_provider_joins_only_the_camera_world() -> None:
         assert "OPNAV" not in fz.plant_observers(body, clock)
 
 
-def test_the_opnav_frame_is_locked_until_the_row_lands() -> None:
-    """The encode door is the registry's phase line: unlanded, unpackable.
+def test_the_frame_packs_and_reports_silence_before_the_first_render() -> None:
+    """Row landed, door open: before any Vizard frame the provider says so.
 
-    Landing the row (codegen, the C table, the defs, the exhibit - one
-    ceremony) is what unlocks this provider. Until then the camera world
-    cannot even be flown through the rig: RigChannel refuses providers on
-    topics no landed row owns, so the phase line fails LOUD at wiring.
+    Valid=0 with a zero vector is the channel declaring its own silence -
+    the alternative, a plausible-looking default estimate, would be the
+    knowledge channel inventing a planet.
     """
+    from sim.eds_link import decode_opnav_state
+
     (camera_body,) = build_bodies(CAMERA_SCENARIO)
-    with pytest.raises(LinkUnavailable, match="not a landed registry container"):
-        camera_body.opnav_state_bytes(1.0, 1)
+    payload = camera_body.opnav_state_bytes(1.0, 1)
+    assert len(payload) == 72, "the provider packs what the row declares"
+    frame = decode_opnav_state(payload)
+    assert (frame.sim_time_s, frame.frame) == (1.0, 1)
+    assert frame.r_bn_b == (0.0, 0.0, 0.0), "silence is zeros, never a fake fix"
+    assert frame.planet_id == fz.OPNAV_PLANET_TARGET
+    assert frame.camera_id == 1
+    assert not frame.valid and not frame.fault_detected

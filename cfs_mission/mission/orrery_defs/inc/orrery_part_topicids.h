@@ -18,4 +18,7 @@
 /* part: attitude - star tracker (attitude knowledge, REG exit) */
 #define CFE_MISSION_BSK_LINK_ATTITUDE_STATE_TLM_TOPICID 208
 
+/* part: opnav - Optical navigation (planet knowledge from rendered images, CAM) */
+#define CFE_MISSION_BSK_LINK_OPNAV_STATE_TLM_TOPICID 209
+
 #endif /* ORRERY_PART_TOPICIDS_H */
