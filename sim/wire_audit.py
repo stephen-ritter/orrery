@@ -20,7 +20,7 @@ import sys
 import time
 
 from codegen.eds2cosmos import build_eds, mission_packets
-from sim.p2_ground_test import CFS, MISSION_DEFS
+from sim.ground_probe import CFS, MISSION_DEFS
 
 
 def main() -> int:

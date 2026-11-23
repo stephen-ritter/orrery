@@ -184,7 +184,7 @@ def test_acceptance_refuses_to_grade_a_smuggled_world(tmp_path: Path) -> None:
     the plant. Grading such a world would put an unaudited wire inside an
     exhibit, so the gate reads manifests through the same door the plant does.
     """
-    from sim.p5_truth_check import declared_sigmas
+    from sim.truth_exhibits import declared_sigmas
 
     path = _write(
         tmp_path,

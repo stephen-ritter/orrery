@@ -5,9 +5,9 @@
 #   anchored A   chief.toml, ENABLE + SET_GAIN frame-pinned  known-good pair
 #   anchored B   same pins, again                            known-good pair
 #
-# THE GATE: both anchored flights prove the loop (p3_fcs_test's assertions)
+# THE GATE: both anchored flights prove the loop (fcs_probe's assertions)
 # and land inside the known-good SET tracked in
-# tests/baselines/p3_anchored_digest.txt. A third value fails: that is
+# tests/baselines/pair_anchored_digest.txt. A third value fails: that is
 # physics, and physics re-founds loudly or not at all.
 #
 # Why the set holds two values: the pins freeze the sim cadence, but
@@ -39,14 +39,14 @@ flight() { # $1 = label, then env assignments the caller exported
         return 1
     fi
     echo "[$label] digest $digest"
-    printf '%s\n' "$digest" >"/tmp/opencode/p3_dig_$label.txt"
+    printf '%s\n' "$digest" >"/tmp/opencode/pair_dig_$label.txt"
 }
 
 echo "--- [1/3] witness: classic wall-clock ENABLE (printed, not gated) ---"
 SIM_MODULE=sim.forge_scenario SIM_DURATION=100 \
     flight witness || exit 1
-WANT_W="$(head -1 "$BASE/p3_witness_digest.txt" 2>/dev/null || true)"
-HAVE_W="$(cat /tmp/opencode/p3_dig_witness.txt)"
+WANT_W="$(head -1 "$BASE/pair_witness_digest.txt" 2>/dev/null || true)"
+HAVE_W="$(cat /tmp/opencode/pair_dig_witness.txt)"
 if [ -n "$WANT_W" ] && [ "$WANT_W" != "$HAVE_W" ]; then
     echo "[witness] differs from warm-session expectation $WANT_W (informational; not-anchored by design)"
 fi
@@ -61,15 +61,15 @@ SIM_MODULE=sim.forge_scenario SIM_ARGS="--scenario sim/scenarios/chief.toml" \
     START_FRAME=9 GAIN_FRAME=16 SIM_DURATION=100 \
     flight reanchored || exit 1
 
-A="$(cat /tmp/opencode/p3_dig_anchored.txt)"
-B="$(cat /tmp/opencode/p3_dig_reanchored.txt)"
+A="$(cat /tmp/opencode/pair_dig_anchored.txt)"
+B="$(cat /tmp/opencode/pair_dig_reanchored.txt)"
 if [ "$A" != "$B" ]; then
     echo "[pair] flights disagree ($A vs $B): host placement moved mid-session;"
     echo "[pair] both must still be known-good below, or this is physics."
 fi
 
-file="$BASE/p3_anchored_digest.txt"
-[ -f "$file" ] || { echo "no baseline set at $file - FOUND it on first flight"; cat /tmp/opencode/p3_dig_anchored.txt >"$file"; }
+file="$BASE/pair_anchored_digest.txt"
+[ -f "$file" ] || { echo "no baseline set at $file - FOUND it on first flight"; cat /tmp/opencode/pair_dig_anchored.txt >"$file"; }
 bad=0
 for d in "$A" "$B"; do
     if ! grep -qxF "$d" "$file"; then bad=1; fi

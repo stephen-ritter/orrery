@@ -8,7 +8,7 @@
 # the app markers (gs_tcp + FCS + OBC HK - an unloaded obc_hk must fail HERE, not
 # as a missing-packet timeout three minutes later), launches the operations
 # plant (chief.toml) paced so ground sampling windows are wall-clock sane,
-# then runs sim/p4_cosmos_wrap.py against the COSMOS JSON-RPC API. Finishes
+# then runs sim/beacon_tables.py against the COSMOS JSON-RPC API. Finishes
 # by counting UNKNOWN/length faults the operator logged SINCE the client
 # started: the beacon table and the defs must match byte-for-byte, both ways.
 set -euo pipefail
@@ -67,7 +67,7 @@ fi
 
 echo "--- basilisk operations plant (paced, ${SIM_DURATION} sim-s) ---"
 uv run python -m sim.forge_scenario --duration "$SIM_DURATION" --zmq --pace \
-    --scenario sim/scenarios/chief.toml >/tmp/opencode/p4_wrap_scenario.log 2>&1 &
+    --scenario sim/scenarios/chief.toml >/tmp/opencode/beacon_wrap_scenario.log 2>&1 &
 SIM_PID=$!
 sleep 3
 # a standing fleet holds 5580+: the host sim dies silently while the mission
@@ -75,14 +75,14 @@ sleep 3
 if ! kill -0 "$SIM_PID" 2>/dev/null; then
     echo "world died at startup: a host link port is already taken?" >&2
     echo "  (sweep the yard: scripts/fleet.sh down) last lines:" >&2
-    tail -3 /tmp/opencode/p4_wrap_scenario.log >&2 || true
+    tail -3 /tmp/opencode/beacon_wrap_scenario.log >&2 || true
     exit 1
 fi
 
 echo "--- COSMOS-side acceptance (JSON-RPC only) ---"
 START_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 rc=0
-uv run python -m sim.p4_cosmos_wrap || rc=$?
+uv run python -m sim.beacon_tables || rc=$?
 
 echo "--- COSMOS log hygiene (since client start) ---"
 # The real signature is the interface microservice WARN "UNKNOWN packet

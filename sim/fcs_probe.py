@@ -53,7 +53,7 @@ import zmq
 
 from codegen.eds2cosmos import build_eds
 from sim.fleet import ports
-from sim.p2_ground_test import GroundClient, build_cmd
+from sim.ground_probe import GroundClient, build_cmd
 
 REPO = Path(__file__).resolve().parents[1]
 CFS = REPO / "cfs_mission/cFS"

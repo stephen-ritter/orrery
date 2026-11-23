@@ -225,7 +225,7 @@ goes stale on the day it matters.
 
 `compare` names a comparison the gate knows how to execute. A landed row whose
 `compare` the gate cannot honestly run **stops the run and names the row** — the
-exhibit is a capability, so a new one is implemented in `sim/p5_truth_check.py`
+exhibit is a capability, so a new one is implemented in `sim/truth_exhibits.py`
 alongside the guard that decides what is executable, in the same round the part
 lands. Landing before the comparison exists turns the offline gate red on purpose.
 
@@ -270,7 +270,7 @@ Individual commands, when you want one of them:
 ```bash
 uv run pytest -q && uv run ruff check && uv run ruff format --check && uv run ty check
 uv run python -m sim.wire_audit 20                    # every stream against its own def
-ORRERY_SCENARIO=sim/scenarios/twin_ops.toml uv run python -m sim.p5_truth_check
+ORRERY_SCENARIO=sim/scenarios/twin_ops.toml uv run python -m sim.truth_exhibits
 bash scripts/fly_fleet.sh                        # one world, two vehicles, both digests
 ```
 

@@ -48,9 +48,9 @@ import time
 
 from codegen.eds2cosmos import build_eds
 from codegen.eds_model import Packet
+from sim.fcs_probe import FrameLog, wire_float
 from sim.fleet import ports
-from sim.p2_ground_test import CFS, MISSION_DEFS, GroundClient, build_cmd
-from sim.p3_fcs_test import FrameLog, wire_float
+from sim.ground_probe import CFS, MISSION_DEFS, GroundClient, build_cmd
 
 T_ENABLE = 40.0  # sim second the scheduled FCS ENABLE is due at
 T_GAIN = 70.0  # sim second the scheduled SET_GAIN is due at

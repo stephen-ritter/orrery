@@ -167,7 +167,7 @@ cosmos_answers() {
 import sys
 
 try:
-    from sim.p2_cosmos_check import login, rpc
+    from sim.cosmos_api import login, rpc
 
     targets = set(rpc(login(), "get_target_names"))
 except Exception as exc:  # noqa: BLE001 - "not ready" has many shapes, one message

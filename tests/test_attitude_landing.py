@@ -18,7 +18,7 @@ import pytest
 
 import sim.forge_scenario as fz
 from sim.eds_link import available
-from sim.p5_truth_check import _angle_gap_rad, _mrp_to_quat
+from sim.truth_exhibits import _angle_gap_rad, _mrp_to_quat
 
 SCENARIOS = fz.DEFAULT_SCENARIO.parent
 
@@ -91,7 +91,7 @@ def test_an_undeclared_sigma_stops_the_truth_gate(tmp_path: Path) -> None:
     part and the field instead of grading a tautology - while a device that
     was never fitted stays plain ``None``: absence is a fact, this is a lie.
     """
-    from sim.p5_truth_check import declared_sigmas
+    from sim.truth_exhibits import declared_sigmas
 
     bare = tmp_path / "bare_sigmas.toml"
     bare.write_text(_MINIMAL_TOML.format(name="sc1", extra=""), encoding="utf-8")

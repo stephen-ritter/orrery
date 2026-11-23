@@ -28,7 +28,7 @@ from bskforge import load_scenario
 from codegen.eds_sources import CFS
 from sim import forge_scenario as fz
 from sim.eds_link import available, decode_nav_state
-from sim.p5_truth_check import declared_sigmas
+from sim.truth_exhibits import declared_sigmas
 
 pytestmark = [
     pytest.mark.skipif(not CFS.is_dir(), reason="cFS is not fetched: run scripts/fetch_cfs.sh"),

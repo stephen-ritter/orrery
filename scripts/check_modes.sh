@@ -4,7 +4,7 @@
 # Same bones as fly_world.sh (mission up, plant in lockstep, ground client
 # drives, trap cleans up) but the default plant is the chief TOML - the
 # supervisor feeds on ONBOARD frames, which only that plant publishes - and
-# the client is sim/p4b_modes_test.py: ENABLE -> SET_WHEEL_LIMIT 10 -> SAFE
+# the client is sim/modes_probe.py: ENABLE -> SET_WHEEL_LIMIT 10 -> SAFE
 # (bus silent, echo zero, gate alive) -> ENABLE refused -> limit 600 + ENABLE
 # -> law-exact torque again. A dead lockstep gate still exits the scenario
 # with rc=2: SAFE stops the LAW, never the ACKS, and that is what this proves
@@ -20,7 +20,7 @@ BOOT_TIMEOUT="${BOOT_TIMEOUT:-120}"
 SIM_DURATION="${SIM_DURATION:-120}"
 SIM_MODULE="${SIM_MODULE:-sim.forge_scenario}"
 SIM_ARGS="${SIM_ARGS:---scenario sim/scenarios/chief.toml}"
-LOG="${LOG:-/tmp/opencode/p4b_modes_scenario.log}"
+LOG="${LOG:-/tmp/opencode/modes_probe_scenario.log}"
 
 # D10: this harness flies ONE vehicle on the legacy port block (modes are
 # proven on the flight loop itself); the D9 BIRD=<slug> manifest mode died
@@ -80,7 +80,7 @@ sleep 3
 
 echo "--- mode-supervisor ground client ---"
 rc=0
-uv run python -m sim.p4b_modes_test --instance "$INSTANCE" || rc=$?
+uv run python -m sim.modes_probe --instance "$INSTANCE" || rc=$?
 
 sim_rc=0
 # A modes run mutates the plant on purpose, so no digest artifact is waited

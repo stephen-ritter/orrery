@@ -5,7 +5,7 @@
 # Prereq: scripts/cosmos_stack.sh has loaded gem >= 0.1.2 (plugin carries
 # TRUTH_CHIEF/TRUTH_DEPUTY + the truth interfaces). Fleets up a scenario
 # (fleet.sh starts each vehicle's truth gateway on its derived port), runs
-# sim/p5_truth_check.py through JSON-RPC (fresh truth streams, truth-vs-
+# sim/truth_exhibits.py through JSON-RPC (fresh truth streams, truth-vs-
 # knowledge gap at bias/noise scale, the GNSS opinion vs truth orbit pair
 # [KN, 0x08CF], truth watching the commanded detumble, truth targets
 # uncommandable), then proves the port-level half of the boundary: bytes
@@ -39,7 +39,7 @@ bash scripts/fleet.sh status "$SCENARIO"
 echo "--- COSMOS-side truth acceptance (JSON-RPC only) ---"
 START_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 rc=0
-uv run python -m sim.p5_truth_check || rc=$?
+uv run python -m sim.truth_exhibits || rc=$?
 
 echo "--- truth-port refusal (the boundary, at the wire) ---"
 # Write junk at vehicle 0's truth port; the gateway must count, refuse,

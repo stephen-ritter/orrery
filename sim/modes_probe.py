@@ -30,9 +30,9 @@ import time
 from dataclasses import dataclass
 
 from codegen.eds2cosmos import build_eds
+from sim.fcs_probe import EchoWatcher
 from sim.fleet import ports
-from sim.p2_ground_test import CFS, MISSION_DEFS, GroundClient, build_cmd
-from sim.p3_fcs_test import EchoWatcher
+from sim.ground_probe import CFS, MISSION_DEFS, GroundClient, build_cmd
 
 FCS_APP = "FCS"
 FCS_FC_ENABLE = 1

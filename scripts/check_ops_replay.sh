@@ -29,7 +29,7 @@ if [ "$rc" -ne 0 ] || [ -z "$digest" ]; then
 fi
 echo "[scheduled] digest $digest"
 
-file="$BASE/p6_scheduled_digest.txt"
+file="$BASE/scheduled_digest.txt"
 if [ ! -f "$file" ]; then
     printf '%s\n' "$digest" >"$file"
     echo "[scheduled] baseline FOUND at $file (first flight of this world)"
@@ -41,7 +41,7 @@ else
     echo "[scheduled] baseline $file matched"
 fi
 
-anchored="$BASE/p3_anchored_digest.txt"
+anchored="$BASE/pair_anchored_digest.txt"
 if [ -f "$anchored" ] && [ "$(cat "$anchored")" = "$digest" ]; then
     echo "[scheduled] digest EQUALS the plain anchored flight - the queue" \
         "changed nothing? separate worlds expected"

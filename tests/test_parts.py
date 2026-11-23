@@ -55,7 +55,7 @@ def test_rig_topics_are_exactly_the_landed_rows() -> None:
     assert OBSERVER_TOPICS == {p.zmq_topic for p in LANDED if p.consumer == "bsk_link"}
 
 
-def test_p5_executes_every_landed_exhibit() -> None:
+def test_every_landed_part_ships_its_exhibit() -> None:
     """Every landed row that promises an exhibit runs in the p5 gate.
 
     The gate's row list and its sigma map read the same registry and the
@@ -63,7 +63,7 @@ def test_p5_executes_every_landed_exhibit() -> None:
     silently skip fails HERE, long before a live run has to notice.
     """
     from sim.fleet import scenario_vehicles
-    from sim.p5_truth_check import SIGMAS, TRUTH_PAIR_ROWS
+    from sim.truth_exhibits import SIGMAS, TRUTH_PAIR_ROWS
 
     promised = {p.name for p in PARTS if p.landed and p.exhibit is not None}
     assert {row.name for row in TRUTH_PAIR_ROWS} == promised
@@ -199,7 +199,7 @@ def test_container_exists_and_has_the_declared_size(part: Part) -> None:
 
 
 @pytest.mark.parametrize("part", [p for p in LANDED if p.exhibit], ids=lambda p: p.name)
-def test_exhibit_packets_are_what_p5_reads(part: Part) -> None:
+def test_exhibit_packets_are_what_the_ground_reads(part: Part) -> None:
     """The exhibit names packets that provably exist on the ground.
 
     R4 made p5 generic - it reads whatever the row names - so the mirror

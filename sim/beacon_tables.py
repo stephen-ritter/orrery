@@ -25,7 +25,7 @@ import sys
 import time
 from typing import cast
 
-from sim.p2_cosmos_check import login, rpc, wait_interface
+from sim.cosmos_api import login, rpc, wait_interface
 
 
 def sample(token: str, packet: str) -> dict[str, object]:

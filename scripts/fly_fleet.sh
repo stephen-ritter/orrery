@@ -61,7 +61,7 @@ for v in scenario_vehicles('$SCENARIO'):
     print(v.name, v.instance, p.beacon, p.uplink, p.sensor, p.link_cmd)
 ")
 if [ "${#FACTS[@]}" -lt 2 ]; then
-    echo "twin_roundtrip: $SCENARIO needs >= 2 [[spacecraft]] blocks (single-vehicle flies via fly_world.sh)" >&2
+    echo "fly_fleet: $SCENARIO needs >= 2 [[spacecraft]] blocks (single-vehicle flies via fly_world.sh)" >&2
     exit 2
 fi
 
@@ -74,7 +74,7 @@ LAST_START=$((FIRST_START + START_EVERY * LAST_INDEX))
 NEED_DURATION=$((LAST_START + 90))
 SIM_DURATION="${SIM_DURATION:-$((LAST_START + 120))}"
 if [ "$SIM_DURATION" -lt "$NEED_DURATION" ]; then
-    echo "twin_roundtrip: SIM_DURATION=$SIM_DURATION ends before the last anchored sequence finishes (${NEED_DURATION}s)" >&2
+    echo "fly_fleet: SIM_DURATION=$SIM_DURATION ends before the last anchored sequence finishes (${NEED_DURATION}s)" >&2
     exit 2
 fi
 
@@ -151,7 +151,7 @@ for fact in "${FACTS[@]}"; do
     start_frame=$((FIRST_START + START_EVERY * index))
     gain_frame=$((start_frame + GAIN_AFTER))
     echo "--- closed-loop ground client: $name (instance $instance, start-frame $start_frame, gain-frame $gain_frame) ---"
-    if ! uv run python -m sim.p3_fcs_test --instance "$instance" --start-frame "$start_frame" \
+    if ! uv run python -m sim.fcs_probe --instance "$instance" --start-frame "$start_frame" \
         --gain-frame "$gain_frame"; then
         echo "TWIN ROUND TRIP FAILED (closed loop: $name)"
         [ -n "$SIM_PID" ] && kill "$SIM_PID" 2>/dev/null || true

@@ -41,9 +41,9 @@ import urllib.error
 from pathlib import Path
 from typing import cast
 
+from sim.cosmos_api import login, rpc, wait_interface
 from sim.fleet import flight_interface, scenario_vehicles, truth_interface
 from sim.fleet_policy import load_fleet
-from sim.p2_cosmos_check import login, rpc, wait_interface
 from sim.parts import Part, load_registry
 
 # The scenario file IS the fleet (D10): rows are derived, never declared.

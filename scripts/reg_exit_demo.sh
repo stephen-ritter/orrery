@@ -16,7 +16,7 @@
 # keeps instance 0 - the legacy port set wire_audit listens on and the targets
 # COSMOS already routes). For each manifest the script captures the beacon
 # through sim/wire_audit and runs the UNMODIFIED p5 client
-# (ORRERY_SCENARIO=<manifest> sim.p5_truth_check). Bare must show the part
+# (ORRERY_SCENARIO=<manifest> sim.truth_exhibits). Bare must show the part
 # absent on both sides; fitted must show 0x08D0 streaming and p5's attitude
 # exhibit judging it. Nothing else is touched: the script finishes by proving
 # `git status` is clean, then restores the operational perpetual fleet.
@@ -119,7 +119,7 @@ phase() {
     grep -E "0x08C[ACDEF]|0x08D0|WIRE AUDIT" "$log" | tail -8 | sed 's/^/    /'
 
     echo "--- the unmodified truth gate, pointed at this manifest ---"
-    if ! ORRERY_SCENARIO="$scen" uv run python -m sim.p5_truth_check >>"$log" 2>&1; then
+    if ! ORRERY_SCENARIO="$scen" uv run python -m sim.truth_exhibits >>"$log" 2>&1; then
         echo "[$tag] FAIL: the truth gate did not pass (see $log)" >&2
         tail -12 "$log" >&2
         exit 1

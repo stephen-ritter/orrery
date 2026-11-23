@@ -6,7 +6,7 @@
 # sim owns the clock, every sensor frame gates on its fcs StepAck; --pace puts
 # 1 sim-s per real-s on top so the ground's sampling windows are wall-clock
 # sane), then drives the closed-loop acceptance from the host with
-# sim/p3_fcs_test.py: sense (zero answers = inert) -> ENABLE -> exact-law
+# sim/fcs_probe.py: sense (zero answers = inert) -> ENABLE -> exact-law
 # torque frame-matched to its sensor frame -> sim echo proves the effector
 # felt it -> SET_GAIN live retune. Container and scenario are ALWAYS cleaned
 # up by the trap. A dead gate exits the scenario with rc=2 and fails here.
@@ -30,7 +30,7 @@ SIM_MODULE="${SIM_MODULE:-sim.detumble_scenario}"
 # sim/scenarios/chief.toml" flies the P4a operations plant (wheels + IMU)
 # through the exact same closed loop.
 SIM_ARGS="${SIM_ARGS:-}"
-LOG="${LOG:-/tmp/opencode/p3_scenario_$(basename "$SIM_MODULE").log}"
+LOG="${LOG:-/tmp/opencode/world_scenario_$(basename "$SIM_MODULE").log}"
 
 # D10: this harness flies ONE vehicle on the legacy port block. Fleet work
 # (N worlds-gated-together missions) lives in scripts/fly_fleet.sh; the
@@ -104,14 +104,14 @@ fi
 
 echo "--- closed-loop ground client ---"
 rc=0
-# Optional absolute-frame anchors (see sim/p3_fcs_test.py): the ops-plant
+# Optional absolute-frame anchors (see sim/fcs_probe.py): the ops-plant
 # baseline flights pin ENABLE and SET_GAIN so the digest repeats by
 # CONSTRUCTION, not by poll-phase luck. Empty (default) keeps the legacy
 # count-driven cadence - the historical witness baseline needs it.
 CLIENT_ARGS=()
 [ -n "${START_FRAME:-}" ] && CLIENT_ARGS+=(--start-frame "$START_FRAME")
 [ -n "${GAIN_FRAME:-}" ] && CLIENT_ARGS+=(--gain-frame "$GAIN_FRAME")
-uv run python -m sim.p3_fcs_test --instance "$INSTANCE" "${CLIENT_ARGS[@]}" || rc=$?
+uv run python -m sim.fcs_probe --instance "$INSTANCE" "${CLIENT_ARGS[@]}" || rc=$?
 
 # A lockstep gate that died exits the scenario with rc=2 within ack-timeout;
 # surface that as the headline, not as a downstream "stuck in stage" timeout.

@@ -2,7 +2,7 @@
 # P6 round trip: a time-tagged command executed by the flight, frame-exact.
 #
 # Same rig as fly_world.sh (paced lockstep, chief operations plant), with
-# the closed-loop acceptance replaced by sim/p6_scheduled_test.py: the ground
+# the closed-loop acceptance replaced by sim/scheduled_flight.py: the ground
 # uploads schedules anchored to ABSOLUTE sim frames (FCS ENABLE at T=40,
 # SET_GAIN at T=70, a late entry, three refusals), then watches the beacon
 # prove the queue fired on the first frame >= T and nothing moved before it.
@@ -11,8 +11,8 @@
 # determinism exit ("schedules make the future reproducible, not racy").
 #
 # Run it TWICE and compare digests:
-#   bash scripts/fly_scheduled.sh 2>&1 | tee /tmp/opencode/p6_run1.log
-#   bash scripts/fly_scheduled.sh 2>&1 | tee /tmp/opencode/p6_run2.log
+#   bash scripts/fly_scheduled.sh 2>&1 | tee /tmp/opencode/scheduled_run1.log
+#   bash scripts/fly_scheduled.sh 2>&1 | tee /tmp/opencode/scheduled_run2.log
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -22,7 +22,7 @@ bash "$REPO/scripts/firmware.sh" check
 RUNTIME="${RUNTIME:-docker}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-120}"
 SIM_DURATION="${SIM_DURATION:-100}"
-LOG="${LOG:-/tmp/opencode/p6_scenario_forge.log}"
+LOG="${LOG:-/tmp/opencode/scheduled_scenario_forge.log}"
 
 # One vehicle on the legacy port block (same convention as fly_world.sh).
 INSTANCE=0
@@ -105,7 +105,7 @@ sleep 3  # let the sim bind and pace a couple of ticks before ground connects
 
 echo "--- scheduled-execution ground client ---"
 rc=0
-uv run python -m sim.p6_scheduled_test --instance "$INSTANCE" || rc=$?
+uv run python -m sim.scheduled_flight --instance "$INSTANCE" || rc=$?
 
 # On a PASS let the scenario FINISH: the trajectory sha256 is the P6
 # determinism artifact, and a killed run has none.
