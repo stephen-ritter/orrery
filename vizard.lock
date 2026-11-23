@@ -1,0 +1,21 @@
+# The renderer, pinned: fetched by scripts/get_vizard.sh, never vendored.
+#
+# Sibling of cfs.lock and cosmos.lock, same rule, third kind of world: Vizard
+# is Basilisk's licensed Unity scene generator. It is not in this repository,
+# its license does not allow shipping it inside an image, and the yard runs
+# exactly the copy the lock verified - the compose camera service mounts the
+# verified unpack and the image carries only what Unity needs to not crash.
+#
+# Why the ZIP is content-pinned, not tag-pinned: the canonical URL below is a
+# plain file server that updates in place, and the renderer must match the
+# Basilisk message stream it decodes (this zip is the one shipped with the
+# 2.12 line; the scene dies on a version-skewed decoder). When a scene fails,
+# suspect a scenario before the zip: a craft at the central body's (0,0,0)
+# degenerates Vizard's orbit-line build on EVERY version - every renderable
+# scenario orbits (the lesson that made the forge's capture test deterministic).
+
+url = "https://hanspeterschaub.info/bskFiles/Vizard_Linux.zip"
+sha256_zip = "c2482c11c4ae41eea810a44a15330623ca3bc300adab6aa8536cf9676b1e1fb0"
+unpack = ".vizard"
+binary = ".vizard/Vizard_Linux/Vizard.x86_64"
+license = "AVT research license: fetch it, verify it, run it; never commit it, never bake it into an image"

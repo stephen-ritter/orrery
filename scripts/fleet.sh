@@ -92,12 +92,33 @@ services_of() {
         s+=("$name" "truth-$name")
     done
     s+=("world")
+    # the renderer joins only when the scenario's camera gate exported its
+    # profile (scenario_up); an explicit service list must know it too
+    [ "${COMPOSE_PROFILES:-}" = "camera" ] && s+=("camera")
     printf '%s\n' "${s[@]}"
 }
 
 scenario_up() {
     scenario_facts
     export_env
+
+    # renderer gate (CAM): a scenario carrying [[camera]] also boots the
+    # yard's Vizard service - by compose profile, because the ordinary yard
+    # renders nothing and must not depend on a licensed binary it never
+    # asked for. The binary arrives through vizard.lock via
+    # scripts/get_vizard.sh; asking HERE, before any container starts, is
+    # what turns "the camera service mounted an empty directory" into one
+    # actionable line.
+    if grep -qE '^[[:space:]]*\[\[camera\]\]' "$SCENARIO" 2>/dev/null; then
+        export COMPOSE_PROFILES=camera
+        viz_bin="$(sed -n 's/^binary = "\([^"]*\)".*/\1/p' "$REPO/vizard.lock")"
+        if [ ! -x "$REPO/$viz_bin" ]; then
+            echo "[$STEM] scenario carries [[camera]] but $viz_bin is not here:" >&2
+            echo "        run scripts/get_vizard.sh first (vizard.lock pins the renderer)" >&2
+            return 1
+        fi
+    fi
+
     fleet_down
 
     # fit knobs: a world that lies about its fit prints the lie here and

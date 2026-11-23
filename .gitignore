@@ -14,6 +14,8 @@ cfs_mission/**/gen/*_pb-c.*
 # cfs_mission/cfs.lock is the fact; this directory is a local copy of it, and
 # keeping it out of the tree is the point (see the lock file's header).
 cfs_mission/cFS/
+# licensed renderer unpack: vizard.lock pins it, scripts/get_vizard.sh fills this in
+.vizard/
 
 # cFS build outputs (mission is built inside docker)
 cfs_mission/build*/

@@ -170,3 +170,52 @@ services:
       --duration ${ORRERY_DURATION:-600} --zmq --pace
       ${ORRERY_SIM_EXTRA:-} ${ORRERY_FIT_ARGS:-}
     stop_grace_period: 30s # SIGTERM ends the world at its tick boundary
+
+  # ---- the renderer: Vizard paints the world's [[camera]] frames -----------
+  # Profile-gated: an ordinary yard has no camera, and `up` without the
+  # camera profile boots a fleet that renders nothing. scripts/fleet.sh
+  # attaches the profile (and refuses early if vizard.lock's binary has not
+  # been fetched) when the scenario carries [[camera]].
+  #
+  # Probe-then-start, not sleep-then-hope: Vizard DIALS the sim's REQ socket,
+  # which the world binds mid-InitializeSimulation; dialing the dark steals
+  # nothing but waits forever quietly. The service polls the port and exits
+  # loudly after ORRERY_VIZ_WAIT_S with the one question that matters - does
+  # this scenario even carry a camera? In-container the renderer's process
+  # tree dies with the container (the host-side zombie-renderer lesson from
+  # the forge's capture test cannot escape a cgroup).
+  camera:
+    profiles: ["camera"]
+    image: orrery-viz:dev
+    build:
+      context: ${ORRERY_REPO:-.}/docker
+      dockerfile: viz.Dockerfile
+    container_name: orrery-camera
+    network_mode: host
+    user: "${ORRERY_UID:-0}:${ORRERY_GID:-0}"
+    working_dir: /viz/Vizard_Linux
+    volumes:
+      - ${VIZARD_DIR:-.vizard/Vizard_Linux}:/viz/Vizard_Linux:ro # vizard.lock's verified unpack
+    environment:
+      HOME: /tmp
+      ORRERY_VIZ_PORT: "${CHIEF_VIZ:-5556}"
+      ORRERY_VIZ_WAIT_S: "${ORRERY_VIZ_WAIT_S:-300}"
+    depends_on:
+      sync:
+        condition: service_completed_successfully
+    command:
+      - bash
+      - -c
+      - |
+        for ((end = SECONDS + ORRERY_VIZ_WAIT_S; SECONDS < end; )); do
+          (exec 3<>"/dev/tcp/127.0.0.1/$${ORRERY_VIZ_PORT}") 2>/dev/null && break
+          sleep 1
+        done
+        if ! (exec 3<>"/dev/tcp/127.0.0.1/$${ORRERY_VIZ_PORT}") 2>/dev/null; then
+          echo "camera: no sim socket on :$${ORRERY_VIZ_PORT} after $${ORRERY_VIZ_WAIT_S}s -" >&2
+          echo "        does the scenario carry [[camera]]? (fleet.sh gates this service on it)" >&2
+          exit 1
+        fi
+        exec xvfb-run -a ./Vizard.x86_64 -args -batchmode -noDisplay \
+          "tcp://127.0.0.1/$${ORRERY_VIZ_PORT}"
+    stop_grace_period: 15s

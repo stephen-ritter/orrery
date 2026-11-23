@@ -20,7 +20,7 @@ ENGINE = {"sync", "truth-chief", "truth-deputy", "world"}
 
 
 def test_the_shipped_services_are_the_twin_yard() -> None:
-    """Services: two inits, chief/deputy pairs, one world; nothing invented."""
+    """Services: two inits, chief/deputy pairs, one world, one gated renderer."""
     assert set(SERVICES) == {
         "mission",
         "sync",
@@ -29,6 +29,7 @@ def test_the_shipped_services_are_the_twin_yard() -> None:
         "truth-chief",
         "truth-deputy",
         "world",
+        "camera",
     }
 
 
@@ -98,6 +99,27 @@ def test_the_world_takes_scenario_duration_and_fit_knobs_from_the_environment() 
     assert "--duration ${ORRERY_DURATION:-600}" in cmd
     assert "--zmq --pace" in cmd
     assert "${ORRERY_FIT_ARGS:-}" in cmd
+
+
+def test_the_camera_renderer_is_gated_probes_and_mounts() -> None:
+    """The CAM renderer: profile-gated, socket-probed, binary mounted.
+
+    The licensed Vizard binary joins the yard only by the camera profile,
+    waits on the sim's REQ socket before dialing (the forge capture test's
+    choreography law), and arrives from the vizard.lock unpack - it is
+    never baked into an image."""
+    cam = SERVICES["camera"]
+    assert cam["profiles"] == ["camera"], "an ordinary yard must not depend on a renderer"
+    done = {"condition": "service_completed_successfully"}
+    assert cam["depends_on"] == {"sync": done}
+    cmd = cam["command"]
+    assert cmd[:2] == ["bash", "-c"] and len(cmd) == 3
+    script = cmd[2]
+    assert "/dev/tcp/127.0.0.1/" in script, "probe the sim's REQ socket before dialing it"
+    assert "exit 1" in script, "the wait must end loudly, never as a silent doomed dial"
+    assert "./Vizard.x86_64" in script and "xvfb-run" in script
+    assert cam["volumes"][0].endswith(":/viz/Vizard_Linux:ro")
+    assert cam["environment"]["ORRERY_VIZ_PORT"] == "${CHIEF_VIZ:-5556}"
 
 
 def test_volumes_are_declared_and_name_pinned() -> None:

@@ -25,6 +25,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUNTIME="${RUNTIME:-docker}"
 CFS_IMAGE="${CFS_IMAGE:-orrery-cfs:dev}"
 BSK_IMAGE="${BSK_IMAGE:-orrery-bsk:dev}"
+VIZ_IMAGE="${VIZ_IMAGE:-orrery-viz:dev}"
 DOCKERFILE_DIR="$REPO/docker"
 
 die() {
@@ -59,7 +60,7 @@ build() {
 
 list() {
     local line label tag dockerfile
-    for line in "cfs|$CFS_IMAGE|cfs.Dockerfile" "basilisk|$BSK_IMAGE|basilisk.Dockerfile"; do
+    for line in "cfs|$CFS_IMAGE|cfs.Dockerfile" "basilisk|$BSK_IMAGE|basilisk.Dockerfile" "viz|$VIZ_IMAGE|viz.Dockerfile"; do
         IFS='|' read -r label tag dockerfile <<<"$line"
         if present "$tag"; then
             printf '  %-8s %s\n' "$label" "$(describe "$tag")"
@@ -85,15 +86,16 @@ image.sh — build the images this repository builds and runs on.
 
   scripts/image.sh cfs             build orrery-cfs:dev if it is not there
   scripts/image.sh basilisk        build orrery-bsk:dev (the Basilisk engine)
+  scripts/image.sh viz             build orrery-viz:dev (the headless renderer)
   scripts/image.sh cfs --rebuild   build it again from the current Dockerfile
   scripts/image.sh --list          what the repository expects, and what is here
 
-Environment: CFS_IMAGE, BSK_IMAGE (tags), RUNTIME (docker|podman), NO_CACHE=1.
+Environment: CFS_IMAGE, BSK_IMAGE, VIZ_IMAGE (tags), RUNTIME (docker|podman), NO_CACHE=1.
 EOF
         exit 0
         ;;
-    cfs | basilisk) TARGET=$arg ;;
-    *) die "unknown argument '$arg' (cfs, basilisk, --rebuild, --list, --help)" ;;
+    cfs | basilisk | viz) TARGET=$arg ;;
+    *) die "unknown argument '$arg' (cfs, basilisk, viz, --rebuild, --list, --help)" ;;
     esac
 done
 
@@ -104,7 +106,8 @@ done
 case "$TARGET" in
     cfs) image=$CFS_IMAGE; dockerfile=cfs.Dockerfile; label="cfs mission" ;;
     basilisk) image=$BSK_IMAGE; dockerfile=basilisk.Dockerfile; label="basilisk engine" ;;
-    *) die "no such image '$TARGET' (cfs, basilisk)" ;;
+    viz) image=$VIZ_IMAGE; dockerfile=viz.Dockerfile; label="viz renderer" ;;
+    *) die "no such image '$TARGET' (cfs, basilisk, viz)" ;;
 esac
 if [ "$REBUILD" -eq 0 ] && present "$image"; then
     echo "$TARGET image already here: $(describe "$image")"
