@@ -13,16 +13,16 @@ sentence here and a test disagree, the test wins and this file is a bug.
 | Packets | CCSDS, cFS-stamped, EDS/TopicId-defined | bare EDS `BSK_LINK/TruthState` under a 4-byte ground header |
 | Can be commanded | yes (uplink `:5051+2N`) | **no — no command defs exist** |
 
-```mermaid
+mermaid
 flowchart LR
   PLANT["Basilisk plant"]
   PLANT -- "sensor messages<br/>bias + noise applied" --> BL["bsk_link → cFS bus<br/>(flight software decodes)"]
-  BL --> BEACON["gs_tcp beacon `:5050+2N`<br/>out-only socket"]
-  BEACON --> SAT["`SAT_*` target<br/>= knowledge"]
-  GND["ground commands"] -- "uplink `:5051+2N`<br/>the only inbound door" --> BL
-  PLANT -- "navigator state,<br/>untouched" --> GW["truth gateway<br/>`:5590+20N` → `:5150+2N`"]
-  GW --> TRT["`TRUTH_*` target<br/>= truth"]
-```
+  BL --> BEACON["gs_tcp beacon :5050+2N<br/>out-only socket"]
+  BEACON --> SAT["SAT_* target<br/>= knowledge"]
+  GND["ground commands"] -- "uplink :5051+2N<br/>the only inbound door" --> BL
+  PLANT -- "navigator state,<br/>untouched" --> GW["truth gateway<br/>:5590+20N → :5150+2N"]
+  GW --> TRT["TRUTH_* target<br/>= truth"]
+
 
 No arrow leaves the truth side toward the flight side, and none can: the
 `TRUTH_*` targets ship no commands, and the beacon refuses inbound bytes.

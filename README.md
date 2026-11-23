@@ -32,7 +32,7 @@ services that the fleet waits on:
 2. **`sync`** builds the Basilisk engine image, resolves `uv.lock` into the
    engine volume, and builds the EdsLib binding inside that same interpreter.
 
-```mermaid
+mermaid
 flowchart TD
   UP["fleet.sh up (or docker compose up)"]
   UP --> M["mission init<br/>fetch pinned cFS · build flight binary · stamp"]
@@ -40,7 +40,7 @@ flowchart TD
   M --> C["chief + deputy<br/>flight containers"]
   S --> T["truth gateways + the world"]
   C & T --> F["the fleet: one world, every vehicle acking"]
-```
+
 
 Nothing flight-side boots before `mission` exits 0, nothing Python-side
 before `sync` does — the fleet inherits exactly what this tree built.
@@ -114,19 +114,19 @@ physically cannot inject.
 | `5591` | ZMQ PUB (sim) | echo of the torque the effector ACTUALLY felt, frame-matched (lockstep ground proof) |
 | `2900` | HTTP | COSMOS CE web + JSON-RPC API |
 
-```mermaid
+mermaid
 flowchart LR
   WORLD["world — one Basilisk process,<br/>all vehicles, one clock"]
   VEH["vehicle — cFS flight software<br/>+ bsk_link decoder"]
-  SAT["`SAT_&lt;vehicle&gt;`<br/>what the vehicle knows"]
+  SAT["SAT_&lt;vehicle&gt;<br/>what the vehicle knows"]
   GW["truth gateway"]
-  TRT["`TRUTH_&lt;vehicle&gt;`<br/>sim truth"]
+  TRT["TRUTH_&lt;vehicle&gt;<br/>sim truth"]
   WORLD -- "sensors :5580 — EDS frames,<br/>biased + noisy" --> VEH
   VEH -- "torque :5581 —<br/>what the effector felt" --> WORLD
   VEH -- "beacon :5050 — out only,<br/>inbound refused via EVS" --> SAT
   SAT -. "uplink :5051 — a separate socket" .-> VEH
   WORLD -- "truth :5590 — navigator state" --> GW -- ":5150" --> TRT
-```
+
 
 Every world tick gates on an ack from every vehicle (lockstep), so the
 diagram is a loop the whole fleet turns together, not a pipeline. Port
