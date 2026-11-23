@@ -24,6 +24,8 @@ duration = 240.0
 
 [simulation.dt]
 dynamics = 0.1
+# The fleet's world tick (see chief.toml for the fine print): one number
+# for the whole world, every vehicle's frames and acks ride it.
 fsw = 1.0
 
 [world]

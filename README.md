@@ -131,9 +131,11 @@ flowchart LR
 
 
 Every world tick gates on an ack from every vehicle (lockstep), so the
-diagram is a loop the whole fleet turns together, not a pipeline. Port
-numbers shown are slot 0 (`chief`); each vehicle derives its own block
-from its scenario position.
+diagram is a loop the whole fleet turns together, not a pipeline. The tick's
+rate is the scenario's `[simulation.dt] fsw` — the same number that sets the
+Basilisk fswTask rate, read from the TOML, overridable only by an exactly
+matching flag. Port numbers shown are slot 0 (`chief`); each vehicle derives
+its own block from its scenario position.
 
 ## The fleet
 

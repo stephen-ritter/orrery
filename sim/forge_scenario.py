@@ -235,6 +235,30 @@ def _reject_fsw(sc_cfg: Any, scenario_path: str | Path) -> None:  # noqa: ANN401
         )
 
 
+def _resolve_control_period(
+    config: Any,  # noqa: ANN401 - bskforge model
+    override: float | None,
+    scenario_path: str | Path,
+) -> float:
+    """The world tick comes from the scenario's ``[simulation.dt] fsw``.
+
+    One knob, one source of truth: the number that sets the Basilisk fswTask
+    rate is the number the lockstep world gates on. A matching override is
+    accepted; a disagreeing one is refused, because a rig ticking between
+    sensor-frame boundaries is how stale acks are born - and the rig's
+    scan-grid guard alone does not catch every misalignment (0.5 s is a
+    legal multiple of a 0.1 s grid).
+    """
+    fsw_s = config.simulation.dt.fsw
+    if override is not None and override != fsw_s:
+        raise ForgeError(
+            f"--control-period {override:g} s disagrees with [simulation.dt] "
+            f"fsw = {fsw_s:g} s in {scenario_path}: the scenario owns the "
+            "FSW tick - change the TOML, or pass a matching value"
+        )
+    return fsw_s
+
+
 class ForgeBody:
     """One bskforge-built vehicle plus the harness surface riding it.
 
@@ -567,7 +591,7 @@ class ForgeScenario:
     def __init__(
         self,
         scenario_path: str | Path = DEFAULT_SCENARIO,
-        control_period_s: float = 1.0,
+        control_period_s: float | None = None,
         seed: int = 20261120,
         gyro_noise_sigma_rads: float = GYRO_NOISE_SIGMA_RADS,
         gyro_bias_rads: np.ndarray = GYRO_BIAS_RADS,
@@ -585,8 +609,8 @@ class ForgeScenario:
             FleetPolicyError: the TOML wires hardware in by hand, which the
                 audited load refuses before anything is built.
             ForgeError: more than one spacecraft (that is a fleet - build a
-                ``ForgeFleet``), or the TOML configures a bskforge FSW
-                section (D7).
+                ``ForgeFleet``), a bskforge FSW section (D7), or a
+                ``--control-period`` that disagrees with ``[simulation.dt] fsw``.
         """
         config = load_fleet(scenario_path)
         if len(config.spacecraft) != 1:
@@ -596,6 +620,7 @@ class ForgeScenario:
             )
         sc_cfg = config.spacecraft[0]
         _reject_fsw(sc_cfg, scenario_path)
+        control_period_s = _resolve_control_period(config, control_period_s, scenario_path)
 
         built = ScenarioRunner(config).build()
         ctx = built.context
@@ -745,7 +770,7 @@ class ForgeFleet:
     def __init__(
         self,
         scenario_path: str | Path,
-        control_period_s: float = 1.0,
+        control_period_s: float | None = None,
         seed: int = 20261120,
         gyro_noise_sigma_rads: float = GYRO_NOISE_SIGMA_RADS,
         gyro_bias_rads: np.ndarray = GYRO_BIAS_RADS,
@@ -764,14 +789,16 @@ class ForgeFleet:
             FleetPolicyError: the fleet file wires hardware in by hand, which
                 the audited load refuses before anything is built.
             ForgeError: an empty fleet, a bskforge FSW section (D7, any
-                vehicle), or a derived-identity disagreement (belt &
-                braces: raw-TOML order vs the validated config).
+                vehicle), a ``--control-period`` that disagrees with
+                ``[simulation.dt] fsw``, or a derived-identity disagreement
+                (belt & braces: raw-TOML order vs the validated config).
         """
         config = load_fleet(scenario_path)
         if not config.spacecraft:
             raise ForgeError(f"{scenario_path}: a fleet needs at least one spacecraft")
         for sc_cfg in config.spacecraft:
             _reject_fsw(sc_cfg, scenario_path)
+        control_period_s = _resolve_control_period(config, control_period_s, scenario_path)
 
         built = ScenarioRunner(config).build()
         ctx = built.context
@@ -906,7 +933,12 @@ def main(argv: list[str] | None = None) -> int:
         default=120.0,
         help="sim seconds to run; inf = perpetual (stop with Ctrl-C/SIGTERM at a boundary)",
     )
-    ap.add_argument("--control-period", type=float, default=1.0, help="control period [s]")
+    ap.add_argument(
+        "--control-period",
+        type=float,
+        default=None,
+        help="override; must match the scenario's [simulation.dt] fsw (default: the TOML)",
+    )
     ap.add_argument(
         "--port-base",
         type=int,

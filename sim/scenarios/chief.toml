@@ -15,6 +15,9 @@ duration = 120.0
 
 [simulation.dt]
 dynamics = 0.1
+# fsw is the FSW tick: the world gate, sensor frames, beacon and every
+# anchored digest ride this rate. It must stay an integer multiple of
+# dynamics, and retuning it re-anchors every baseline - full ceremony.
 fsw = 1.0
 
 [world]
