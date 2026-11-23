@@ -256,6 +256,15 @@ why = """The operator's window is COSMOS, and it is graded: a viz path that no
 gate reads is decoration, and decoration in this repo tends to become a claim."""
 
 [[area]]
+name = "camera"
+status = "unused-with-reason"
+why = """bskforge grew the instrument type (v0.4.0: Vizard renders into the
+camera module, images arrive on opnavImageOutMsg), but no scenario flies one yet
+and the OpNav knowledge channel it would feed has no exhibit grading its numbers.
+It lands with its own gates - the anchored digests must print unchanged with the
+camera on - not before."""
+
+[[area]]
 name = "custom"
 status = "banned"
 why = """Hardware is declared by naming a type, never wired in by hand. Fleets are

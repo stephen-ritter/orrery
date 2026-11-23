@@ -26,7 +26,7 @@ hardware that is *not* a registry part. The page is generated from the ledger;
 
 <!-- BEGIN GENERATED (registry/coverage.toml via sim/coverage.py) -->
 
-**6 of 12 part types are supported on the bus** (5 landed, 1 as the barrier tick); **4 of 10 scenario sections are used**. Everything upstream builds; every gap below is ours. The counts are computed from `registry/coverage.toml`, and a hand-edit inside this region fails the coverage gate.
+**6 of 12 part types are supported on the bus** (5 landed, 1 as the barrier tick); **4 of 11 scenario sections are used**. Everything upstream builds; every gap below is ours. The counts are computed from `registry/coverage.toml`, and a hand-edit inside this region fails the coverage gate.
 
 ## Sensors
 
@@ -74,6 +74,7 @@ which is exactly why they move every pinned trajectory.
 | `formations` | unused-with-reason | Relative-motion holding would move the anchored twin digests, and the project would lose the strongest artifact it has - a pair of trajectories that reproduce bit-for-bit. Revisit when relative motion is the mission, and re-found the pair deliberately when it does. |
 | `logging` | unused-with-reason | The harness records its own ledgers (trajectory digests, wire audits, truth gateways); bskforge's recorders would be a second, less audited copy of the same story. |
 | `visualization` | unused-with-reason | The operator's window is COSMOS, and it is graded: a viz path that no gate reads is decoration, and decoration in this repo tends to become a claim. |
+| `camera` | unused-with-reason | bskforge grew the instrument type (v0.4.0: Vizard renders into the camera module, images arrive on opnavImageOutMsg), but no scenario flies one yet and the OpNav knowledge channel it would feed has no exhibit grading its numbers. It lands with its own gates - the anchored digests must print unchanged with the camera on - not before. |
 | `custom` | banned | Hardware is declared by naming a type, never wired in by hand. Fleets are read through bskforge's audited profile, which sim/fleet_policy.py asks for, so this is refused at load rather than by omission. The reason is mechanical: hardware no schema type names cannot have a registry row, so the fit manifest never declares it, this ledger has no union to classify it under, no defs carry it, and no exhibit could judge its numbers - its readings would be a wire nothing grades. The route for hardware upstream cannot model yet is the one gpsReceiver took: grow the type upstream, with its own tests, and land a row here afterwards. This ledger is what makes that route survivable: it names every gap a hand-wired device would have papered over, and who owns each one. |
 | `monte_carlo` | unused-with-reason | Dispersion studies need per-configuration digests (a distribution is meaningless against one pinned trajectory), so this is the per-configuration digest round's customer rather than a gap today. |
 

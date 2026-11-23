@@ -88,8 +88,8 @@ wheels = [
 
 [[package]]
 name = "bskforge"
-version = "0.3.0"
-source = { git = "https://github.com/stephen-ritter/bskforge.git?tag=v0.3.0#9a94d9768f99d2d8d330f1c4268693d04df4716c" }
+version = "0.4.0"
+source = { git = "https://github.com/stephen-ritter/bskforge.git?tag=v0.4.0#0bfe6717fe9dfb64b593e3da369192d212300e77" }
 dependencies = [
     { name = "bsk", extra = ["all"] },
     { name = "pydantic" },
@@ -792,7 +792,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bsk", extras = ["all"], specifier = "~=2.12" },
-    { name = "bskforge", git = "https://github.com/stephen-ritter/bskforge.git?tag=v0.3.0" },
+    { name = "bskforge", git = "https://github.com/stephen-ritter/bskforge.git?tag=v0.4.0" },
     { name = "pyzmq" },
 ]
 
