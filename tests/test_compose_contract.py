@@ -107,7 +107,8 @@ def test_the_camera_renderer_is_gated_probes_and_mounts() -> None:
     The licensed Vizard binary joins the yard only by the camera profile,
     waits on the sim's REQ socket before dialing (the forge capture test's
     choreography law), and arrives from the vizard.lock unpack - it is
-    never baked into an image."""
+    never baked into an image.
+    """
     cam = SERVICES["camera"]
     assert cam["profiles"] == ["camera"], "an ordinary yard must not depend on a renderer"
     done = {"condition": "service_completed_successfully"}
