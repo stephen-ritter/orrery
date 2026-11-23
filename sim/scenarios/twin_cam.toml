@@ -1,0 +1,268 @@
+# orrery twin fleet plant (decision D10): ONE world, TWO vehicles - this
+# file IS the fleet. One Basilisk process, one clock, one sun, one dipole;
+# each [[spacecraft]] block is one independently-flown vehicle with its own
+# cFS container, its own lockstep gate and its own port block.
+#
+# Nothing here declares ports or ground identities (that is what killed the
+# manifest layer): the block INDEX is the port slot (sim/fleet.py:ports())
+# and the block NAME is the COSMOS target (SAT_<NAME>, TRUTH_<NAME>).
+# Launch:  scripts/fly_fleet.sh (acceptance)   scripts/fleet.sh up (R3)
+#
+# Both vehicles are the operations plant (chief.toml) - copied, not
+# referenced: a scenario is one world, and a world says what bodies it has.
+# deputy rides 20 km along-track in the same circular orbit and tumbles on a
+# different axis mix, so the two truth streams differ visibly while sharing
+# one environment (the P8a property, arriving for free with D10).
+# Known caveat, accepted for a same-world twin: both IMUs inherit Basilisk's
+# constant default sensor seed (this Basilisk fixes RNGSeed at 464374481), so
+# the vehicles' gyro noise is CORRELATED - visible only if the two rate
+# residuals are ever differenced, harmless while each flies its own law.
+
+[simulation]
+name = "orrery twin fleet (one world, two vehicles)"
+duration = 240.0
+
+[simulation.dt]
+dynamics = 0.1
+# The fleet's world tick (see chief.toml for the fine print): one number
+# for the whole world, every vehicle's frames and acks ride it.
+fsw = 1.0
+
+[world]
+central_body = "earth"
+
+[world.sun]
+position = [1.496e11, 0.0, 0.0]
+
+[environment]
+
+[environment.magnetic_field]
+type = "centered_dipole"
+
+# --- vehicle 0: chief (block 0 = the legacy port block) ------------------
+
+[[spacecraft]]
+name = "chief"
+
+[spacecraft.hub]
+mass = 300.0
+
+[spacecraft.hub.inertia]
+ixx = 750.0
+iyy = 620.0
+izz = 540.0
+
+[spacecraft.orbit]
+type = "rv"
+
+[spacecraft.orbit.rv]
+position = [7.0e6, 0.0, 0.0]
+# SI - circular speed at r=7000 km is sqrt(mu/r) = 7546 m/s. (A km/s
+# decimal here had the whole fleet in free-fall until p5 caught it;
+# tests/test_fleet.py now forbids falling fleets.)
+velocity = [0.0, 7546.1, 0.0]
+
+[spacecraft.attitude.initial]
+sigma_BN = [0.05, -0.08, 0.11]
+omega_BN_B = [0.05, -0.04, 0.03]
+
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.2
+
+[[spacecraft.effectors.wheels]]
+direction_B = [1.0, 0.0, 0.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 1.0, 0.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 0.0, 1.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.sensors]]
+type = "imuSensor"
+name = "imu"
+gyro_bias = [2.0e-5, -1.5e-5, 1.0e-5]
+gyro_walk = [1.0e-8, 1.0e-8, 1.0e-8]
+
+[[spacecraft.sensors]]
+type = "starTracker"
+name = "st"
+sigma_SB = [0.0, 0.0, 0.0]
+white_noise = 1.0e-4
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css1"
+boresight_B = [1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css2"
+boresight_B = [-1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css3"
+boresight_B = [0.0, 1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css4"
+boresight_B = [0.0, -1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "magnetometer"
+name = "mag"
+noise_sigma = 1.0e-8
+
+# KN2 (D13): the vehicle's own GNSS opinion - the manifest picks the part,
+# the plant builds a SimpleNav receiver from it. Delete this block and the
+# NavState stream (0x08CF) goes silent: absence declared, not zero-filled.
+[[spacecraft.sensors]]
+type = "gpsReceiver"
+name = "gnss"
+
+[spacecraft.logging.state]
+sample_time = 1.0
+
+# --- vehicle 1: deputy (block 1 = beacon 5052/5053, link 5600/5601, truth 5152) -
+# same blueprint, own world-body: 20 km along-track, own tumble.
+
+[[spacecraft]]
+name = "deputy"
+
+[spacecraft.hub]
+mass = 300.0
+
+[spacecraft.hub.inertia]
+ixx = 750.0
+iyy = 620.0
+izz = 540.0
+
+[spacecraft.orbit]
+type = "rv"
+
+[spacecraft.orbit.rv]
+# same circular orbit, 20 km along-track (the tangential rotates with it)
+position = [7.0e6, 2.0e4, 0.0]
+# SI: v_c=7546 m/s rotated by 2e4/7e6 rad -> x component -21.55 m/s.
+velocity = [-21.55, 7546.05, 0.0]
+
+[spacecraft.attitude.initial]
+sigma_BN = [0.02, 0.06, -0.09]
+omega_BN_B = [0.045, 0.05, -0.035]
+
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.2
+
+[[spacecraft.effectors.wheels]]
+direction_B = [1.0, 0.0, 0.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 1.0, 0.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 0.0, 1.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.sensors]]
+type = "imuSensor"
+name = "imu"
+gyro_bias = [2.0e-5, -1.5e-5, 1.0e-5]
+gyro_walk = [1.0e-8, 1e-8, 1e-8]
+
+[[spacecraft.sensors]]
+type = "starTracker"
+name = "st"
+sigma_SB = [0.0, 0.0, 0.0]
+white_noise = 1.0e-4
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css1"
+boresight_B = [1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css2"
+boresight_B = [-1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css3"
+boresight_B = [0.0, 1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css4"
+boresight_B = [0.0, -1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "magnetometer"
+name = "mag"
+noise_sigma = 1.0e-8
+
+# KN2 (D13): the vehicle's own GNSS opinion - the manifest picks the part,
+# the plant builds a SimpleNav receiver from it. Delete this block and the
+# NavState stream (0x08CF) goes silent: absence declared, not zero-filled.
+[[spacecraft.sensors]]
+type = "gpsReceiver"
+name = "gnss"
+
+[spacecraft.logging.state]
+sample_time = 1.0
+
+# the rendered eye needs the interface; cameras render through it
+[visualization]
+enabled = true
+live_stream = false
+broadcast_stream = false
+no_display = true
+
+# --- invariance probe (CAM): append the rendered eye to the twin world -----
+# Physics must not move: the camera is a knowledge channel, and the digest
+# gate proves it. At LEO the Earth overfills the 50 deg FOV, so the limb
+# estimator honestly reports no fix - the flight still renders, still
+# streams valid=0, and still lands on the twin digests unchanged.
+[[camera]]
+parent = "chief"
+camera_id = 1
+render_rate = 2.0
+resolution = [256, 256]
+field_of_view = 0.8726646
+sky_box = "black"

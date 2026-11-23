@@ -61,8 +61,9 @@ static const RsMidEntry_t ORRERY_MID_TABLE[] = {
     {0x08CE, "SPS_HK_TLM"},
     {0x08CF, "BSK_LINK_NAV_STATE_TLM"},
     {0x08D0, "BSK_LINK_ATTITUDE_STATE_TLM"},
+    {0x08D1, "BSK_LINK_OPNAV_STATE_TLM"},
 };
 
-#define ORRERY_MID_COUNT 47
+#define ORRERY_MID_COUNT 48
 
 #endif /* RS_MID_TABLE_H */

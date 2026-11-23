@@ -131,6 +131,37 @@ for fact in "${FACTS[@]}"; do
 done
 
 LOG="$LOG_DIR/twin_sim.log"
+
+# The rendered eye (CAM): when the scenario mounts a [[camera]], the pinned
+# Vizard joins the yard the way every other part of it does - a named
+# container, started here, swept at cleanup. It probes the sim's render
+# socket itself (no borrowed sleep), and the unpack is vizard.lock's: a
+# missing one stops the run BEFORE any container boots, because the world
+# would otherwise die at its render wait minutes into the flight.
+if grep -qE '^[[:space:]]*\[\[camera\]\]' "$SCENARIO" 2>/dev/null; then
+    viz_bin="$(sed -n 's/^binary = "\([^"]*\)".*/\1/p' "$REPO/vizard.lock")"
+    if [ ! -x "$REPO/$viz_bin" ]; then
+        echo "fly_fleet: $viz_bin is not here - run scripts/get_vizard.sh (vizard.lock pins the renderer)" >&2
+        exit 2
+    fi
+    if ! "$RUNTIME" image inspect orrery-viz:dev >/dev/null 2>&1; then
+        echo "--- building orrery-viz:dev (renderer runtime) ---"
+        "$RUNTIME" build -q -t orrery-viz:dev -f "$REPO/docker/viz.Dockerfile" "$REPO/docker" >/dev/null
+    fi
+    "$RUNTIME" rm -f orrery-camera-viz >/dev/null 2>&1 || true
+    "$RUNTIME" run -d --name orrery-camera-viz --network host \
+        --user "$(id -u):$(id -g)" -e HOME=/tmp \
+        -v "$REPO/.vizard/Vizard_Linux:/viz/Vizard_Linux:ro" \
+        orrery-viz:dev bash -c '
+          for ((end = SECONDS + 300; SECONDS < end; )); do
+            (exec 3<>"/dev/tcp/127.0.0.1/5556") 2>/dev/null && break
+            sleep 1
+          done
+          exec xvfb-run -a ./Vizard.x86_64 -args -batchmode -noDisplay tcp://127.0.0.1:5556' >/dev/null
+    CONTAINERS+=("orrery-camera-viz")
+    echo "--- renderer container up (orrery-camera-viz, waiting on the sim's render socket) ---"
+fi
+
 echo "--- basilisk fleet sim (lockstep, paced, ${SIM_DURATION} sim-s) ---"
 uv run python -m sim.forge_scenario --scenario "$SCENARIO" --duration "$SIM_DURATION" \
     --zmq --pace >"$LOG" 2>&1 &
@@ -180,10 +211,17 @@ fi
 
 # Digest discipline (policy after the 2026-11-22 wipe AND the d5c2dbb6
 # bistable era): a printed digest nobody compares is folklore. Every
-# vehicle's digest is checked against tests/baselines/twin_digest_<name>.txt
+# vehicle's digest is checked against tests/baselines/<world>_digest_<name>.txt
 # - the first flight of a new world FINDS the baseline (visible in the log),
 # any later move FAILS loudly and demands a re-found plus a journal line.
+# Baselines are per-WORLD: twin_ops keeps the legacy twin_digest_* names (the
+# anchored pair the yard compares against), and any other scenario anchors
+# under its own stem - a second world must neither compare against nor
+# clobber the first one's artifacts.
 BASE="tests/baselines"
+stem="$(basename "$SCENARIO" .toml)"
+prefix=twin
+[ "$stem" = "twin_ops" ] || prefix="$stem"
 mkdir -p "$BASE"
 for fact in "${FACTS[@]}"; do
     read -r name instance _ <<<"$fact"
@@ -192,7 +230,7 @@ for fact in "${FACTS[@]}"; do
         echo "TWIN ROUND TRIP FAILED (no digest printed for $name)"
         exit 1
     fi
-    file="$BASE/twin_digest_${name}.txt"
+    file="$BASE/${prefix}_digest_${name}.txt"
     if [ ! -f "$file" ]; then
         printf '%s\n' "$dig" >"$file"
         echo "[$name] baseline FOUND at $file (first flight of this world)"

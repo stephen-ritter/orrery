@@ -313,6 +313,7 @@
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="OnboardStateTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_ONBOARD_STATE_TLM_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="NavStateTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_NAV_STATE_TLM_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="AttitudeStateTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_ATTITUDE_STATE_TLM_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="OpNavStateTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_OPNAV_STATE_TLM_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="TorqueCommandTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_TORQUE_COMMAND_TLM_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="StepAckTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_STEP_ACK_TLM_TOPICID}" />
           </VariableSet>
@@ -321,6 +322,7 @@
             <ParameterMap interface="ONBOARD_STATE_TLM" parameter="TopicId" variableRef="OnboardStateTlmTopicId" />
             <ParameterMap interface="NAV_STATE_TLM" parameter="TopicId" variableRef="NavStateTlmTopicId" />
             <ParameterMap interface="ATTITUDE_STATE_TLM" parameter="TopicId" variableRef="AttitudeStateTlmTopicId" />
+            <ParameterMap interface="OPNAV_STATE_TLM" parameter="TopicId" variableRef="OpNavStateTlmTopicId" />
             <ParameterMap interface="TORQUE_COMMAND_TLM" parameter="TopicId" variableRef="TorqueCommandTlmTopicId" />
             <ParameterMap interface="STEP_ACK_TLM" parameter="TopicId" variableRef="StepAckTlmTopicId" />
           </ParameterMapSet>
