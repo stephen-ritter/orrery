@@ -34,7 +34,7 @@ services that the fleet waits on:
 
 ```mermaid
 flowchart TD
-  UP["fleet.sh up&nbsp;(or docker compose up)"]
+  UP["fleet.sh up (or docker compose up)"]
   UP --> M["mission init<br/>fetch pinned cFS · build flight binary · stamp"]
   UP --> S["sync init<br/>uv sync · EdsLib binding · volume hand-off"]
   M --> C["chief + deputy<br/>flight containers"]
