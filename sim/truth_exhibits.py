@@ -56,6 +56,12 @@ SCENARIO = Path(
     or Path(__file__).resolve().parents[1] / "sim" / "scenarios" / "twin_ops.toml"
 )
 
+# A rendered world takes longer to speak: InitializeSimulation blocks until
+# Vizard dials in, so the first packet can arrive minutes after the fleet is
+# "up". Only a scenario that actually mounts the eye pays for the longer
+# first-packet budget - the twin world keeps its old, tight deadline.
+FIRST_PACKET_S = 300.0 if load_fleet(SCENARIO).camera else 120.0
+
 
 def fleet_rows(path: Path = SCENARIO) -> list[tuple[str, str, str, str, str]]:
     """(name, flight target, flight iface, truth target, truth iface) per block."""
@@ -492,12 +498,12 @@ def check_vehicle(
 ) -> None:
     """Run the full per-vehicle proof."""
     for iface in (flight_iface, truth_iface):
-        row = wait_interface(token, name=iface)
+        row = wait_interface(token, timeout=FIRST_PACKET_S, name=iface)
         assert row[1] == "CONNECTED" and row[6] > 0, f"{iface} not streaming: {row}"
     print(f"[{name}] flight {flight_iface} + truth {truth_iface}: both CONNECTED, both streaming")
 
     # truth is fresh, physical, and orbit-scaled
-    t0 = wait_stream(token, truth, "TRUTH_STATE_TLM", 90.0, f"{name} truth")
+    t0 = wait_stream(token, truth, "TRUTH_STATE_TLM", FIRST_PACKET_S, f"{name} truth")
     w_truth = omega_norm(t0)
     r_norm = sum(num(t0, f"R_BN_N_{a}") ** 2 for a in range(3)) ** 0.5
     # sanity fence, not a vehicle spec: the twin's deputy tumbles hotter than

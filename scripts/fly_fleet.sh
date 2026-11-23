@@ -151,6 +151,7 @@ if grep -qE '^[[:space:]]*\[\[camera\]\]' "$SCENARIO" 2>/dev/null; then
     "$RUNTIME" rm -f orrery-camera-viz >/dev/null 2>&1 || true
     "$RUNTIME" run -d --name orrery-camera-viz --network host \
         --user "$(id -u):$(id -g)" -e HOME=/tmp \
+        -w /viz/Vizard_Linux \
         -v "$REPO/.vizard/Vizard_Linux:/viz/Vizard_Linux:ro" \
         orrery-viz:dev bash -c '
           for ((end = SECONDS + 300; SECONDS < end; )); do
@@ -163,7 +164,9 @@ if grep -qE '^[[:space:]]*\[\[camera\]\]' "$SCENARIO" 2>/dev/null; then
 fi
 
 echo "--- basilisk fleet sim (lockstep, paced, ${SIM_DURATION} sim-s) ---"
-uv run python -m sim.forge_scenario --scenario "$SCENARIO" --duration "$SIM_DURATION" \
+# unbuffered: a SWIG-side abort loses a block-buffered log, and an empty
+# log turns every failure into an autopsy with no body
+PYTHONUNBUFFERED=1 uv run python -m sim.forge_scenario --scenario "$SCENARIO" --duration "$SIM_DURATION" \
     --zmq --pace >"$LOG" 2>&1 &
 SIM_PID=$!
 sleep 3
@@ -173,6 +176,13 @@ if ! kill -0 "$SIM_PID" 2>/dev/null; then
     echo "world died at startup: a host link port is already taken?" >&2
     echo "  (sweep the yard: scripts/fleet.sh down) last lines:" >&2
     tail -3 "$LOG" >&2 || true
+    # a scenario with the rendered eye has one more suspect: the renderer
+    # container itself. Its tail names the cause (missing lib, bad args)
+    # instead of leaving the operator to guess why the sim stopped waiting.
+    if "$RUNTIME" inspect orrery-camera-viz >/dev/null 2>&1; then
+        echo "  renderer (orrery-camera-viz) last lines:" >&2
+        "$RUNTIME" logs --tail 3 orrery-camera-viz >&2 2>&1 || true
+    fi
     exit 1
 fi
 
@@ -185,6 +195,15 @@ for fact in "${FACTS[@]}"; do
     if ! uv run python -m sim.fcs_probe --instance "$instance" --start-frame "$start_frame" \
         --gain-frame "$gain_frame"; then
         echo "TWIN ROUND TRIP FAILED (closed loop: $name)"
+        if ! kill -0 "$SIM_PID" 2>/dev/null; then
+            # the world is gone, not merely slow: name what died with it.
+            echo "  the world is gone - sim last lines:" >&2
+            tail -5 "$LOG" >&2 || true
+            if "$RUNTIME" inspect orrery-camera-viz >/dev/null 2>&1; then
+                echo "  renderer: $("$RUNTIME" inspect -f '{{.State.Status}} exit={{.State.ExitCode}}' orrery-camera-viz 2>/dev/null)" >&2
+                "$RUNTIME" logs --tail 3 orrery-camera-viz >&2 2>&1 || true
+            fi
+        fi
         [ -n "$SIM_PID" ] && kill "$SIM_PID" 2>/dev/null || true
         exit 1
     fi
