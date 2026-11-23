@@ -35,7 +35,7 @@ def test_instance_zero_is_the_legacy_port_set() -> None:
     """Ports the frozen digests (25fc027b..., 4688fc5d...) were flown on.
 
     The twin fleet (D10) adds its own frozen pair, flown twice by
-    ``scripts/twin_roundtrip.sh``'s anchored 180 s choreography: chief
+    ``scripts/fly_fleet.sh``'s anchored 180 s choreography: chief
     01c03187..., deputy 85241e3a... At a 120 s twin flight chief's digest
     was 25fc027b... - the solo one: vehicles share an environment, never
     physics.

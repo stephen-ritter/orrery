@@ -6,7 +6,7 @@
 #   scripts/gates.sh --tier build         EDS database + mission image
 #   scripts/gates.sh --tier live          the fleet ladder (needs the yard)
 #   scripts/gates.sh --list               the plan and what each gate proves
-#   scripts/gates.sh --only twin          one gate, by name fragment
+#   scripts/gates.sh --only fleet-fly      one gate, by name fragment
 #
 # TIERS ARE CUMULATIVE, on purpose. `--tier live` also runs offline and build,
 # because scripts/fleet.sh launches the ALREADY-BUILT cfs_mission/mission/build/
@@ -39,7 +39,7 @@
 #      container-start calls scripts/firmware.sh, which stamps the mission build
 #      with a content hash of its inputs and refuses to boot a binary that does
 #      not match this tree (ORRERY_ALLOW_STALE=1 to fly it knowingly). So even a
-#      direct `scripts/twin_roundtrip.sh`, bypassing this runner, cannot fly
+#      direct `scripts/fly_fleet.sh`, bypassing this runner, cannot fly
 #      flight software the tree did not produce;
 #   4c. a gate is a command a child shell can resolve - a script or an argv, not
 #       a shell function or a variable that lives only here (see below);
@@ -75,13 +75,13 @@ GATES=(
     "build|edslink|EDS database + binding: each container's REAL size, checked against struct.pack|bash edslink/build.sh all|"
     "build|mission-build|cFS builds, every registry row resolves against the linked schema|bash scripts/mission_build.sh|"
     "live|cosmos-pin|the ground station on disk IS the pinned station: checkout and image tag agree|bash scripts/get_cosmos.sh --verify|ground"
-    "live|p3-truth|witness + anchored pair digests: the sim timeline, not the host clock|bash scripts/p3_truth_check.sh|"
-    "live|p4c-ops|the scheduled flight repeats itself AND disagrees with the reactive one|bash scripts/p4c_ops_check.sh|"
-    "live|twin|one world, N containers, both digests, no stale anchor|bash scripts/twin_roundtrip.sh|"
-    "live|p4b-modes|the supervisor trips, refuses, and recovers on a live bus|bash scripts/p4b_modes.sh|"
-    "live|ob-fit|the four boot verdicts: matched, silent, denied, abort|bash scripts/ob_fit_check.sh|"
-    "live|p5-truth|exhibits at device scale, truth uncommandable, refusal logged|bash scripts/p5_truth_check.sh|ground"
-    "live|p4-wrap|beacon table vs generated defs, both ways, 0 UNKNOWN|bash scripts/p4_cosmos_wrap.sh|ground"
+    "live|pair-digest|witness + anchored pair digests: the sim timeline, not the host clock|bash scripts/check_pair_digest.sh|"
+    "live|ops-replay|the scheduled flight repeats itself AND disagrees with the reactive one|bash scripts/check_ops_replay.sh|"
+    "live|fleet-fly|one world, N containers, both digests, no stale anchor|bash scripts/fly_fleet.sh|"
+    "live|modes|the supervisor trips, refuses, and recovers on a live bus|bash scripts/check_modes.sh|"
+    "live|fit-handshake|the four boot verdicts: matched, silent, denied, abort|bash scripts/check_fit_handshake.sh|"
+    "live|truth-exhibits|exhibits at device scale, truth uncommandable, refusal logged|bash scripts/check_truth_exhibits.sh|ground"
+    "live|beacon-wrap|beacon table vs generated defs, both ways, 0 UNKNOWN|bash scripts/check_beacon_tables.sh|ground"
 )
 
 declare -A TIER_RANK=([offline]=1 [build]=2 [live]=3)

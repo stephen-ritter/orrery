@@ -6,7 +6,7 @@
 # Nothing here declares ports or ground identities (that is what killed the
 # manifest layer): the block INDEX is the port slot (sim/fleet.py:ports())
 # and the block NAME is the COSMOS target (SAT_<NAME>, TRUTH_<NAME>).
-# Launch:  scripts/twin_roundtrip.sh (acceptance)   scripts/fleet.sh up (R3)
+# Launch:  scripts/fly_fleet.sh (acceptance)   scripts/fleet.sh up (R3)
 #
 # Both vehicles are the operations plant (chief.toml) - copied, not
 # referenced: a scenario is one world, and a world says what bodies it has.

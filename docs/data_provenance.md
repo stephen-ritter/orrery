@@ -70,7 +70,7 @@ grade the wrong number. The absence is the tripwire, and a test pins it
 
 ## The machine-checked form
 
-`scripts/p5_truth_check.sh` (+ `sim/p5_truth_check.py`) per vehicle: truth and
+`scripts/check_truth_exhibits.sh` (+ `sim/p5_truth_check.py`) per vehicle: truth and
 knowledge interfaces both stream; `TRUTH_STATE_TLM` is fresh by advancing
 `SIM_TIME_S`; `|ω_truth|` vs `|ω_knowledge|` differ (>1e-6) yet agree
 (<3e-3) while coasting; **every landed registry row with a `truth_pair` exhibit

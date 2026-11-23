@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # P4b-2 modes run: the mode supervisor trips, refuses, and recovers, live.
 #
-# Same bones as p3_roundtrip.sh (mission up, plant in lockstep, ground client
+# Same bones as fly_world.sh (mission up, plant in lockstep, ground client
 # drives, trap cleans up) but the default plant is the chief TOML - the
 # supervisor feeds on ONBOARD frames, which only that plant publishes - and
 # the client is sim/p4b_modes_test.py: ENABLE -> SET_WHEEL_LIMIT 10 -> SAFE
@@ -24,7 +24,7 @@ LOG="${LOG:-/tmp/opencode/p4b_modes_scenario.log}"
 
 # D10: this harness flies ONE vehicle on the legacy port block (modes are
 # proven on the flight loop itself); the D9 BIRD=<slug> manifest mode died
-# with the manifest layer - fleet work is scripts/twin_roundtrip.sh.
+# with the manifest layer - fleet work is scripts/fly_fleet.sh.
 INSTANCE=0
 BEACON=$((5050 + 2 * INSTANCE))
 UPLINK=$((BEACON + 1))

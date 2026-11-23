@@ -1,6 +1,6 @@
 """P5 acceptance: truth on its own ports, and the boundary MEASURED.
 
-Two vehicles (scripts/p5_truth_check.sh flies the fleet); per vehicle: a flight
+Two vehicles (scripts/check_truth_exhibits.sh flies the fleet); per vehicle: a flight
 target on the classic pair and a TRUTH target on the gateway port. Proven
 through JSON-RPC:
 

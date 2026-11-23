@@ -6,7 +6,7 @@
 # when EVERY container acks - so one dead mission must surface as a named
 # LOCKSTEP STALL (sim rc=2), never as silent coasting.
 #
-#   scripts/twin_roundtrip.sh [scenario.toml]     default: sim/scenarios/twin_ops.toml
+#   scripts/fly_fleet.sh [scenario.toml]     default: sim/scenarios/twin_ops.toml
 #
 # Per vehicle the closed loop is the same P3 acceptance (sense -> ENABLE ->
 # exact-law frame-matched torque -> echo proof -> retune), driven SEQUENTIALLY:
@@ -61,7 +61,7 @@ for v in scenario_vehicles('$SCENARIO'):
     print(v.name, v.instance, p.beacon, p.uplink, p.sensor, p.link_cmd)
 ")
 if [ "${#FACTS[@]}" -lt 2 ]; then
-    echo "twin_roundtrip: $SCENARIO needs >= 2 [[spacecraft]] blocks (single-vehicle flies via p3_roundtrip.sh)" >&2
+    echo "twin_roundtrip: $SCENARIO needs >= 2 [[spacecraft]] blocks (single-vehicle flies via fly_world.sh)" >&2
     exit 2
 fi
 

@@ -1,6 +1,6 @@
 """P4 wrap acceptance: the REGENERATED defs work in live COSMOS.
 
-Runs against a live mission + paced lockstep sim (scripts/p4_cosmos_wrap.sh)
+Runs against a live mission + paced lockstep sim (scripts/check_beacon_tables.sh)
 and proves through the JSON-RPC API - never a raw socket - that gem 0.1.4's
 generated defs decode and command everything P4 put on the wire:
 

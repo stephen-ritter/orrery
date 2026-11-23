@@ -271,7 +271,7 @@ Individual commands, when you want one of them:
 uv run pytest -q && uv run ruff check && uv run ruff format --check && uv run ty check
 uv run python -m sim.wire_audit 20                    # every stream against its own def
 ORRERY_SCENARIO=sim/scenarios/twin_ops.toml uv run python -m sim.p5_truth_check
-bash scripts/twin_roundtrip.sh                        # one world, two vehicles, both digests
+bash scripts/fly_fleet.sh                        # one world, two vehicles, both digests
 ```
 
 A new wire is allowed to change **nothing inside the trajectory**: the pinned
@@ -337,7 +337,7 @@ a planted lie can never be mistaken for a broken spacecraft:
 # block first; concealment is the mirror image; a false digest needs no edit.
 FIT_HIDE=gnss       bash scripts/fleet.sh up sim/scenarios/twin_ops.toml   # streams, manifest denies
 FIT_DIGEST=deadbeef bash scripts/fleet.sh up sim/scenarios/twin_ops.toml   # stale firmware: FIT ABORT
-PROBES=denied bash scripts/ob_fit_check.sh                                 # one canned probe, while iterating
+PROBES=denied bash scripts/check_fit_handshake.sh                                 # one canned probe, while iterating
 ```
 
 ## When it goes wrong

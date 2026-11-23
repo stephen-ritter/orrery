@@ -33,7 +33,7 @@ SIM_ARGS="${SIM_ARGS:-}"
 LOG="${LOG:-/tmp/opencode/p3_scenario_$(basename "$SIM_MODULE").log}"
 
 # D10: this harness flies ONE vehicle on the legacy port block. Fleet work
-# (N worlds-gated-together missions) lives in scripts/twin_roundtrip.sh; the
+# (N worlds-gated-together missions) lives in scripts/fly_fleet.sh; the
 # D9 BIRD=<slug> manifest mode died with the manifest layer.
 INSTANCE=0
 BEACON=$((5050 + 2 * INSTANCE))

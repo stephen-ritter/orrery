@@ -22,7 +22,7 @@ HANDBOOK = sorted(DOCS.glob("*.md"))
 PAGES = [*HANDBOOK, REPO / "README.md"]
 
 # Private vocabulary: phase numbers, decision ids, and the short names of working
-# rounds. Uppercase on purpose: `p4_cosmos_wrap.sh` is a script a reader runs,
+# rounds. Uppercase on purpose: `check_beacon_tables.sh` is a script a reader runs,
 # `P4` is a name from somebody else's plan.
 PRIVATE = re.compile(r"\b(?:D\d+|P\d[a-c]?|KN2?|REG|OB(?:\([ab]\))?|CAM|ASM|R\d)\b")
 LINK = re.compile(r"\]\((\w+\.md)\)")

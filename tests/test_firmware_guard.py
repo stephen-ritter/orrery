@@ -382,7 +382,7 @@ def test_every_container_launcher_demands_provenance() -> None:
     """Every script that launches `container-start` must ask what built it.
 
     The guard's value is that it covers the paths nobody remembers - including
-    `scripts/twin_roundtrip.sh` run straight from a shell, bypassing the runner.
+    `scripts/fly_fleet.sh` run straight from a shell, bypassing the runner.
     A new launcher that forgets the check fails here, naming itself. The count
     floor only proves the glob found the yard; the invariant is the forgotten
     list, so deleting a launcher never weakens this test.

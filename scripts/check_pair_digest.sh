@@ -30,7 +30,7 @@ mkdir -p "$BASE"
 flight() { # $1 = label, then env assignments the caller exported
     local label="$1"
     local out digest
-    out="$(bash scripts/p3_roundtrip.sh 2>&1)"
+    out="$(bash scripts/fly_world.sh 2>&1)"
     local rc=$?
     digest="$(grep -oE 'sha256 [0-9a-f]{64}' <<<"$out" | tail -1 | cut -d' ' -f2)"
     if [ "$rc" -ne 0 ] || [ -z "$digest" ]; then

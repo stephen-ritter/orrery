@@ -560,7 +560,7 @@ class ForgeScenario:
     """bskforge-built rigid body, commanded externally, ridden by the rig.
 
     The single-vehicle world: same harness surface as ``DetumbleScenario``
-    (attach_link/run_to/truth/gyro/...), so ``scripts/p3_roundtrip.sh``
+    (attach_link/run_to/truth/gyro/...), so ``scripts/fly_world.sh``
     treats the two modules as interchangeable via ``SIM_MODULE``.
     """
 

@@ -3,7 +3,7 @@
 # untracked-files wipe of that morning; nothing tracked was lost, which is
 # exactly why this file and its baselines are now git-added).
 #
-# The scheduled flight (p6_scheduled.sh: the D8 onboard queue answers the
+# The scheduled flight (fly_scheduled.sh: the D8 onboard queue answers the
 # same uplink the P3 gate used) must:
 #   1. REPEAT itself - schedule the future deterministically (P6 promise);
 #   2. DISAGREE with the plain anchored flight - a satellite that executes
@@ -19,7 +19,7 @@ mkdir -p "$BASE"
 # the same numbers, so start from a quiet sky.
 bash scripts/fleet.sh down sim/scenarios/twin_ops.toml >/dev/null 2>&1 || true
 
-out="$(bash scripts/p6_scheduled.sh 2>&1)"
+out="$(bash scripts/fly_scheduled.sh 2>&1)"
 rc=$?
 digest="$(grep -oE 'sha256 [0-9a-f]{64}' <<<"$out" | tail -1 | cut -d' ' -f2)"
 if [ "$rc" -ne 0 ] || [ -z "$digest" ]; then

@@ -5,7 +5,7 @@ digest, and the bus STREAMS whatever actually decoded. These tests pin the
 vocabulary both sides share - the bit order, the digest's rules, and the
 injection knobs the acceptance flight uses - so a verdict on the event bus means
 exactly what it says. The verdict itself is flown live by
-``scripts/ob_fit_check.sh``; nothing here can substitute for that flight.
+``scripts/check_fit_handshake.sh``; nothing here can substitute for that flight.
 """
 
 from __future__ import annotations

@@ -101,7 +101,7 @@ scenario_up() {
     fleet_down
 
     # fit knobs: a world that lies about its fit prints the lie here and
-    # forwards it to the world verbatim (see scripts/ob_fit_check.sh)
+    # forwards it to the world verbatim (see scripts/check_fit_handshake.sh)
     local fit_args="" part
     for part in ${FIT_DECLARE:-}; do fit_args+=" --fit-declare $part"; done
     for part in ${FIT_HIDE:-}; do fit_args+=" --fit-hide $part"; done

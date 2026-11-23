@@ -162,7 +162,7 @@ def test_fake_fsw_closes_the_gate_on_the_forge_plant(forge_ports: dict[str, str]
 
 
 def test_cli_reports_convergence(capsys: pytest.CaptureFixture[str]) -> None:
-    """ForgeScenario is drop-in for scripts/p3_roundtrip.sh: same verdict lines."""
+    """ForgeScenario is drop-in for scripts/fly_world.sh: same verdict lines."""
     assert fz.main(["--duration", "30", "--control-period", "1.0", "--quiet"]) == 0
     out = capsys.readouterr().out
     assert "DETUMBLE OK" in out

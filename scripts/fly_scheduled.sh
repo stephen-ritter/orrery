@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # P6 round trip: a time-tagged command executed by the flight, frame-exact.
 #
-# Same rig as p3_roundtrip.sh (paced lockstep, chief operations plant), with
+# Same rig as fly_world.sh (paced lockstep, chief operations plant), with
 # the closed-loop acceptance replaced by sim/p6_scheduled_test.py: the ground
 # uploads schedules anchored to ABSOLUTE sim frames (FCS ENABLE at T=40,
 # SET_GAIN at T=70, a late entry, three refusals), then watches the beacon
@@ -11,8 +11,8 @@
 # determinism exit ("schedules make the future reproducible, not racy").
 #
 # Run it TWICE and compare digests:
-#   bash scripts/p6_scheduled.sh 2>&1 | tee /tmp/opencode/p6_run1.log
-#   bash scripts/p6_scheduled.sh 2>&1 | tee /tmp/opencode/p6_run2.log
+#   bash scripts/fly_scheduled.sh 2>&1 | tee /tmp/opencode/p6_run1.log
+#   bash scripts/fly_scheduled.sh 2>&1 | tee /tmp/opencode/p6_run2.log
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,7 +24,7 @@ BOOT_TIMEOUT="${BOOT_TIMEOUT:-120}"
 SIM_DURATION="${SIM_DURATION:-100}"
 LOG="${LOG:-/tmp/opencode/p6_scenario_forge.log}"
 
-# One vehicle on the legacy port block (same convention as p3_roundtrip.sh).
+# One vehicle on the legacy port block (same convention as fly_world.sh).
 INSTANCE=0
 BEACON=$((5050 + 2 * INSTANCE))
 UPLINK=$((BEACON + 1))

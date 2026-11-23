@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # OB boot-handshake flight (D13): the three views of a vehicle's fit, live.
 #
-#   scripts/ob_fit_check.sh                 all four probes (~6 min)
-#   PROBES=stale scripts/ob_fit_check.sh    one probe, while iterating
+#   scripts/check_fit_handshake.sh                 all four probes (~6 min)
+#   PROBES=stale scripts/check_fit_handshake.sh    one probe, while iterating
 #
 # The ROADMAP's OB claim is that absence is a fact the spacecraft knows, not a
 # gap the ground papers over. The claim is only worth what a flight makes it, so
