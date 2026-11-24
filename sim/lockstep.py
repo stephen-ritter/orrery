@@ -36,7 +36,9 @@ import zmq
 from Basilisk.utilities import macros
 
 from sim.eds_link import (
+    CamConfig,
     StepAck,
+    decode_cam_config,
     decode_step_ack,
     decode_torque_command,
     encode_sensor_frame,
@@ -50,6 +52,11 @@ from sim.parts import load_registry
 TOPIC_SENSOR = b"SENSOR"
 TOPIC_ACK = b"ACK"
 TOPIC_CMD = b"CMD"
+# Camera config (CAM v2a): egressed on the cmd socket like CMD, but not part
+# of the barrier - _await_barrier applies it and keeps waiting. It lives with
+# the hardcoded constants because it is neither physics nor a registry part:
+# a command surface, fire-and-forget by contract.
+TOPIC_CAM = b"CAM"
 TOPIC_TRUTH = b"TRUTH"
 # The boot handshake (OB): the world's declared part fit, on the sensor socket
 # every tick. Not a part and not telemetry - it is the link's own control
@@ -191,12 +198,20 @@ class RigChannel:
     # streams. ``None`` means the scenario says nothing about its fit, and the
     # mission reports the link as legacy (no presence verdict either way).
     fit_provider: Callable[[], bytes] | None = None
+    # The camera config door (CAM v2a): called with each decoded CamConfig
+    # the instant it arrives, between ticks - the module write lands at the
+    # next Basilisk update by the sim's own law (camera.cpp re-reads its
+    # fields every tick, proven by the Phase-0 spike). ``None`` means this
+    # vehicle has no commanded eye; a config for it is decoded, counted, and
+    # dropped - visible in the exit report, never silently absorbed.
+    cam_sink: Callable[[CamConfig], None] | None = None
     sockets: dict[str, zmq.Socket] = field(default_factory=dict)
 
     stale_torques: int = 0  # frames (torque or ack) the gate already passed
     sensor_retransmits: int = 0  # gate shouts that had to be repeated
     foreign_frames: int = 0  # frames ahead of the gate: a protocol breach
     bad_frames: int = 0  # undecodable or malformed multipart frames
+    cam_configs: int = 0  # camera configs received (applied is the sink's tally)
     rate_history: list[tuple[float, float]] = field(default_factory=list)
     torque_history: list[tuple[float, np.ndarray]] = field(default_factory=list)
     external_torque_history: list[tuple[float, np.ndarray | None]] = field(default_factory=list)
@@ -241,6 +256,7 @@ class LockstepRig:
         pace: bool = False,
         observers: dict[str, Callable[[], bytes]] | None = None,
         fit_provider: Callable[[], bytes] | None = None,
+        cam_sink: Callable[[CamConfig], None] | None = None,
     ) -> None:
         """Wire the channels; the plant(s) must already be built and initialized.
 
@@ -278,6 +294,7 @@ class LockstepRig:
                     kp=np.asarray(kp, dtype=float),
                     observers=observers or {},
                     fit_provider=fit_provider,
+                    cam_sink=cam_sink,
                 )
             ]
         if not channels:
@@ -451,6 +468,15 @@ class LockstepRig:
                 continue
             topic, body = parts
             try:
+                if topic == TOPIC_CAM:
+                    # Fire-and-forget (CAM v2a): apply the config, keep
+                    # waiting at the gate. A camera answer must never open a
+                    # physics barrier - that law survived from v1 unchanged.
+                    cfg = decode_cam_config(body)
+                    ch.cam_configs += 1
+                    if ch.cam_sink is not None:
+                        ch.cam_sink(cfg)
+                    continue
                 if topic == TOPIC_CMD:
                     cmd = decode_torque_command(body)
                 elif topic == TOPIC_ACK:

@@ -195,11 +195,23 @@
     <Define name="SPS_SCHEDULE_CMD_TOPICID"           value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 207" />
     <Define name="SPS_SEND_HK_TOPICID"                value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 208" />
 
+    <!-- Camera payload (CAM v2a): the command surface. Offsets 210+ were the
+         clean high block (nothing above 209 was in use on either bus). The
+         SET_CONFIG payload rides its OWN topic on the SetGainPkt law. The
+         CAMSTATE telemetry topic is the registry row (generated region), not
+         a hand-written line here. -->
+    <Define name="CAM_CMD_TOPICID"                    value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 210" />
+    <Define name="CAM_SEND_HK_TOPICID"                value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 211" />
+    <Define name="CAM_SET_CONFIG_TOPICID"             value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 212" />
+    <Define name="CAM_HK_TLM_TOPICID"                 value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 210" />
+    <Define name="BSK_LINK_CAM_CONFIG_TLM_TOPICID"    value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 212" />
+
     <!-- BEGIN GENERATED (codegen/emit_frames.py): registered part topics -->
     <Define name="BSK_LINK_NAV_STATE_TLM_TOPICID"      value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 207" />
     <Define name="BSK_LINK_ONBOARD_STATE_TLM_TOPICID"  value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 204" />
     <Define name="BSK_LINK_ATTITUDE_STATE_TLM_TOPICID" value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 208" />
     <Define name="BSK_LINK_OPNAV_STATE_TLM_TOPICID"    value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 209" />
+    <Define name="BSK_LINK_CAM_STATE_TLM_TOPICID"      value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 211" />
     <!-- END GENERATED (codegen/emit_frames.py): registered part topics -->
 
   </Package>

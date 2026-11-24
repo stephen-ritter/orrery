@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    orrery camera payload (cam_app) - CAM v2a, hand-authored on the fcs.xml
+    idiom (D3): this XML is the single definition source for ground defs
+    (codegen/eds2cosmos), the EdsLib link DB, and - via cfe-topicids.xml
+    topics - the runtime MsgIds mirrored in orrery_defs/inc/orrery_msgids.h.
+
+    The v2a contract is the command surface only: the ground commands the
+    eye (shutter, render rate), the cam app forwards one CAM_CONFIG frame
+    per accepted command to the sim through bsk_link, and CAM_HK reports
+    the FSW-side counters. No pixels move yet (v2b/v2c own the image
+    path and the CFDP downlink), so Recorded/Stored/Transferred sit at
+    zero by design and their divergence from the sim's own CamState frame
+    is the defect class the HK exists to catch.
+
+    Both knobs were flown before they were defined (findings ledger,
+    Phase-0 spike): the shutter and render rate take effect at runtime in
+    the sim process (camera.cpp re-reads module fields every update;
+    vizInterface gates image requests on isOn and a renderRate modulo),
+    each is reversible mid-flight, and every transition left the
+    trajectory digest byte-identical. The modulo is also why SET_CONFIG
+    refuses renderRate <= 0 at the app: zero is B1's divide-by-zero, and
+    the sim door refuses again - a knob that can crash the vehicle is not
+    a knob.
+-->
+<PackageFile xmlns="http://www.ccsds.org/schema/sois/seds">
+  <Package name="CAM" shortDescription="Orrery camera payload (command surface)">
+    <DataTypeSet>
+
+      <ContainerDataType name="CommandBase" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ContainerDataType name="SendHkCmd" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ContainerDataType name="NoopCmd" baseType="CommandBase">
+        <ConstraintSet>
+          <ValueConstraint entry="Sec.FunctionCode" value="0" />
+        </ConstraintSet>
+      </ContainerDataType>
+
+      <!-- Payload-bearing commands ride their OWN interface (own MsgId), the
+           SetGainPkt law: the payloadless FC-subtype pattern loses argument
+           fields in codegen (CFE FCS_SET_GAIN precedent, pinned by
+           test_eds2cosmos). Shutter is the module's own scale (1 open, 0
+           closed); RenderRateS is the image interval in SECONDS - the
+           ground's unit - the sim door converts to the module's nanoseconds. -->
+      <ContainerDataType name="SetConfigCmd" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ContainerDataType name="SetConfigPayload" shortDescription="camera payload parameters">
+        <EntryList>
+          <Entry name="Shutter" type="BASE_TYPES/uint8" shortDescription="1 open (request images), 0 closed">
+            <Constraints>
+              <EnumeratedValueConstraint>
+                <EnumerationList>
+                  <Enumeration label="CLOSED" value="0" />
+                  <Enumeration label="OPEN" value="1" />
+                </EnumerationList>
+              </EnumeratedValueConstraint>
+            </Constraints>
+          </Entry>
+          <Entry name="CameraId" type="BASE_TYPES/uint8" shortDescription="the [[camera]] id to configure (ids start at 1; 0 is refused)">
+            <Constraints>
+              <MinimumValueConstraint writeMinimumValue="1" />
+            </Constraints>
+          </Entry>
+          <PaddingEntry sizeInBits="48" shortDescription="64-bit alignment padding" />
+          <Entry name="RenderRateS" type="BSK_LINK/float64" shortDescription="image interval [s]; must be &gt; 0 (the renderRate modulo divides by it)" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="SetConfigPkt" baseType="SetConfigCmd">
+        <EntryList>
+          <Entry name="Payload" type="SetConfigPayload" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- The ledger counters, FSW-side view: what was commanded and
+           forwarded, plus Recorded/Stored/Transferred as v2b/v2c promises -
+           zero until their phase lands, and a nonzero one before it is a
+           lie the beacon catches. The sim's CONFIRMED state (render rate in
+           use, images captured) rides the BSK_LINK/CamState registry row,
+           NOT this packet: the divergence pair lives on the ground screen
+           (HK.RenderRateCmd vs CamState.RenderRateS), because the app that
+           commands has no business grading its own delivery. -->
+      <ContainerDataType name="HkTlm_Payload" shortDescription="cam payload housekeeping">
+        <EntryList>
+          <Entry name="CommandCounter" type="BASE_TYPES/uint8" shortDescription="valid commands received" />
+          <Entry name="CommandErrorCounter" type="BASE_TYPES/uint8" shortDescription="invalid commands received" />
+          <Entry name="Shutter" type="BASE_TYPES/uint8" shortDescription="last commanded shutter (1 open)">
+            <Constraints>
+              <EnumeratedValueConstraint>
+                <EnumerationList>
+                  <Enumeration label="CLOSED" value="0" />
+                  <Enumeration label="OPEN" value="1" />
+                </EnumerationList>
+              </EnumeratedValueConstraint>
+            </Constraints>
+          </Entry>
+          <Entry name="CameraId" type="BASE_TYPES/uint8" shortDescription="the eye this bird commands (0 = never configured)" />
+          <Entry name="ConfigFramesForwarded" type="BASE_TYPES/uint32" shortDescription="CAM_CONFIG frames egressed to the sim" />
+          <PaddingEntry sizeInBits="32" shortDescription="64-bit alignment padding" />
+          <Entry name="LastConfigSimTimeS" type="BSK_LINK/float64" shortDescription="sim time of the last config forwarded [s]" />
+          <Entry name="RenderRateCmd" type="BSK_LINK/float64" shortDescription="last commanded image interval [s]" />
+          <Entry name="FramesRecorded" type="BASE_TYPES/uint32" shortDescription="frames written to onboard storage (v2b; 0 until it lands)" />
+          <Entry name="FramesStored" type="BASE_TYPES/uint32" shortDescription="frames acknowledged into storage (v2b; 0 until it lands)" />
+          <Entry name="FramesTransferred" type="BASE_TYPES/uint32" shortDescription="frames CFDP-delivered to the ground (v2c; 0 until it lands)" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="HkTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="HkTlm_Payload" />
+        </EntryList>
+      </ContainerDataType>
+
+    </DataTypeSet>
+
+    <ComponentSet>
+      <Component name="Application">
+        <RequiredInterfaceSet>
+          <Interface name="CMD" shortDescription="Software bus telecommand interface" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="CommandBase" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="SEND_HK" shortDescription="Send housekeeping command interface" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="SendHkCmd" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="SET_CONFIG" shortDescription="Set camera shutter and render rate command interface" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="SetConfigPkt" />
+            </GenericTypeMapSet>
+          </Interface>
+          <Interface name="HK_TLM" shortDescription="Software bus housekeeping telemetry interface" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="HkTlm" />
+            </GenericTypeMapSet>
+          </Interface>
+        </RequiredInterfaceSet>
+        <Implementation>
+          <VariableSet>
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="CmdTopicId" initialValue="${CFE_MISSION/CAM_CMD_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="SendHkTopicId" initialValue="${CFE_MISSION/CAM_SEND_HK_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="SetConfigTopicId" initialValue="${CFE_MISSION/CAM_SET_CONFIG_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="HkTlmTopicId" initialValue="${CFE_MISSION/CAM_HK_TLM_TOPICID}" />
+          </VariableSet>
+          <ParameterMapSet>
+            <ParameterMap interface="CMD" parameter="TopicId" variableRef="CmdTopicId" />
+            <ParameterMap interface="SEND_HK" parameter="TopicId" variableRef="SendHkTopicId" />
+            <ParameterMap interface="SET_CONFIG" parameter="TopicId" variableRef="SetConfigTopicId" />
+            <ParameterMap interface="HK_TLM" parameter="TopicId" variableRef="HkTlmTopicId" />
+          </ParameterMapSet>
+        </Implementation>
+      </Component>
+    </ComponentSet>
+  </Package>
+</PackageFile>

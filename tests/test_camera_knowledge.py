@@ -20,6 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 from bskforge import load_scenario
 
 import sim.forge_scenario as fz
@@ -56,13 +57,15 @@ def test_the_camera_world_builds_its_estimators() -> None:
     (body,) = build_bodies(CAMERA_SCENARIO)
     assert body.has_plant_opnav, "[[camera]] on this craft built no estimators"
     assert body._opnav is not None
-    camera_id, horizon, _, recorder = body._opnav
+    camera_id, module, horizon, _, recorder, image_recorder = body._opnav
     assert camera_id == 1
+    assert module is not None, "the config door (CAM v2a) writes through this handle"
     assert horizon.planetTarget == fz.OPNAV_PLANET_TARGET == 2, (
         "Earth's celestial index is what the scene's limb findings carry;"
         " another index silently navigates by a different body's radius"
     )
     assert recorder is not None, "the knowledge output was never recorded"
+    assert image_recorder is not None, "the captured witness (CAM v2a) was never wired"
     assert body.sim_time_s == 0.0  # built, never run
 
 
@@ -80,8 +83,11 @@ def test_the_opnav_provider_joins_only_the_camera_world() -> None:
     (camera_body,) = build_bodies(CAMERA_SCENARIO)
     observers = fz.plant_observers(camera_body, clock)
     assert "OPNAV" in observers, "the camera plant publishes no knowledge frame"
+    assert "CAMSTATE" in observers, "the camera plant publishes no device-state frame (v2a)"
     for body in build_bodies(TWIN_SCENARIO):
-        assert "OPNAV" not in fz.plant_observers(body, clock)
+        twin = fz.plant_observers(body, clock)
+        assert "OPNAV" not in twin, "twin_ops has no rendered eye"
+        assert "CAMSTATE" not in twin, "absence is declared per frame, not zero-filled"
 
 
 def test_the_frame_packs_and_reports_silence_before_the_first_render() -> None:
@@ -102,6 +108,128 @@ def test_the_frame_packs_and_reports_silence_before_the_first_render() -> None:
     assert frame.planet_id == fz.OPNAV_PLANET_TARGET
     assert frame.camera_id == 1
     assert not frame.valid and not frame.fault_detected
+
+
+def test_the_camstate_frame_reports_the_device_as_built() -> None:
+    """CAM v2a: the device frame packs the module's OWN fields, pre-run."""
+    from sim.eds_link import decode_cam_state
+
+    (camera_body,) = build_bodies(CAMERA_SCENARIO)
+    payload = camera_body.cam_state_bytes(1.0, 1)
+    assert len(payload) == 48, "the provider packs what the row declares"
+    frame = decode_cam_state(payload)
+    assert (frame.sim_time_s, frame.frame) == (1.0, 1)
+    assert frame.camera_id == 1
+    assert camera_body._opnav is not None
+    module = camera_body._opnav[1]
+    assert frame.shutter == int(module.cameraIsOn), "the frame is the module, not an opinion"
+    assert frame.render_rate_s == pytest.approx(module.renderRate / 1e9)
+    assert frame.captured == 0, "nothing rendered yet; a default capture would be a lie"
+
+
+def test_the_config_door_applies_refuses_and_stays_reversible() -> None:
+    """The sim's door (CAM v2a): write truthfully, refuse the B1 zero, undo.
+
+    Every law here was flown in the Phase-0 spike before it was tested:
+    writes take effect at the next update, a refused value must NEVER reach
+    the module, and a config is fully reversible mid-flight. The door
+    answers nobody - refusals tally, they do not ack - so this test is the
+    receipt the airgap does not carry.
+    """
+    from sim.eds_link import CamConfig
+
+    (camera_body,) = build_bodies(CAMERA_SCENARIO)
+    assert camera_body._opnav is not None
+    module = camera_body._opnav[1]
+
+    camera_body.apply_cam_config(CamConfig(1.0, 10, 1, 0, 4.0))
+    assert module.cameraIsOn == 0 and module.renderRate == 4_000_000_000
+    assert camera_body._cam_stats["applied"] == 1
+
+    camera_body.apply_cam_config(CamConfig(2.0, 20, 1, 1, 0.0))  # B1: the zero
+    assert module.cameraIsOn == 0, "a refused shutter command changed the device"
+    assert module.renderRate == 4_000_000_000, "a refused rate reached the modulo"
+    assert camera_body._cam_stats["refused_rate"] == 1
+
+    camera_body.apply_cam_config(CamConfig(3.0, 30, 7, 1, 1.0))  # eye not fitted
+    assert camera_body._cam_stats["refused_id"] == 1
+    assert module.cameraIsOn == 0, "a command for another eye edited this one"
+
+    camera_body.apply_cam_config(CamConfig(4.0, 40, 1, 1, 2.0))  # reversible
+    assert module.cameraIsOn == 1 and module.renderRate == 2_000_000_000
+
+
+def test_the_cam_config_frame_round_trips_through_the_schema() -> None:
+    """The egress frame the FSW builds is the frame the sim decodes."""
+    from sim.eds_link import decode_cam_config, encode_cam_config
+
+    payload = bytes(encode_cam_config(3.5, 42, 1, 0, 4.25))
+    assert len(payload) == 40, "the CamConfig row declares 40 B"
+    cfg = decode_cam_config(payload)
+    assert (cfg.sim_time_s, cfg.frame, cfg.camera_id) == (3.5, 42, 1)
+    assert cfg.shutter == 0 and cfg.render_rate_s == pytest.approx(4.25)
+
+
+def test_cam_frames_apply_between_ticks_and_never_open_the_barrier() -> None:
+    """CAM v2a law at the gate itself: configs apply, the ack is still awaited.
+
+    The v1 law survives the command surface: camera traffic never becomes a
+    receipt the physics waits on. The gate is driven through its own private
+    door (``_await_barrier``) with a scripted fake FSW - the same pre-pushed
+    ZeroMQ trick ``test_fake_fsw_closes_the_gate_frame_exact`` uses, minus a
+    plant the law does not need.
+    """
+    import zmq
+
+    from sim.eds_link import encode_cam_config, encode_sensor_frame, encode_step_ack
+    from sim.lockstep import LockStalled, LockstepRig, RigChannel
+
+    ctx = zmq.Context.instance()
+    pull = ctx.socket(zmq.PULL)
+    cmd_port = pull.bind_to_random_port("tcp://127.0.0.1")
+    push = ctx.socket(zmq.PUSH)
+    push.connect(f"tcp://127.0.0.1:{cmd_port}")
+    # PUB like the rig's real sensor feed: a gate waiting without a listener
+    # must never block on its own retransmits (a PUSH with no peer would).
+    sensor = ctx.socket(zmq.PUB)
+    sensor.bind_to_random_port("tcp://127.0.0.1")
+
+    seen: list = []
+    ch = RigChannel(
+        name="camgate",
+        gyro=lambda: np.zeros(3),
+        apply_torque=lambda torque: None,
+        truth_provider=lambda: b"",
+        kp=np.zeros(3),
+        cam_sink=seen.append,
+    )
+    ch.sockets = {"cmd": pull, "sensor": sensor}
+    rig = LockstepRig(
+        None,
+        control_period_s=1.0,
+        channels=[ch],
+        lockstep=True,
+        ack_timeout_s=1.0,
+        ack_retry_s=0.05,
+    )
+    sensor_bytes = bytes(encode_sensor_frame(1.0, (0.0, 0.0, 0.0), 1))
+
+    # A config alone must NOT open the gate - but it is applied on arrival.
+    push.send_multipart([b"CAM", bytes(encode_cam_config(1.0, 1, 1, 0, 4.0))])
+    with pytest.raises(LockStalled):
+        rig._await_barrier(ch, 1, sensor_bytes)
+    assert len(seen) == 1 and ch.cam_configs == 1, "config door opened while the gate stayed shut"
+    assert ch.bad_frames == 0, "a well-formed CAM frame is not a malformed one"
+
+    # Config + the ack fcs owes: the gate answers, and BOTH frames landed.
+    push.send_multipart([b"CAM", bytes(encode_cam_config(2.0, 2, 1, 1, 2.0))])
+    push.send_multipart([b"ACK", bytes(encode_step_ack(2.0, 2, 1, 0))])
+    assert rig._await_barrier(ch, 2, sensor_bytes) is None
+    assert len(seen) == 2 and ch.cam_configs == 2
+
+    push.close(linger=0)
+    pull.close(linger=0)
+    sensor.close(linger=0)
 
 
 def test_the_rig_keeps_no_startup_window_for_the_renderer() -> None:

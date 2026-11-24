@@ -60,6 +60,26 @@
 /** \brief sps housekeeping telemetry (sps -> beacon, P6) */
 #define SPS_HK_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_SPS_HK_TLM_TOPICID)
 
+/* Camera payload (CAM v2a, cam app): the command surface. SET_CONFIG is a
+ * ground-only upload (its payload never reaches the sim by this MID; the app
+ * re-emits the accepted command as BSK_LINK_CAM_CONFIG_TLM, the same relay
+ * shape as fcs torque). */
+
+/** \brief cam ground commands (COSMOS -> cam) */
+#define CAM_CMD_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_CAM_CMD_TOPICID)
+
+/** \brief cam housekeeping request (scheduler -> cam) */
+#define CAM_SEND_HK_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_CAM_SEND_HK_TOPICID)
+
+/** \brief camera config upload (COSMOS -> cam, own packet per SetGain law) */
+#define CAM_SET_CONFIG_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_CAM_SET_CONFIG_TOPICID)
+
+/** \brief cam housekeeping telemetry (cam -> beacon) */
+#define CAM_HK_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_CAM_HK_TLM_TOPICID)
+
+/** \brief accepted camera config (cam -> bsk_link -> sim, never gates) */
+#define BSK_LINK_CAM_CONFIG_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_CAM_CONFIG_TLM_TOPICID)
+
 /** \brief cFS TIME service commands (link uses SET_MET to slave MET to the
  * sim timecode, D8) */
 #define ORRERY_TIME_CMD_MID (SAMPLE_CPU1_CMD_MID_BASE + ORRERY_TIME_CMD_TOPICID)

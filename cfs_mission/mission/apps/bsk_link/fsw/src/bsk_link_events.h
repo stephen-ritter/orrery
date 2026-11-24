@@ -25,5 +25,7 @@
 #define BSK_LINK_FIT_ERR_EID           18 /* stale firmware vs manifest: aborts */
 #define BSK_LINK_FIT_REPORT_EID        19 /* rows claimed-or-denied, named      */
 #define BSK_LINK_OPNAV_INF_EID         20 /* basilisk OpNav knowledge (CAM)     */
+#define BSK_LINK_CAM_STATE_INF_EID     21 /* basilisk CamState (CAM v2a row)     */
+#define BSK_LINK_CAM_INF_EID           22 /* cam config forwarded to sim (v2a)   */
 
 #endif /* BSK_LINK_EVENTS_H */

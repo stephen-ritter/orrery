@@ -21,4 +21,7 @@
 /* part: opnav - Optical navigation (planet knowledge from rendered images, CAM) */
 #define CFE_MISSION_BSK_LINK_OPNAV_STATE_TLM_TOPICID 209
 
+/* part: camstate - Camera device state (CAM v2a: confirmed shutter, rate, captures) */
+#define CFE_MISSION_BSK_LINK_CAM_STATE_TLM_TOPICID 211
+
 #endif /* ORRERY_PART_TOPICIDS_H */

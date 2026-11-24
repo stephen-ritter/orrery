@@ -13,7 +13,7 @@
 
 #include "cfe.h"
 #include "orrery_msgids.h"
-#define BSK_LINK_FRAME_ROWS 4
+#define BSK_LINK_FRAME_ROWS 5
 #define BSK_LINK_FRAME_MAX_PAYLOAD 128
 
 /* Fit handshake (OB): the digest of this table's SEMANTICS (row order,
@@ -22,7 +22,7 @@
  * FitManifest; a mismatch means one side is stale, which no size check
  * can see (a stale binary is perfectly self-consistent). Rebuild:
  * uv run python -m codegen.emit_frames, then cfs_mission/build.sh. */
-#define BSK_LINK_FIT_REGISTRY_HASH 0xd9e8518eu
+#define BSK_LINK_FIT_REGISTRY_HASH 0x0477f6ffu
 
 typedef struct
 {
@@ -51,6 +51,10 @@ static const BskLink_WorldFrameDef_t BskLink_WorldFrames[BSK_LINK_FRAME_ROWS] = 
     { "OPNAV", "BSK_LINK/OpNavState", BSK_LINK_OPNAV_STATE_TLM_MID,
       /* evs */ 72, 20 /* BSK_LINK_OPNAV_INF_EID */,
       "OpNav knowledge" },
+    /* name: camstate - Camera device state (CAM v2a: confirmed shutter, rate, captures) */
+    { "CAMSTATE", "BSK_LINK/CamState", BSK_LINK_CAM_STATE_TLM_MID,
+      /* evs */ 48, 21 /* BSK_LINK_CAM_STATE_INF_EID */,
+      "CamState" },
 };
 
 #endif /* ORRERY_FRAMES_H */

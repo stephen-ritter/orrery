@@ -44,6 +44,11 @@
  *  every processed frame; the sim holds its next Basilisk step for this. */
 #define BSK_LINK_ACK_TOPIC "ACK"
 
+/** ZMQ topic of the camera config (egress; CAM v2a). Fire-and-forget like
+ *  CMD, unlike ACK it never gates: a lost config is ground-diagnosed by the
+ *  CAM_HK-vs-CamState divergence pair, not by a barrier the physics waits on. */
+#define BSK_LINK_CAM_TOPIC "CAM"
+
 /**
  * Sensor frame to decode off the link.
  *
@@ -156,6 +161,9 @@ typedef struct
     uint32 AckRecvCount;       /* step acks taken off the bus                    */
     uint32 AckFwdCount;        /* step acks written to the sim (opens its gate)  */
     uint32 AckDropCount;       /* ack egress failed: the sim will hang and abort */
+    uint32 CamRecvCount;       /* cam configs taken off the bus (CAM v2a)        */
+    uint32 CamFwdCount;        /* cam configs written to the sim                 */
+    uint32 CamDropCount;       /* wrong length or egress send failed             */
     uint32 TimeSyncCount;      /* SET_MET sent: mission clock slaved to the sim  */
     uint32 WorldFrameCounts[BSK_LINK_FRAME_ROWS];      /* per registry row      */
     uint32 WorldFramePublishFail[BSK_LINK_FRAME_ROWS]; /* rejected, reported once */

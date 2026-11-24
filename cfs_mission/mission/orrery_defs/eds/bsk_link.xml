@@ -154,12 +154,52 @@
         </EntryList>
       </ContainerDataType>
 
+      <!-- Basilisk -> cFS: the camera device's CONFIRMED state (CAM v2a). The
+           commanded view rides CAM_HK; this is the sim's side of the pair,
+           sampled from the camera module's live fields each frame - the
+           Phase-0 spike proved those fields are the truth (camera.cpp
+           re-reads them every update, and vizInterface gates image requests
+           on exactly them). uint64 fields throughout, the OpNavState law:
+           48 B, no padding question for the C twin. Captured counts image
+           RESPONSES received since boot: the firstPass boot stream (Basilisk
+           streams 11 renders before the rate/shutter gates own the port) is
+           included, as honesty demands - it is what the camera captured. -->
+      <ContainerDataType name="CamState" shortDescription="Camera device state for one sim instant (confirmed, not commanded)">
+        <EntryList>
+          <Entry name="SimTimeS" type="float64" shortDescription="sim time [s]" />
+          <Entry name="Frame" type="uint64" shortDescription="sim frame counter" />
+          <Entry name="CameraId" type="uint64" shortDescription="the [[camera]] this bird commands" />
+          <Entry name="Shutter" type="uint64" shortDescription="shutter the sim is running (1 open): the module's own field" />
+          <Entry name="RenderRateS" type="float64" shortDescription="image interval in use [s] (module nanoseconds converted)" />
+          <Entry name="Captured" type="uint64" shortDescription="image responses received since boot (firstPass boot stream included)" />
+        </EntryList>
+      </ContainerDataType>
+
       <!-- cFS -> Basilisk: what the flight software commands. -->
       <ContainerDataType name="TorqueCommand" shortDescription="Direct body torque for one control tick">
         <EntryList>
           <Entry name="SimTimeS" type="float64" shortDescription="sim time [s]" />
           <Entry name="TorqueSumB" type="Vector3" shortDescription="commanded body torque [N m]" />
           <Entry name="Frame" type="uint64" shortDescription="sim frame counter" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- cFS -> Basilisk: one accepted CAM_SET_CONFIG, forwarded by the cam
+           app (CAM v2a). This frame never gates and never acks: it rides the
+           cmd channel as its own ZeroMQ topic, drained between ticks, and a
+           dropped one shows on the ground as CAM_HK.RenderRateCmd drifting
+           from CamState.RenderRateS - diagnosis by divergence, not by an
+           ack the lockstep must wait on. Shutter/RenderRateS carry ground
+           units; the sim door converts the seconds to the module's
+           nanoseconds. RenderRateS > 0 is law on BOTH sides of the airgap:
+           the vizInterface request modulo divides by it (B1). -->
+      <ContainerDataType name="CamConfig" shortDescription="Camera payload command for the sim's eye (never gated)">
+        <EntryList>
+          <Entry name="SimTimeS" type="float64" shortDescription="sim time at the command [s]" />
+          <Entry name="Frame" type="uint64" shortDescription="sim frame the command rode" />
+          <Entry name="CameraId" type="uint64" shortDescription="the [[camera]] to configure" />
+          <Entry name="Shutter" type="uint64" shortDescription="1 open (request images), 0 closed" />
+          <Entry name="RenderRateS" type="float64" shortDescription="image interval [s]; must be &gt; 0" />
         </EntryList>
       </ContainerDataType>
 
@@ -266,6 +306,21 @@
         </EntryList>
       </ContainerDataType>
 
+      <ContainerDataType name="CamConfigTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="CamConfig" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- The commanded view rides CAM_HK; this wrapper carries the sim's
+           confirmed view onto the bus through bsk_link's generic registry
+           consumer (CAM v2a, landed row "camstate"). -->
+      <ContainerDataType name="CamStateTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="CamState" />
+        </EntryList>
+      </ContainerDataType>
+
     </DataTypeSet>
 
     <ComponentSet>
@@ -296,6 +351,11 @@
               <GenericTypeMap name="TelemetryDataType" type="OpNavStateTlm" />
             </GenericTypeMapSet>
           </Interface>
+          <Interface name="CAM_STATE_TLM" shortDescription="Software bus ingested camera device state (CAM v2a, confirmed, never commanded)" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="CamStateTlm" />
+            </GenericTypeMapSet>
+          </Interface>
           <Interface name="TORQUE_COMMAND_TLM" shortDescription="Software bus torque command from fcs for basilisk" type="CFE_SB/Telemetry">
             <GenericTypeMapSet>
               <GenericTypeMap name="TelemetryDataType" type="TorqueCommandTlm" />
@@ -306,6 +366,11 @@
               <GenericTypeMap name="TelemetryDataType" type="StepAckTlm" />
             </GenericTypeMapSet>
           </Interface>
+          <Interface name="CAM_CONFIG_TLM" shortDescription="Software bus camera config from cam for basilisk (CAM v2a, never gates)" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="CamConfigTlm" />
+            </GenericTypeMapSet>
+          </Interface>
         </RequiredInterfaceSet>
         <Implementation>
           <VariableSet>
@@ -314,8 +379,10 @@
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="NavStateTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_NAV_STATE_TLM_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="AttitudeStateTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_ATTITUDE_STATE_TLM_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="OpNavStateTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_OPNAV_STATE_TLM_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="CamStateTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_CAM_STATE_TLM_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="TorqueCommandTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_TORQUE_COMMAND_TLM_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="StepAckTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_STEP_ACK_TLM_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="CamConfigTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_CAM_CONFIG_TLM_TOPICID}" />
           </VariableSet>
           <ParameterMapSet>
             <ParameterMap interface="SENSOR_FRAME_TLM" parameter="TopicId" variableRef="SensorFrameTlmTopicId" />
@@ -323,8 +390,10 @@
             <ParameterMap interface="NAV_STATE_TLM" parameter="TopicId" variableRef="NavStateTlmTopicId" />
             <ParameterMap interface="ATTITUDE_STATE_TLM" parameter="TopicId" variableRef="AttitudeStateTlmTopicId" />
             <ParameterMap interface="OPNAV_STATE_TLM" parameter="TopicId" variableRef="OpNavStateTlmTopicId" />
+            <ParameterMap interface="CAM_STATE_TLM" parameter="TopicId" variableRef="CamStateTlmTopicId" />
             <ParameterMap interface="TORQUE_COMMAND_TLM" parameter="TopicId" variableRef="TorqueCommandTlmTopicId" />
             <ParameterMap interface="STEP_ACK_TLM" parameter="TopicId" variableRef="StepAckTlmTopicId" />
+            <ParameterMap interface="CAM_CONFIG_TLM" parameter="TopicId" variableRef="CamConfigTlmTopicId" />
           </ParameterMapSet>
         </Implementation>
       </Component>

@@ -53,6 +53,7 @@ parity digests ride the old paths untouched.
 from __future__ import annotations
 
 import argparse
+import math
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -72,7 +73,7 @@ from sim.detumble_scenario import (
     GYRO_NOISE_SIGMA_RADS,
     KP_RADS,
 )
-from sim.eds_link import encode_container, encode_fit_manifest
+from sim.eds_link import CamConfig, encode_container, encode_fit_manifest
 from sim.fleet import (
     add_link_args,
     resolve_endpoints,
@@ -147,6 +148,11 @@ def plant_observers(
         # the camera world is pinned to the registry's phase line, and the
         # refusal is the point - no silent unlanded traffic, no TODO.
         observers[PART_ROWS["opnav"].zmq_topic] = lambda: body.opnav_state_bytes(*clock())
+    if body.has_plant_cam:
+        # Same hardware, second honest view (CAM v2a): what the device IS,
+        # beside what the pixels SAY. Same rig-side refusal if the row is
+        # not landed - presence is only ever declared through the registry.
+        observers[PART_ROWS["camstate"].zmq_topic] = lambda: body.cam_state_bytes(*clock())
     return observers
 
 
@@ -397,7 +403,8 @@ class ForgeBody:
         # so they join here, between the build and InitializeSimulation, on a
         # task created AFTER the forge's camera task: each tick reads the
         # frame the camera just received.
-        self._opnav: tuple[Any, Any, Any, Any] | None = None
+        self._opnav: tuple[Any, ...] | None = None
+        self._cam_stats = {"applied": 0, "refused_id": 0, "refused_rate": 0}
         if cams:
             self._opnav = self._build_opnav(ctx, cams)
 
@@ -405,7 +412,7 @@ class ForgeBody:
         self,
         ctx: Any,  # noqa: ANN401 - bskforge SimContext (SWIG types inside)
         cams: list[Any],
-    ) -> tuple[Any, Any, Any, Any]:
+    ) -> tuple[Any, ...]:
         """Wire limbFinding -> horizonOpNav onto this body's rendered camera.
 
         The trimmed wheel's spellings are the API (``limbFinding.LimbFinding``,
@@ -417,8 +424,8 @@ class ForgeBody:
         created after the forge's camera task so the frame they read was
         received in the same tick.
 
-        Returns the tuple ``(camera_id, horizon module, attitude message,
-        knowledge subscriber)``.
+        Returns the tuple ``(camera_id, camera module, horizon module,
+        attitude message, knowledge recorder, image recorder)``.
 
         Raises:
             ForgeError: The plant mounts more than one camera for this body
@@ -458,7 +465,13 @@ class ForgeBody:
         # horizon just made.
         recorder = horizon.opNavOutMsg.recorder()
         ctx.sim.AddModelToTask(task, recorder)
-        return (cam.camera_id, horizon, att_msg, recorder)
+        # CAM v2a: a recorder on the IMAGE port, same task, is the captured
+        # witness. Recorder granularity is this task's tick: images that
+        # complete between two ticks share one record, so Captured is a
+        # floor, and its docstring says so rather than pretending otherwise.
+        image_recorder = cam_module.imageOutMsg.recorder()
+        ctx.sim.AddModelToTask(task, image_recorder)
+        return (cam.camera_id, cam_module, horizon, att_msg, recorder, image_recorder)
 
     @property
     def has_plant_state(self) -> bool:
@@ -502,7 +515,7 @@ class ForgeBody:
         knowledge channel and start being a bandwidth problem.
         """
         assert self._opnav is not None, "opnav_state_bytes without a rendered eye"
-        camera_id, _, _, recorder = self._opnav
+        camera_id, _, _, _, recorder, _ = self._opnav
         if recorder.size():
             latest = recorder.size() - 1
             los = tuple(float(v) for v in recorder.r_BN_B[latest])
@@ -523,6 +536,76 @@ class ForgeBody:
                 "Valid": valid,
                 "FaultDetected": faulted,
             },
+        )
+
+    @property
+    def has_plant_cam(self) -> bool:
+        """Whether this plant mounts a commandable eye (CAM v2a).
+
+        The same [[camera]] line that feeds OPNAV: one hardware, two honest
+        views - the estimator's opinion (opnav row) and the device's own
+        confirmed state (camstate row).
+        """
+        return self._opnav is not None
+
+    def cam_state_bytes(self, sim_time_s: float, frame: int) -> bytes:
+        """Pack one ``CamState``: what this body's camera IS (CAM v2a).
+
+        The device side of the commanded-vs-confirmed pair: read from the
+        module's live fields, which Basilisk re-reads every update
+        (camera.cpp) - the Phase-0 spike flew this conclusion before the
+        schema was written. ``captured`` counts distinct image write times
+        at estimator-task granularity, boot stream included; two images
+        completing between consecutive recorder ticks would share one count,
+        so this is a floor, and v2b's storage ledger is where the exact
+        number lives.
+        """
+        assert self._opnav is not None, "cam_state_bytes without a rendered eye"
+        camera_id, module, _, _, _, image_recorder = self._opnav
+        captured = len({t for t in image_recorder.writeTime if t > 0.0})
+        return encode_container(
+            "BSK_LINK/CamState",
+            {
+                "SimTimeS": float(sim_time_s),
+                "Frame": int(frame),
+                "CameraId": int(camera_id),
+                "Shutter": int(module.cameraIsOn),
+                "RenderRateS": float(module.renderRate) / 1e9,
+                "Captured": captured,
+            },
+        )
+
+    def apply_cam_config(self, cfg: CamConfig) -> None:
+        """The sim-side config door (CAM v2a): validate, write, tally.
+
+        Second guard on the same law the cam app enforces - zero render
+        rate is a divide-by-zero inside vizInterface's request modulo (B1),
+        and both sides of the airgap refuse it because a stale firmware on
+        either side must not be able to kill the vehicle. Writes land on
+        the module handle; the next Basilisk update sees them (spike-
+        proven) and every digest stays byte-equal either way. Refusals
+        tally instead of acking: this door answers nobody, and the ground
+        reads the divergence (CAM_HK vs CamState), not a receipt.
+        """
+        assert self._opnav is not None, "apply_cam_config without a rendered eye"
+        camera_id, module, _, _, _, _ = self._opnav
+        if cfg.camera_id != camera_id:
+            self._cam_stats["refused_id"] += 1
+            print(
+                f"[{self.name}] cam config refused: eye {cfg.camera_id} "
+                f"not fitted (bird has {camera_id})"
+            )
+            return
+        if not math.isfinite(cfg.render_rate_s) or cfg.render_rate_s <= 0.0:
+            self._cam_stats["refused_rate"] += 1
+            print(f"[{self.name}] cam refused: rate {cfg.render_rate_s} must be > 0 (B1)")
+            return
+        module.cameraIsOn = 1 if cfg.shutter else 0
+        module.renderRate = round(cfg.render_rate_s * 1e9)
+        self._cam_stats["applied"] += 1
+        print(
+            f"[{self.name}] cam{camera_id}: shutter={'OPEN' if cfg.shutter else 'CLOSED'} "
+            f"rate={cfg.render_rate_s:g}s (t={cfg.sim_time_s:.1f}s frame={cfg.frame})"
         )
 
     @property
@@ -554,7 +637,7 @@ class ForgeBody:
             # and this is the only per-tick write point the rig gives a body.
             # The estimate was 0.73 degrees from truth with exactly this
             # feed - one tick old, which at these rates is this tick.
-            _, _, att_msg, _ = self._opnav
+            _, _, _, att_msg, _, _ = self._opnav
             state = self._state_sub()
             payload = messaging.NavAttMsgPayload()
             payload.timeTag = self.sim_time_s
@@ -797,6 +880,7 @@ class ForgeScenario:
             ack_retry_s=ack_retry_s,
             pace=pace,
             observers=plant_observers(self.body, lambda: (rig.sim_time_s, rig.frame)),
+            cam_sink=self.body.apply_cam_config if self.body.has_plant_cam else None,
             fit_provider=fit_provider(
                 self.body, lambda: (rig.sim_time_s, rig.frame), fit_override, fit_digest
             ),
@@ -984,6 +1068,7 @@ class ForgeFleet:
                     truth_provider=(lambda b=body: truth_bytes(b.truth())),
                     kp=np.asarray(kp_rads, dtype=float),
                     observers=plant_observers(body, lambda: (rig.sim_time_s, rig.frame)),
+                    cam_sink=body.apply_cam_config if body.has_plant_cam else None,
                     fit_provider=fit_provider(
                         body, lambda: (rig.sim_time_s, rig.frame), fit_override, fit_digest
                     ),

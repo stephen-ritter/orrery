@@ -40,6 +40,16 @@
 #define CFE_MISSION_SPS_SCHEDULE_CMD_TOPICID 207
 #define CFE_MISSION_SPS_SEND_HK_TOPICID 208
 
+/* Camera payload (CAM v2a, cam app). SET_CONFIG rides its own topic on the
+ * SetGainPkt law (payload-bearing commands lose arguments in the FC-subtype
+ * pattern); the CAMSTATE telemetry topic is the registry row, not a line
+ * here - apps are hand-written, parts are generated. */
+#define CFE_MISSION_CAM_HK_TLM_TOPICID 210
+#define CFE_MISSION_BSK_LINK_CAM_CONFIG_TLM_TOPICID 212
+#define CFE_MISSION_CAM_CMD_TOPICID 210
+#define CFE_MISSION_CAM_SEND_HK_TOPICID 211
+#define CFE_MISSION_CAM_SET_CONFIG_TOPICID 212
+
 /* cFS TIME service command port, block-relative (cfe-topicids.xml:
  * TIME_CMD = TELECOMMAND_BASE_TOPICID + 5). The link slaves mission MET to
  * the sim timecode over this port (D8). */

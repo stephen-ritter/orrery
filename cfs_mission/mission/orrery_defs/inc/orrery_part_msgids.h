@@ -23,4 +23,7 @@
 /** \brief Optical navigation (planet knowledge from rendered images, CAM) (part "opnav") */
 #define BSK_LINK_OPNAV_STATE_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_OPNAV_STATE_TLM_TOPICID)
 
+/** \brief Camera device state (CAM v2a: confirmed shutter, rate, captures) (part "camstate") */
+#define BSK_LINK_CAM_STATE_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_CAM_STATE_TLM_TOPICID)
+
 #endif /* ORRERY_PART_MSGIDS_H */

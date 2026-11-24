@@ -205,3 +205,30 @@ floor = 0.0                            # the renderer device is NOISELESS by des
 #                                       exactly zero means the wire copied the truth vector
 ceiling = "declared"                   # over 1 FOV the two wires describe different skies
 epoch = "strict"                       # knowledge rides the same world tick
+
+# CAM v2a (the command surface): the sim's CONFIRMED device state. Two rows
+# one hardware: "opnav" is what the pixels SAY (the estimator's opinion);
+# "camstate" is what the device IS - shutter, render rate in use, images
+# captured - read from the camera module's live fields, which the Phase-0
+# spike proved are truthfully re-read every update (camera.cpp UpdateState).
+# CAM_HK carries what was COMMANDED; this row carries what the sim CONFIRMS;
+# the ground screens them side by side and their divergence is the defect
+# class (a lost command shows as RenderRateCmd != RenderRateS long before a
+# human would read a log).
+[[part]]
+name = "camstate"
+display = "Camera device state (CAM v2a: confirmed shutter, rate, captures)"
+landed = true                          # the circuit exists end to end (v2a command surface)
+bskforge_type = "camera"               # same presence gate as "opnav": [[camera]]
+plant_output = ""                      # not a plant message: the forge samples the module
+zmq_topic = "CAMSTATE"
+eds_container = "BSK_LINK/CamState"
+container_bytes = 48                   # SimTimeS + Frame + CameraId + Shutter + RenderRateS + Captured
+topic_offset = 211                     # TM+210 is CAM_HK (hand-written app row)
+topic_name = "BSK_LINK_CAM_STATE_TLM_TOPICID"
+mid_name = "BSK_LINK_CAM_STATE_TLM"
+evs_info = "BSK_LINK_CAM_STATE_INF_EID"
+evs_info_id = 21                       # 20 is the opnav row
+evs_label = "CamState"
+consumer = "bsk_link"                  # the generic consumer: zero C edits at landing
+subscribers = []                       # v2a: ground screens it; the cam app forwards, never reads

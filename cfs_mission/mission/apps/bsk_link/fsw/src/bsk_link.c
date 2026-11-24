@@ -664,6 +664,52 @@ static void BSK_Link_ForwardStepAck(const CFE_SB_Buffer_t *BufPtr)
 /* -------------------------------------------------------------------------- */
 
 /**
+ * Forward one accepted camera config from the bus out to the Basilisk sim.
+ *
+ * CAM v2a. The sim drains this topic between ticks and applies it at the next
+ * frame boundary; nothing here waits for an answer. A failed egress is rare
+ * (configs are commanded, not streamed) and loud: the ground will otherwise
+ * see CAM_HK.RenderRateCmd frozen against CamState.RenderRateS and chase the
+ * wrong wire.
+ */
+static void BSK_Link_ForwardCamConfig(const CFE_SB_Buffer_t *BufPtr)
+{
+    const CFE_MSG_Message_t *Msg    = &BufPtr->Msg;
+    size_t                   MsgLen = 0;
+    BskCamConfig_Payload_t   Body;
+
+    BSK_LinkAppData.CamRecvCount++;
+
+    CFE_MSG_GetSize(Msg, &MsgLen);
+    if (MsgLen != sizeof(BskCamConfigTlm_t))
+    {
+        BSK_LinkAppData.CamDropCount++;
+        return;
+    }
+    memcpy(&Body, (const uint8 *)Msg + sizeof(CFE_MSG_TelemetryHeader_t), sizeof(Body));
+
+    if (BSK_Link_EgressFrame(&Body, sizeof(Body), BSK_LINK_CAM_TOPIC))
+    {
+        BSK_LinkAppData.CamFwdCount++;
+        CFE_EVS_SendEvent(BSK_LINK_CAM_INF_EID, CFE_EVS_EventType_INFORMATION,
+                          "cam config forwarded t=%.1fs camera=%llu shutter=%llu rate=%.3fs total=%lu",
+                          Body.SimTimeS, (unsigned long long)Body.CameraId, (unsigned long long)Body.Shutter,
+                          Body.RenderRateS, (unsigned long)BSK_LinkAppData.CamFwdCount);
+    }
+    else
+    {
+        if (BSK_LinkAppData.CamDropCount == 0)
+        {
+            CFE_EVS_SendEvent(BSK_LINK_EGRESS_ERR_EID, CFE_EVS_EventType_ERROR,
+                              "cam config dropped: no egress capacity (%s)", BSK_LinkCmdEndpoint);
+        }
+        BSK_LinkAppData.CamDropCount++;
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
  * Pull one multipart frame off the feed, if one is fully queued, and account for it.
  *
  * Reading topic and payload together matters: a topic consumed without its payload
@@ -1115,6 +1161,15 @@ static int32 BSK_Link_AppInit(void)
         CFE_EVS_SendEvent(BSK_LINK_SUBSCRIBE_ERR_EID, CFE_EVS_EventType_ERROR,
                           "step ack subscribe failed, status=%08x; lockstep gate DEAD", (unsigned int)Status);
     }
+    /* Camera config egress (CAM v2a). A failed subscribe costs a bird its
+     * eye's command surface, never its control loop: loud, not fatal. */
+    Status = CFE_SB_Subscribe(CFE_SB_ValueToMsgId(BSK_LINK_CAM_CONFIG_TLM_MID), BSK_LinkAppData.CmdPipe);
+    if (Status != CFE_SUCCESS)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_SUBSCRIBE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "cam config subscribe failed, status=%08x; camera command surface DEAD",
+                          (unsigned int)Status);
+    }
 
     /* Resolve the linked-in database before accepting any traffic: if the schema is
      * not there, every frame would otherwise count as malformed. Looking the type
@@ -1382,6 +1437,10 @@ void BSK_LINK_AppMain(void)
                 {
                     BSK_Link_ForwardStepAck(BufPtr);
                 }
+                else if (MsgIdValue == (CFE_SB_MsgId_Atom_t)BSK_LINK_CAM_CONFIG_TLM_MID)
+                {
+                    BSK_Link_ForwardCamConfig(BufPtr);
+                }
                 /* Any other MsgId (e.g. future ground commands) is accounted in
                  * MsgRecvCount only; there is no second consumer to surprise. */
             }
@@ -1390,7 +1449,7 @@ void BSK_LINK_AppMain(void)
         }
     }
 
-    CFE_ES_WriteToSysLog("BSK_LINK exit: recv=%lu frames=%lu bad=%lu other_topic=%lu torque=%lu/%lu/%lu acks=%lu/%lu/%lu\n",
+    CFE_ES_WriteToSysLog("BSK_LINK exit: recv=%lu frames=%lu bad=%lu other_topic=%lu torque=%lu/%lu/%lu acks=%lu/%lu/%lu cam=%lu/%lu/%lu\n",
                          (unsigned long)BSK_LinkAppData.MsgRecvCount,
                          (unsigned long)BSK_LinkAppData.SensorMsgCount,
                          (unsigned long)BSK_LinkAppData.MalformedMsgCount,
@@ -1400,7 +1459,10 @@ void BSK_LINK_AppMain(void)
                          (unsigned long)BSK_LinkAppData.TorqueDropCount,
                          (unsigned long)BSK_LinkAppData.AckRecvCount,
                          (unsigned long)BSK_LinkAppData.AckFwdCount,
-                         (unsigned long)BSK_LinkAppData.AckDropCount);
+                         (unsigned long)BSK_LinkAppData.AckDropCount,
+                         (unsigned long)BSK_LinkAppData.CamRecvCount,
+                         (unsigned long)BSK_LinkAppData.CamFwdCount,
+                         (unsigned long)BSK_LinkAppData.CamDropCount);
 
     CFE_ES_ExitApp(RunStatus);
 }

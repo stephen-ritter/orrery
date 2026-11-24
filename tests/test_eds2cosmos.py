@@ -296,7 +296,7 @@ def test_topicids_header_mirrors_xml() -> None:
     xml_topics = {
         f"{pkg}_{topic}": int(value)
         for pkg, topic, value in re.findall(
-            r'Define name="(BSK_LINK|FCS|OBC|SPS)_(\w+)_TOPICID"'
+            r'Define name="(BSK_LINK|FCS|OBC|SPS|CAM)_(\w+)_TOPICID"'
             r'\s+value="\$\{CFE_MISSION/\w+\} \+ (\d+)"',
             xml,
         )
@@ -314,7 +314,7 @@ def test_topicids_header_mirrors_xml() -> None:
         assert c_topics.get(name) == value, (
             f"topic {name}: XML {value} != C header {c_topics.get(name)}"
         )
-    assert len(xml_topics) == len(c_topics) == 19  # 15 apps + 4 landed parts (REG/CAM)
+    assert len(xml_topics) == len(c_topics) == 25  # 20 apps + 5 landed parts (REG/CAM)
 
 
 def test_time_cmd_mid_derives_from_topicids() -> None:

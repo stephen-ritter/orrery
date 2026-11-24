@@ -319,6 +319,87 @@ def decode_opnav_state(payload: bytes) -> OpNavState:
     )
 
 
+@dataclass(frozen=True)
+class CamState:
+    """A decoded ``BSK_LINK/CamState`` frame (CAM v2a: confirmed device state).
+
+    The sim's side of the commanded-vs-confirmed pair: CAM_HK carries what the
+    ground asked for, this carries what the camera module is actually running.
+    ``captured`` counts distinct image writes seen since boot at recorder
+    granularity - the firstPass boot stream included, because it is what the
+    camera captured, as honesty demands.
+    """
+
+    sim_time_s: float
+    frame: int
+    camera_id: int
+    shutter: int
+    render_rate_s: float
+    captured: int
+
+
+def decode_cam_state(payload: bytes) -> CamState:
+    """Decode the body of a ``BSK_LINK/CamState`` frame (audit tools, tests)."""
+    lib = _lib()
+    obj = entry("BSK_LINK/CamState")(lib.PackedObject(payload))
+    return CamState(
+        sim_time_s=obj["SimTimeS"](),
+        frame=int(obj["Frame"]()),
+        camera_id=int(obj["CameraId"]()),
+        shutter=int(obj["Shutter"]()),
+        render_rate_s=float(obj["RenderRateS"]()),
+        captured=int(obj["Captured"]()),
+    )
+
+
+@dataclass(frozen=True)
+class CamConfig:
+    """A decoded ``BSK_LINK/CamConfig`` frame (cFS -> sim, CAM v2a).
+
+    One accepted ``CAM_SET_CONFIG`` leaving the bus. Fire-and-forget: nothing
+    on this frame is a barrier, and a sim that cannot honour it (no such eye,
+    zero rate) refuses by counter, never by an ack the physics would wait on.
+    """
+
+    sim_time_s: float
+    frame: int
+    camera_id: int
+    shutter: int
+    render_rate_s: float
+
+
+def decode_cam_config(payload: bytes) -> CamConfig:
+    """Decode the body of a ``BSK_LINK/CamConfig`` frame (the sim's config door)."""
+    lib = _lib()
+    obj = entry("BSK_LINK/CamConfig")(lib.PackedObject(payload))
+    return CamConfig(
+        sim_time_s=obj["SimTimeS"](),
+        frame=int(obj["Frame"]()),
+        camera_id=int(obj["CameraId"]()),
+        shutter=int(obj["Shutter"]()),
+        render_rate_s=float(obj["RenderRateS"]()),
+    )
+
+
+def encode_cam_config(
+    sim_time_s: float, frame: int, camera_id: int, shutter: int, render_rate_s: float
+) -> Any:  # noqa: ANN401 - stub-less C extension
+    """Build a packed ``BSK_LINK/CamConfig``.
+
+    Production frames are egressed by ``bsk_link`` from the bus; this encoder
+    exists for tests that drive the sim's config door without a container -
+    the same fake-FSW role ``encode_step_ack`` plays at the barrier.
+    """
+    lib = _lib()
+    obj = entry("BSK_LINK/CamConfig")()
+    obj["SimTimeS"] = sim_time_s
+    obj["Frame"] = frame
+    obj["CameraId"] = camera_id
+    obj["Shutter"] = shutter
+    obj["RenderRateS"] = render_rate_s
+    return lib.PackedObject(obj)
+
+
 def encode_torque_command(
     sim_time_s: float, torque_sum_b: tuple[float, float, float], frame: int
 ) -> Any:  # noqa: ANN401 - stub-less C extension

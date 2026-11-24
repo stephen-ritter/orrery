@@ -172,6 +172,74 @@ typedef struct
     FcsHkTlm_Payload_t        Payload;
 } FcsHkTlm_t;
 
+/* CAM ground commands (CAM v2a, cam_app). SET_CONFIG is its own packet on
+ * the SetGain law; RenderRateS arrives in the GROUND's seconds and must be
+ * > 0 - the app refuses otherwise, because vizInterface's image-request
+ * modulo divides by it (B1: zero is a hardware fault, not a config). */
+typedef struct
+{
+    uint8  Shutter;    /* 1 open (request images), 0 closed       */
+    uint8  CameraId;   /* the [[camera]] to configure (>= 1)      */
+    uint8  AlignPad[6]; /* explicit EDS pad before the double     */
+    double RenderRateS; /* image interval [s]; must be > 0         */
+} __attribute__((packed)) CamSetConfig_Payload_t;
+
+typedef struct
+{
+    CFE_MSG_CommandHeader_t  CommandHeader;
+    CamSetConfig_Payload_t   Payload;
+} CamSetConfigCmd_t;
+
+typedef struct
+{
+    CFE_MSG_CommandHeader_t CommandHeader;
+} CamNoopCmd_t;
+
+typedef struct
+{
+    CFE_MSG_CommandHeader_t CommandHeader;
+} CamSendHkCmd_t;
+
+/* CAM housekeeping: the COMMANDED view only - the sim's confirmed state
+ * rides the CamState row, and the ground screens the pair. */
+typedef struct
+{
+    uint8  CommandCounter;
+    uint8  CommandErrorCounter;
+    uint8  Shutter;             /* last commanded (1 open)              */
+    uint8  CameraId;            /* 0 until the first accepted command   */
+    uint32 ConfigFramesForwarded;
+    uint8  AlignPad[4];         /* explicit EDS pad before the doubles  */
+    double LastConfigSimTimeS;  /* sim time of the last frame forwarded */
+    double RenderRateCmd;       /* last commanded image interval [s]    */
+    uint32 FramesRecorded;      /* v2b promise: 0 until that phase lands */
+    uint32 FramesStored;        /* v2b promise: 0 until that phase lands */
+    uint32 FramesTransferred;   /* v2c promise: 0 until that phase lands */
+} __attribute__((packed)) CamHkTlm_Payload_t;
+
+typedef struct
+{
+    CFE_MSG_TelemetryHeader_t TelemetryHeader;
+    CamHkTlm_Payload_t        Payload;
+} CamHkTlm_t;
+
+/* BSK_LINK/CamConfig: one accepted camera command, egressed by bsk_link to
+ * the sim on the cmd channel under its own topic - never a barrier frame. */
+typedef struct
+{
+    double   SimTimeS;   /* sim time at the command [s]       */
+    uint64   Frame;      /* sim frame the command rode         */
+    uint64   CameraId;   /* the [[camera]] to configure        */
+    uint64   Shutter;    /* 1 open, 0 closed                   */
+    double   RenderRateS;/* image interval [s], ground unit    */
+} __attribute__((packed)) BskCamConfig_Payload_t;
+
+typedef struct
+{
+    CFE_MSG_TelemetryHeader_t TelemetryHeader;
+    BskCamConfig_Payload_t    Payload;
+} BskCamConfigTlm_t;
+
 /* OBC housekeeping (P4b-3, hk_app). Field order mirrors OBC/HkTlm_Payload,
  * pads included: everything here is bus-observed counts and freshest bus
  * reports - the OBC's view of itself, never navigator truth. */
@@ -260,5 +328,8 @@ _Static_assert(sizeof(FcsHkTlm_Payload_t) == 120, "FCS HK payload drift vs fcs.x
 _Static_assert(sizeof(ObcHk_Payload_t) == 80, "OBC HK payload drift vs obc.xml");
 _Static_assert(sizeof(SpsSchedule_Payload_t) == 60, "Schedule payload drift vs sps.xml");
 _Static_assert(sizeof(SpsHkTlm_Payload_t) == 72, "SPS HK payload drift vs sps.xml");
+_Static_assert(sizeof(CamSetConfig_Payload_t) == 16, "SetConfig payload drift vs cam.xml");
+_Static_assert(sizeof(CamHkTlm_Payload_t) == 40, "CAM HK payload drift vs cam.xml");
+_Static_assert(sizeof(BskCamConfig_Payload_t) == 40, "CamConfig payload drift vs bsk_link.xml");
 
 #endif /* ORRERY_BUS_MSG_H */
