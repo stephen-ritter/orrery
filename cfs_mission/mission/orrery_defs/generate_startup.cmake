@@ -14,6 +14,7 @@ function (generate_cfs_startup_script CFS_INSTALL_DIR)
         "CFE_APP, obc_hk,       OBC_HK_AppMain,     OBC_HK,       66,   65536,  0x0, 0;\n"
         "CFE_APP, sps,          SPS_AppMain,        SPS,          67,   65536,  0x0, 0;\n"
         "CFE_APP, cam,          CAM_AppMain,        CAM,          68,   65536,  0x0, 0;\n"
+        "CFE_APP, cf_tcp,       CF_TCP_AppMain,     CF_TCP,       69,   65536,  0x0, 0;\n"
         "CFE_APP, gs_tcp,       GS_TCP_AppMain,     GS_TCP,       60,   65536,  0x0, 0;\n"
     )
 
