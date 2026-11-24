@@ -81,6 +81,7 @@ GATES=(
     "live|modes|the supervisor trips, refuses, and recovers on a live bus|bash scripts/check_modes.sh|"
     "live|fit-handshake|the four boot verdicts: matched, silent, denied, abort|bash scripts/check_fit_handshake.sh|"
     "live|cam-v2a|a commanded eye lands on both views while the digests refuse to move|bash scripts/check_cam_v2a.sh|"
+    "live|cam-v2b|image files cross the airgap byte-identical while physics refuses to move|bash scripts/check_cam_v2b.sh|"
     "live|truth-exhibits|exhibits at device scale, truth uncommandable, refusal logged|bash scripts/check_truth_exhibits.sh|ground"
     "live|beacon-wrap|beacon table vs generated defs, both ways, 0 UNKNOWN|bash scripts/check_beacon_tables.sh|ground"
 )

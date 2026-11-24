@@ -1,4 +1,4 @@
-"""CAM v2a ground probe: command the eye, witness both views.
+"""CAM ground probe: command the eye, witness both views, watch the store.
 
 The acceptance this probe drives is the pair the phase was built to prove:
 CAM_HK (what the FSW COMMANDED) and BSK_LINK_CAM_STATE_TLM (what the device
@@ -7,7 +7,7 @@ the flight-software refusal path, where EVS says so. Nothing here may move
 physics: the digest pair (control flight vs this spam cadence, flown by
 scripts/check_cam_v2a.sh) is the argument, this probe is the witness.
 
-Two modes:
+Three modes:
 
   control  send NOTHING, watch only: the eye runs as TOML built it - open,
            at scenario rate, captures rising. The control leg of the digest
@@ -18,7 +18,11 @@ Two modes:
            refuses (the divergence pair, on purpose), then restore.
            Verdict: every accept landed on BOTH views, every app refusal
            moved the error counter and nothing else, the v2b/v2c promises
-           stayed at their honest zero.
+           stayed at their honest zero (there: no record_rate in TOML).
+  record   the v2b store outlet, flown by scripts/check_cam_v2b.sh: no
+           uplink at all. The four-number report, CamState's RECORDED
+           tally, and CamStorage's STORED ledger must fill up unprompted
+           - while FramesTransferred stays zero until v2c earns it.
 
 Like every probe here it speaks the mission's own schema (build_eds), so a
 field rename is a crash at startup, not a silently wrong offset.
@@ -36,7 +40,13 @@ from sim.fcs_probe import wire_float
 from sim.fleet import ports
 from sim.ground_probe import CFS, MISSION_DEFS, GroundClient, build_cmd
 
-CAM_PACKETS = ("CAM_SET_CONFIG", "CAM_HK_TLM", "BSK_LINK_CAM_STATE_TLM", "CAM_CMD")
+CAM_PACKETS = (
+    "CAM_SET_CONFIG",
+    "CAM_HK_TLM",
+    "BSK_LINK_CAM_STATE_TLM",
+    "BSK_LINK_CAM_STORAGE_TLM",
+    "CAM_CMD",
+)
 
 
 class CamHk:
@@ -85,6 +95,7 @@ class CamState:
         self.shutter = u(".Shutter")
         self.rate = wire_float(pkt, model.byte_offset(".RenderRateS"))
         self.captured = u(".Captured")
+        self.frames_recorded = u(".FramesRecorded")  # store outlet sends (v2b)
 
     def key(self) -> tuple[int, float]:
         """The state identity: transitions are (shutter, rate) pairs."""
@@ -94,7 +105,23 @@ class CamState:
         """One readable line for the acceptance log."""
         return (
             f"camstate t={self.sim_time_s:6.1f}s shutter={self.shutter} "
-            f"rate={self.rate:g}s captured={self.captured}"
+            f"rate={self.rate:g}s captured={self.captured} recorded={self.frames_recorded}"
+        )
+
+
+class CamStorage:
+    """One BSK_LINK_CAM_STORAGE_TLM: bsk_link's /cf/img ledger (v2b)."""
+
+    def __init__(self, pkt: bytes, model: Packet) -> None:
+        """Decode the store ledger off the beacon bytes."""
+        self.sim_time_s = wire_float(pkt, model.byte_offset(".SimTimeS"))
+        self.files_stored = model.wire_get(pkt, ".FilesStored")
+        self.bytes_stored = model.wire_get(pkt, ".BytesStored")
+
+    def __str__(self) -> str:
+        """One readable line for the acceptance log."""
+        return (
+            f"storage t={self.sim_time_s:6.1f}s files={self.files_stored} bytes={self.bytes_stored}"
         )
 
 
@@ -108,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     """Drive (or just watch) one camera flight; returns process exit code."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--instance", type=int, default=0, help="fleet port block (D9)")
-    ap.add_argument("--mode", choices=("control", "spam"), default="spam")
+    ap.add_argument("--mode", choices=("control", "spam", "record"), default="spam")
     ap.add_argument("--duration", type=float, default=56.0, help="wall seconds to watch")
     args = ap.parse_args(argv)
     block = ports(args.instance)
@@ -118,16 +145,17 @@ def main(argv: list[str] | None = None) -> int:
     missing = [name for name in CAM_PACKETS if name not in pkts]
     if missing:
         raise SystemExit(f"the schema has no {missing} - defs older than the app?")
-    cfg_model, hk_model, cs_model = (
+    cfg_model, hk_model, cs_model, store_model = (
         pkts["CAM_SET_CONFIG"],
         pkts["CAM_HK_TLM"],
         pkts["BSK_LINK_CAM_STATE_TLM"],
+        pkts["BSK_LINK_CAM_STORAGE_TLM"],
     )
 
     client = GroundClient(tlm_port=block.beacon, cmd_port=block.uplink)
     print(
         f"connected; CAM_SET_CONFIG=0x{cfg_model.msgid:04X} CAM_HK=0x{hk_model.msgid:04X} "
-        f"CamState=0x{cs_model.msgid:04X} mode={args.mode}"
+        f"CamState=0x{cs_model.msgid:04X} CamStorage=0x{store_model.msgid:04X} mode={args.mode}"
     )
 
     # cadence (spam), in wall seconds from connect; the paced sim keeps these
@@ -154,6 +182,8 @@ def main(argv: list[str] | None = None) -> int:
     cs_seen = 0
     last_hk: CamHk | None = None
     last_cs: CamState | None = None
+    last_store: CamStorage | None = None
+    store_seen = 0
     transitions: list[CamState] = []  # distinct (shutter, rate) states, in order
     closed_window: list[tuple[float, int]] = []  # (t, captured) while shutter closed
     last_poll = 0.0
@@ -173,9 +203,9 @@ def main(argv: list[str] | None = None) -> int:
                             f"t={now:5.1f}s sent CAM_SET_CONFIG shutter={shutter} "
                             f"camera={camera_id} rate={rate:g} ({label})"
                         )
-                if now - last_poll >= 2.0:
-                    client.send_packet(build_cmd(pkts["CAM_SEND_HK"].msgid, 0))
-                    last_poll = now
+            if args.mode in ("spam", "record") and now - last_poll >= 2.0:
+                client.send_packet(build_cmd(pkts["CAM_SEND_HK"].msgid, 0))
+                last_poll = now
 
             pkt = client.recv_packet(min(deadline, time.monotonic() + 0.5))
             if pkt is None:
@@ -194,6 +224,12 @@ def main(argv: list[str] | None = None) -> int:
                 if state.shutter == 0:
                     closed_window.append((state.sim_time_s, state.captured))
                 last_cs = state
+            elif msgid == store_model.msgid:
+                store_seen += 1
+                ledger = CamStorage(pkt, store_model)
+                if last_store is None or ledger.files_stored != last_store.files_stored:
+                    print(f"t={now:5.1f}s {ledger}")
+                last_store = ledger
     finally:
         client.close()
 
@@ -214,6 +250,34 @@ def main(argv: list[str] | None = None) -> int:
                 f"eye never streamed: captured={last_cs.captured} after {args.duration:g}s"
             )
         verdict = "CAM V2A CONTROL OK" if not reasons else "CAM V2A CONTROL FAILED"
+    elif args.mode == "record":
+        # CAM v2b: the eye is a payload. Nobody commands anything here - the
+        # outlet lives in TOML (record_rate) and its whole life must be
+        # visible without a single uplink: sim sends (CamState.recorded),
+        # bsk_link files (CamStorage), and the four-number HK repeating both.
+        keys = []
+        if last_store is None:
+            reasons.append("no CamStorage frame ever arrived: the ledger is deaf")
+        if last_hk is None:
+            reasons.append("no CAM_HK ever arrived: the four-number report is deaf")
+        if last_cs is not None and last_cs.frames_recorded < 1:
+            reasons.append("the store outlet never sent a capture (recorded stayed 0)")
+        if last_store is not None:
+            if last_store.files_stored < 1:
+                reasons.append("no image file completed under /cf/img")
+            if last_store.bytes_stored < 1:
+                reasons.append("the ledger counted a file with no bytes")
+        if last_hk is not None:
+            if last_hk.recorded < 1:
+                reasons.append(f"CAM_HK recorded stuck at {last_hk.recorded}")
+            if last_store is not None and last_hk.stored != last_store.files_stored:
+                reasons.append(
+                    f"CAM_HK stored={last_hk.stored} disagrees with the ledger "
+                    f"{last_store.files_stored}"
+                )
+            if last_hk.transferred != 0:
+                reasons.append("FramesTransferred moved before v2c: that is a lie, not a feature")
+        verdict = "CAM V2B OK" if not reasons else "CAM V2B FAILED"
     else:
         if last_hk is None:
             reasons.append("no CAM_HK ever arrived: the commanded view is deaf")
