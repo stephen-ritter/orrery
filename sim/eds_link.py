@@ -321,13 +321,16 @@ def decode_opnav_state(payload: bytes) -> OpNavState:
 
 @dataclass(frozen=True)
 class CamState:
-    """A decoded ``BSK_LINK/CamState`` frame (CAM v2a: confirmed device state).
+    """A decoded ``BSK_LINK/CamState`` frame (confirmed device state, v2a+v2b).
 
     The sim's side of the commanded-vs-confirmed pair: CAM_HK carries what the
     ground asked for, this carries what the camera module is actually running.
     ``captured`` counts distinct image writes seen since boot at recorder
     granularity - the firstPass boot stream included, because it is what the
-    camera captured, as honesty demands.
+    camera captured, as honesty demands. ``frames_recorded`` (v2b) counts the
+    frames the STORE OUTLET has sent: every ``record_rate``-th capture whose
+    PNG bytes were chunked onto the wire. Zero means the camera is nav-only -
+    an absence, not a failure.
     """
 
     sim_time_s: float
@@ -336,6 +339,7 @@ class CamState:
     shutter: int
     render_rate_s: float
     captured: int
+    frames_recorded: int
 
 
 def decode_cam_state(payload: bytes) -> CamState:
@@ -349,6 +353,7 @@ def decode_cam_state(payload: bytes) -> CamState:
         shutter=int(obj["Shutter"]()),
         render_rate_s=float(obj["RenderRateS"]()),
         captured=int(obj["Captured"]()),
+        frames_recorded=int(obj["FramesRecorded"]()),
     )
 
 

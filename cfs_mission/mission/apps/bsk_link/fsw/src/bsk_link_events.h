@@ -27,5 +27,7 @@
 #define BSK_LINK_OPNAV_INF_EID         20 /* basilisk OpNav knowledge (CAM)     */
 #define BSK_LINK_CAM_STATE_INF_EID     21 /* basilisk CamState (CAM v2a row)     */
 #define BSK_LINK_CAM_INF_EID           22 /* cam config forwarded to sim (v2a)   */
+#define BSK_LINK_STORE_INF_EID         23 /* image file completed under /cf/img  */
+#define BSK_LINK_STORE_ERR_EID         24 /* store open/write/rename refused     */
 
 #endif /* BSK_LINK_EVENTS_H */

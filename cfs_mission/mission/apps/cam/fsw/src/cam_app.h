@@ -70,6 +70,13 @@ typedef struct
     uint32 ConfigFramesForwarded;  /* accepted configs egressed to the sim  */
     uint32 ConfigFwdFailCount;     /* publishes that never reached bsk_link */
 
+    /* CAM v2b pass-through witnesses (read-only): RECORDED is what the sim's
+     * store outlet sent (CamState), STORED is what bsk_link reassembled into
+     * /cf/img (CamStorage). Neither is this app's own doing - the four-number
+     * report exists so their divergence, not its prose, names the defect. */
+    uint64 FramesRecorded;
+    uint64 FilesStored;
+
     /* Read-only stamping from the sensor feed (never a law input). */
     double LastSimTimeS;
     uint64 LastFrame;

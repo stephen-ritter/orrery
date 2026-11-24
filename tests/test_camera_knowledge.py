@@ -116,7 +116,7 @@ def test_the_camstate_frame_reports_the_device_as_built() -> None:
 
     (camera_body,) = build_bodies(CAMERA_SCENARIO)
     payload = camera_body.cam_state_bytes(1.0, 1)
-    assert len(payload) == 48, "the provider packs what the row declares"
+    assert len(payload) == 56, "the provider packs what the row declares"
     frame = decode_cam_state(payload)
     assert (frame.sim_time_s, frame.frame) == (1.0, 1)
     assert frame.camera_id == 1
@@ -125,6 +125,83 @@ def test_the_camstate_frame_reports_the_device_as_built() -> None:
     assert frame.shutter == int(module.cameraIsOn), "the frame is the module, not an opinion"
     assert frame.render_rate_s == pytest.approx(module.renderRate / 1e9)
     assert frame.captured == 0, "nothing rendered yet; a default capture would be a lie"
+    assert frame.frames_recorded == 0, "a nav-only camera records nothing (v2b zero)"
+
+
+def test_the_store_outlet_streams_every_nth_capture_and_only_once(tmp_path: Path) -> None:
+    """CAM v2b: the outlet chunks every Nth capture's PNG, exactly once.
+
+    A scripted eye (fake recorder + real files on disk) flies the outlet's
+    whole law without a renderer: every Nth capture by ordinal is sent, the
+    filename is the capture time at 6 decimals (camera.cpp's spelling), a
+    > chunk file arrives as ordered parts, the tally counts COMPLETE sends
+    only, a second tick re-sends nothing, and a capture whose file has not
+    landed yet is retried, never skipped.
+    """
+    import struct
+
+    from sim.eds_link import decode_cam_state
+
+    class FakeRecorder:
+        def __init__(self) -> None:
+            self.timeTag: list[float] = []
+
+    (camera_body,) = build_bodies(CAMERA_SCENARIO)
+    assert camera_body._opnav is not None
+    camera_id, module, horizon, att, knowledge, _ = camera_body._opnav
+    fake = FakeRecorder()
+    camera_body._opnav = (camera_id, module, horizon, att, knowledge, fake)
+    store_dir = tmp_path / "store"
+    store_dir.mkdir()
+    camera_body._cam_store = {"rate": 2, "dir": store_dir, "sent": [], "count": 0}
+    sent: list[bytes] = []
+    camera_body.attach_store_emitter(sent.append)
+
+    big = bytes(range(256)) * 80  # 20480 B: two IMG parts, provably
+    small = b"\x89PNG tiny"
+    # timeTags arrive in NANOSECONDS (the live-flight lesson: a 2 s capture
+    # stamps 2e9); the file name is the SECONDS value at 6 decimals, exactly
+    # what camera.cpp's std::to_string writes.
+    for t, data in ((1.0, small), (2.0, big), (3.0, small), (4.0, small)):
+        fake.timeTag.append(t * 1e9)
+        (store_dir / f"{t:.6f}.png").write_bytes(data)
+
+    payload = camera_body.cam_state_bytes(5.0, 5)
+    frame = decode_cam_state(payload)
+    assert frame.frames_recorded == 2, "captures 2 and 4 are the record_rate=2 set"
+    headers = [struct.unpack(camera_body.IMG_HEADER, f[:24]) for f in sent]
+    assert [h[:2] for h in headers[:3]] == [(1, 2), (1, 2), (1, 4)]
+    assert headers[0][2:] == (0, 2) and headers[1][2:] == (1, 2), "ordered parts, correct total"
+    assert headers[2][2:] == (0, 1), "capture 4 is one part"
+    rebuilt = b"".join(
+        f[24:] for f in sent if struct.unpack(camera_body.IMG_HEADER, f[:24])[1] == 2
+    )
+    assert rebuilt == big, "the parts must rebuild the file byte for byte"
+    assert len(sent) == 3, "1 part + 2 parts + 1 part"
+
+    # same tick's state again: the outlet never re-sends a capture
+    before = len(sent)
+    frame2 = decode_cam_state(camera_body.cam_state_bytes(6.0, 6))
+    assert len(sent) == before and frame2.frames_recorded == 2, "exactly-once per capture"
+
+    # patience law: a due capture with no file yet is retried, not lost
+    fake.timeTag.append(5.0 * 1e9)
+    fake.timeTag.append(6.0 * 1e9)
+    frame3 = decode_cam_state(camera_body.cam_state_bytes(7.0, 7))
+    assert frame3.frames_recorded == 2 and len(sent) == before, "no file, no record"
+    (store_dir / "6.000000.png").write_bytes(small)
+    frame4 = decode_cam_state(camera_body.cam_state_bytes(8.0, 8))
+    assert frame4.frames_recorded == 3, "the file landed; the capture is finally recorded"
+
+
+def test_the_store_outlet_is_silent_when_the_scenario_said_no() -> None:
+    """record_rate = 0: the outlet does not exist - zero frames, zero tally."""
+    (camera_body,) = build_bodies(CAMERA_SCENARIO)
+    sent: list[bytes] = []
+    camera_body.attach_store_emitter(sent.append)
+    assert camera_body.store_active is False
+    assert camera_body._pump_store(1, [1.0, 2.0, 3.0]) == 0
+    assert sent == []
 
 
 def test_the_config_door_applies_refuses_and_stays_reversible() -> None:

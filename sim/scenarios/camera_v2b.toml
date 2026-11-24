@@ -1,0 +1,195 @@
+# camera_ops with the v2b store outlet: every 2nd capture becomes an onboard
+# file. One TOML line is the whole difference from camera_ops.toml - which IS
+# the acceptance argument: with record_rate absent (or 0) the bird ships zero
+# image bytes and its digest is the untouched camera_ops anchor.
+#
+#   scripts/check_cam_v2b.sh            (control = camera_ops, this = record leg)
+#
+# downlink stays at its honest default (false): frames recorded are NOT yet
+# eligible for CF - that promise is v2c's, and a dead outlet (downlink with
+# nothing to send) is refused by the schema, by design.
+# chief with a rendered eye (CAM): the knowledge mission.
+#
+#   uv run python -m sim.forge_scenario --scenario sim/scenarios/camera_ops.toml
+#   scripts/fleet.sh up sim/scenarios/camera_ops.toml   (attaches --profile camera)
+#
+# Vehicle, suite and law are chief.toml's; three facts change because a
+# camera is now a payload with appetites:
+#
+# * ORBIT 25 000 km. At LEO the planet overfills a 50-degree field and there
+#   is no limb to find - limbFinding needs the disc INSIDE the frame. A
+#   craft must also orbit at all: at the central body's (0,0,0), Vizard's
+#   scene build degenerates and no frame ever renders (any version).
+# * ATTITUDE nadir-pointed: body +Z is the camera axis, so sigma_BN places
+#   Earth there (MRP scale: tan(theta/4), not tan(theta/2) - the classic
+#   90-degree-off black-frame trap).
+# * RENDERER the world's companion: the compose `camera` service (profile
+#   camera) dials this scenario's Vizard socket; scripts/get_vizard.sh
+#   pins what runs there via vizard.lock.
+#
+# The camera is a knowledge channel: it feeds no torque, and its presence
+# must not move the trajectory digest - the digest-invariance gate flies
+# this file with and without the trailing sections and demands the same
+# known-good digest. Vizard down is a LOUD stall, not a silent zero: the
+# camera task blocks its tick waiting for a frame, and the lockstep gate
+# prints the stall at its boundary.
+
+[simulation]
+name = "chief camera operations"
+duration = 120.0
+
+[simulation.dt]
+dynamics = 0.1
+# fsw is the FSW tick: the world gate, sensor frames, beacon and every
+# anchored digest ride this rate. It must stay an integer multiple of
+# dynamics, and retuning it re-anchors every baseline - full ceremony.
+fsw = 1.0
+
+[world]
+central_body = "earth"
+
+[world.sun]
+position = [1.496e11, 0.0, 0.0]
+
+[environment]
+
+[environment.magnetic_field]
+type = "centered_dipole"
+
+[[spacecraft]]
+name = "chief"  # operational identity: the COSMOS target derives from it (SAT_CHIEF)
+
+[spacecraft.hub]
+mass = 300.0
+
+[spacecraft.hub.inertia]
+ixx = 750.0
+iyy = 620.0
+izz = 540.0
+
+[spacecraft.orbit]
+type = "rv"
+
+[spacecraft.orbit.rv]
+position = [2.5e7, 0.0, 0.0]
+# SI - metres per second. The altitude is the camera's, not the law's:
+# the limb must fit the frame (see the header). The velocity-unit trap
+# that free-fell the fleet once lives in chief.toml's comment.
+velocity = [0.0, 3993.0, 0.0]   # circular at r = 25 000 km: sqrt(mu/r)
+
+[spacecraft.attitude.initial]
+# nadir-pointed camera: Earth sits on body +Z (the camera axis) at this
+# instant; sigma = -y * tan(90/4) is a -90-degree pitch (MRP is tan(theta/4)
+# - get the scale wrong and every rendered frame is black, 90 degrees away).
+sigma_BN = [0.0, -0.41421356, 0.0]
+omega_BN_B = [0.0, 0.0, 0.0]
+
+# --- actuators: three orthogonal reaction wheels -----------------------------
+# max_torque 2 N m on a 750 kg m^2 bus closes the loop in tens of seconds;
+# momentum capacity J*omega_max = 0.2 * 628 = 125 N m s per axis vs the ~37
+# N m s the detumble from this tumble stores - comfortable, and saturation is
+# still reachable if the law ever demands it (the effector clamps internally).
+
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.2
+
+[[spacecraft.effectors.wheels]]
+direction_B = [1.0, 0.0, 0.0]
+max_speed = 628.0      # rad/s (6000 rpm)
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 1.0, 0.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 0.0, 1.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+# --- sensing: the suite the FSW gets to know the universe through -----------
+# Bias mirrors sim/detumble_scenario.GYRO_BIAS_RADS; noise seeds are derived
+# from the ModelTag by bskforge (deterministic per scenario, no Python RNG).
+
+[[spacecraft.sensors]]
+type = "imuSensor"
+name = "imu"
+gyro_bias = [2.0e-5, -1.5e-5, 1.0e-5]
+gyro_walk = [1.0e-8, 1.0e-8, 1.0e-8]
+
+[[spacecraft.sensors]]
+type = "starTracker"
+name = "st"
+sigma_SB = [0.0, 0.0, 0.0]
+white_noise = 1.0e-4
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css1"
+boresight_B = [1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css2"
+boresight_B = [-1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css3"
+boresight_B = [0.0, 1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css4"
+boresight_B = [0.0, -1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "magnetometer"
+name = "mag"
+noise_sigma = 1.0e-8
+
+# KN2 (D13): the vehicle's own GNSS opinion - the manifest picks the part,
+# the plant builds a SimpleNav receiver from it. Delete this block and the
+# NavState stream (0x08CF) goes silent: absence declared, not zero-filled.
+[[spacecraft.sensors]]
+type = "gpsReceiver"
+name = "gnss"
+
+[spacecraft.logging.state]
+sample_time = 1.0
+
+# --- the rendered eye (CAM) ----------------------------------------------------
+# bskforge builds the camera module and the Vizard interface; the yard adds
+# the limb/horizon estimators on top (the onboard knowledge model is the
+# harness's job - D7) and streams only the ESTIMATE onto the link as an
+# OPNAV frame. Here the eye is also a payload: the store outlet (record_rate)
+# makes Basilisk's own PNG writer the byte source - the module writes each
+# capture into a run-scoped temp dir, and the outlet ships every Nth file's
+# bytes. Neither knob is physics: the digest pair against the control flight
+# is the proof.
+
+[visualization]
+enabled = true
+no_display = true          # headless: the renderer dials in, nobody watches a window
+
+[[camera]]
+parent = "chief"
+camera_id = 1
+render_rate = 2.0          # s between frames; each render tick costs one Vizard latency
+resolution = [512, 512]
+field_of_view = 0.8726646  # 50 deg: the Earth disc spans ~29 deg at 25 000 km
+sky_box = "black"
+record_rate = 2              # CAM v2b store outlet: every 2nd capture crosses the airgap

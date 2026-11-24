@@ -54,6 +54,8 @@ from __future__ import annotations
 
 import argparse
 import math
+import struct
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -405,6 +407,12 @@ class ForgeBody:
         # frame the camera just received.
         self._opnav: tuple[Any, ...] | None = None
         self._cam_stats = {"applied": 0, "refused_id": 0, "refused_rate": 0}
+        # CAM v2b store outlet (set by _build_opnav when record_rate > 0):
+        # rate, source dir, PNG filenames already chunked onto the wire,
+        # and the FramesRecorded tally. The emitter is attached at rig wiring
+        # - the outlet streams frames but never owns the socket it rides.
+        self._cam_store: dict[str, Any] | None = None
+        self._store_emit: Callable[[bytes], None] | None = None
         if cams:
             self._opnav = self._build_opnav(ctx, cams)
 
@@ -471,6 +479,23 @@ class ForgeBody:
         # floor, and its docstring says so rather than pretending otherwise.
         image_recorder = cam_module.imageOutMsg.recorder()
         ctx.sim.AddModelToTask(task, image_recorder)
+        # CAM v2b store outlet: Basilisk's own PNG writer (camera.cpp
+        # saveImages, written synchronously inside updateState, file named by
+        # the capture time to 6 decimals) becomes the byte source - no memory
+        # trickery on imagePointer, and the reassembled file is literally the
+        # rendered file, byte for byte. The OUTLET owns the switch: a nav-only
+        # camera (record_rate = 0) never has these fields touched and writes
+        # zero PNGs; absence stays visible on disk as well as on the wire.
+        record_rate = int(getattr(cam, "record_rate", 0))
+        if record_rate > 0:
+            store_dir = Path(tempfile.mkdtemp(prefix=f"cam_store_{cam.camera_id}_"))
+            cam_module.saveImages = 1
+            cam_module.saveDir = f"{store_dir}/"
+            self._cam_store = {"rate": record_rate, "dir": store_dir, "sent": [], "count": 0}
+            print(
+                f"{self.name}: camera store outlet ON (every {record_rate}th capture "
+                f"-> {store_dir})"
+            )
         return (cam.camera_id, cam_module, horizon, att_msg, recorder, image_recorder)
 
     @property
@@ -562,11 +587,21 @@ class ForgeBody:
         """
         assert self._opnav is not None, "cam_state_bytes without a rendered eye"
         camera_id, module, _, _, _, image_recorder = self._opnav
-        # timeTag is the camera's own stamp on each received frame; distinct
-        # positive values at recorder granularity is the honest capture door
-        # (CameraImageMsg carries no writeTime - the recorder's payload fields
-        # are exactly the message's, proven the hard way by a live flight).
-        captured = len({t for t in image_recorder.timeTag if t > 0.0})
+        # timeTag is the camera's own stamp on each received frame - in
+        # NANOSECONDS (measured live: t=2 s arrives as 2e9), while the PNG
+        # name is std::to_string of the SECONDS value to 6 decimals. One
+        # division reconciles them; the same double formatted on both sides
+        # of the airgap is what makes the pairing exact. Distinct positive
+        # values at recorder granularity is the honest capture door
+        # (CameraImageMsg carries no writeTime - the recorder's payload
+        # fields are exactly the message's, proven the hard way by a live
+        # flight).
+        captures = sorted({t / 1e9 for t in image_recorder.timeTag if t > 0.0})
+        captured = len(captures)
+        # The store outlet rides this same per-tick door (v2b): every Nth
+        # capture's PNG bytes go out as IMG chunks before the state is packed,
+        # so FramesRecorded in THIS frame counts sends made in THIS tick.
+        frames_recorded = self._pump_store(camera_id, captures)
         return encode_container(
             "BSK_LINK/CamState",
             {
@@ -576,6 +611,7 @@ class ForgeBody:
                 "Shutter": int(module.cameraIsOn),
                 "RenderRateS": float(module.renderRate) / 1e9,
                 "Captured": captured,
+                "FramesRecorded": frames_recorded,
             },
         )
 
@@ -611,6 +647,66 @@ class ForgeBody:
             f"[{self.name}] cam{camera_id}: shutter={'OPEN' if cfg.shutter else 'CLOSED'} "
             f"rate={cfg.render_rate_s:g}s (t={cfg.sim_time_s:.1f}s frame={cfg.frame})"
         )
+
+    # -- CAM v2b store outlet -------------------------------------------------
+    #
+    # The framing is ours, deliberately OUTSIDE the EDS model (the map's
+    # instruction, the STEP_ACK precedent for non-ground frames): topic "IMG",
+    # payload = packed header + binary slice. It rides the sensor PUB as pure
+    # fire-and-forget - PUB sockets drop rather than block at HWM, so a slow
+    # consumer can never stall a tick, and the stream answers to no barrier
+    # and no ack. A capture whose file is not on disk yet (task order is
+    # camera-update-then-observer, but the file door is still checked) is
+    # retried next tick - the outlet is patient, never eager.
+
+    IMG_TOPIC = b"IMG"
+    IMG_HEADER = "<QQII"  # cam id, capture ordinal, part index, part total
+    IMG_CHUNK_BYTES = 16384
+
+    def attach_store_emitter(self, emit: Callable[[bytes], None]) -> None:
+        """Give the store outlet a voice (rig wiring: send one IMG payload)."""
+        self._store_emit = emit
+
+    @property
+    def store_active(self) -> bool:
+        """True when this body's camera has a store outlet (record_rate > 0)."""
+        return self._cam_store is not None
+
+    def _pump_store(self, camera_id: int, capture_times: list[float]) -> int:
+        """Chunk every ``record_rate``-th capture's PNG onto the wire.
+
+        Returns FramesRecorded: the count of captures whose COMPLETE byte set
+        has been handed to the emitter (a capture enters the tally only when
+        its last part has left - a part-truncated capture is not recorded).
+        """
+        store = self._cam_store
+        if store is None or self._store_emit is None:
+            return 0
+        rate = store["rate"]
+        for ordinal, t in enumerate(capture_times, start=1):
+            if ordinal % rate != 0:
+                continue
+            name = f"{t:.6f}.png"  # camera.cpp: std::to_string(sim_s), 6 decimals
+            if name in store["sent"]:
+                continue
+            path = store["dir"] / name
+            if not path.is_file():
+                continue  # not on disk yet: patience, retry next tick
+            data = path.read_bytes()
+            if len(data) == 0:
+                continue  # a writer that flushed nothing is not a capture
+            parts = [
+                data[i : i + self.IMG_CHUNK_BYTES]
+                for i in range(0, len(data), self.IMG_CHUNK_BYTES)
+            ]
+            total = len(parts)
+            for index, part in enumerate(parts):
+                header = struct.pack(self.IMG_HEADER, camera_id, ordinal, index, total)
+                self._store_emit(header + part)
+            store["sent"].append(name)
+            store["count"] += 1
+            print(f"[{self.name}] store: capture {ordinal} -> {total} part(s), {len(data)} B")
+        return int(store["count"])
 
     @property
     def sim_time_s(self) -> float:
@@ -898,6 +994,13 @@ class ForgeScenario:
     def attach_link(self, sockets: dict) -> None:
         """Publish every link frame (SENSOR/CMD/TRUTH) on the given bound sockets."""
         self._rig.attach_link(sockets)
+        if self.body.store_active:
+            # The store outlet's voice is the sensor PUB: IMG is fire-and-
+            # forget by socket nature (PUB drops, never blocks), which is the
+            # v2 law - images answer to no gate.
+            self.body.attach_store_emitter(
+                lambda payload: sockets["sensor"].send_multipart([ForgeBody.IMG_TOPIC, payload])
+            )
 
     def flush_link(self) -> None:
         """Discard stale queue contents from a previous run before the first tick."""
@@ -1098,6 +1201,13 @@ class ForgeFleet:
             )
         for index, sockets in enumerate(socket_sets):
             self._rig.attach_channel(index, sockets)
+            body = self.bodies[index]
+            if body.store_active:
+                body.attach_store_emitter(
+                    lambda payload, sock=sockets["sensor"]: sock.send_multipart(
+                        [ForgeBody.IMG_TOPIC, payload]
+                    )
+                )
 
     def flush_link(self) -> None:
         """Discard stale queue contents (every channel) before the first tick."""

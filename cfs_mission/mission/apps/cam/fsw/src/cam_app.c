@@ -21,6 +21,14 @@ CAM_AppData_t CAM_AppData;
 
 static void CAM_SendHk(void)
 {
+    /* The four-number report (decision 3): the commanded pair this app
+     * earned, RECORDED from the sim's own CamState, STORED from bsk_link's
+     * ledger - and TRANSFERRED still the honest zero, because v2c has not
+     * landed and a counter that moves before its phase is a lie, not a
+     * feature. Truncation to the 32-bit HK fields is safe by arithmetic:
+     * one frame per render interval cannot reach 4 billion this century. */
+    CAM_AppData.HkTlm.Payload.FramesRecorded = (uint32)CAM_AppData.FramesRecorded;
+    CAM_AppData.HkTlm.Payload.FramesStored   = (uint32)CAM_AppData.FilesStored;
     CFE_SB_TimeStampMsg(CFE_MSG_PTR(CAM_AppData.HkTlm.TelemetryHeader));
     CFE_SB_TransmitMsg(CFE_MSG_PTR(CAM_AppData.HkTlm.TelemetryHeader), true);
 }
@@ -197,6 +205,8 @@ static int32 CAM_AppInit(void)
         {CAM_CMD_MID, "commands"},
         {CAM_SET_CONFIG_MID, "config upload"},
         {CAM_SEND_HK_MID, "housekeeping request"},
+        {BSK_LINK_CAM_STATE_TLM_MID, "cam state (recorded witness, v2b)"},
+        {BSK_LINK_CAM_STORAGE_TLM_MID, "image ledger (stored witness, v2b)"},
     };
 
     for (size_t i = 0; i < sizeof(Subscriptions) / sizeof(Subscriptions[0]); ++i)
@@ -273,6 +283,27 @@ void CAM_AppMain(void)
 
                 case CAM_SEND_HK_MID:
                     CAM_SendHk();
+                    break;
+
+                case BSK_LINK_CAM_STATE_TLM_MID:
+                    /* RECORDED witness: the sim's own tally of what its
+                     * store outlet sent. Wrong length is schema drift -
+                     * keep the last honest value, count nothing. */
+                    if (Size == sizeof(BskCamStateTlm_t))
+                    {
+                        CAM_AppData.FramesRecorded =
+                            ((const BskCamStateTlm_t *)BufPtr)->Payload.FramesRecorded;
+                    }
+                    break;
+
+                case BSK_LINK_CAM_STORAGE_TLM_MID:
+                    /* STORED witness: bsk_link emits its ledger on every
+                     * completed file; this app only repeats what it heard. */
+                    if (Size == sizeof(BskCamStorageTlm_t))
+                    {
+                        CAM_AppData.FilesStored =
+                            ((const BskCamStorageTlm_t *)BufPtr)->Payload.FilesStored;
+                    }
                     break;
 
                 default:

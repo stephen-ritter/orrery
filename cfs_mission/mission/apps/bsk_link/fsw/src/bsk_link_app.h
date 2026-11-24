@@ -49,6 +49,12 @@
  *  CAM_HK-vs-CamState divergence pair, not by a barrier the physics waits on. */
 #define BSK_LINK_CAM_TOPIC "CAM"
 
+/* CAM v2b store outlet: image bytes ride the sensor feed as their own topic
+ * (fire-and-forget like every other sim frame), sliced so one frame never
+ * has to hold a whole PNG. */
+#define BSK_LINK_IMG_TOPIC      "IMG"
+#define BSK_LINK_IMG_SLICE_MAX  16384
+
 /**
  * Sensor frame to decode off the link.
  *
@@ -164,6 +170,21 @@ typedef struct
     uint32 CamRecvCount;       /* cam configs taken off the bus (CAM v2a)        */
     uint32 CamFwdCount;        /* cam configs written to the sim                 */
     uint32 CamDropCount;       /* wrong length or egress send failed             */
+    /* CAM v2b store outlet: reassembly of the sim's IMG chunk stream into
+     * /cf/img files. The fd belongs to the ONE open capture; ordering is
+     * TCP's, so anything out of sequence is damage to count, not to chase. */
+    osal_id_t StoreFd;         /* OSAL id of the open .part, UNDEFINED idle    */
+    uint64 StoreCam;           /* capture identity of the open stream            */
+    uint64 StoreCapture;
+    uint32 StoreNextPart;      /* part index the socket must produce next        */
+    uint32 StoreTotal;
+    uint64 StoreBytes;         /* bytes written to the open .part                */
+    uint32 ImgChunkCount;      /* IMG frames taken off the socket                */
+    uint32 ImgDropCount;       /* refused chunks (ordering, size, file errors)   */
+    uint32 StorePublishFail;   /* CamStorage TLM rejected (reported once)        */
+    uint64 FilesStored;        /* complete files under /cf/img since boot        */
+    uint64 BytesStored;        /* payload bytes across those files               */
+    BskCamStorageTlm_t CamStorageTlm; /* the ledger as the bus sees it (v2b)     */
     uint32 TimeSyncCount;      /* SET_MET sent: mission clock slaved to the sim  */
     uint32 WorldFrameCounts[BSK_LINK_FRAME_ROWS];      /* per registry row      */
     uint32 WorldFramePublishFail[BSK_LINK_FRAME_ROWS]; /* rejected, reported once */

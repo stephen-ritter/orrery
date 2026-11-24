@@ -918,6 +918,142 @@ static bool BSK_Link_DecodeFitFrame(const void *Payload, size_t Size)
     return true;
 }
 
+/* CAM v2b store outlet: the sim's IMG chunks become /cf/img files.
+ *
+ * The framing is orrery's own and deliberately OUTSIDE the EDS model (the
+ * STEP_ACK precedent for non-ground frames): a packed 24 B header - cam id,
+ * capture ordinal, part index, part total - then the binary slice. TCP
+ * orders, ZMQ frames, and NOTHING here acks: an incomplete capture stays a
+ * `.part` file, a visible corpse on the record rather than a retransmit
+ * request. Paths ride OSAL so the PSP's /cf mapping keeps its meaning even
+ * when the yard moves the binary's cwd. */
+static void BSK_Link_EmitCamStorage(void)
+{
+    BSK_LinkAppData.CamStorageTlm.Payload.SimTimeS    = BSK_LinkAppData.LastSimTimeS;
+    BSK_LinkAppData.CamStorageTlm.Payload.Frame       = BSK_LinkAppData.LastFrame;
+    BSK_LinkAppData.CamStorageTlm.Payload.FilesStored = BSK_LinkAppData.FilesStored;
+    BSK_LinkAppData.CamStorageTlm.Payload.BytesStored = BSK_LinkAppData.BytesStored;
+    CFE_SB_TimeStampMsg(CFE_MSG_PTR(BSK_LinkAppData.CamStorageTlm.TelemetryHeader));
+    if (CFE_SB_TransmitMsg(CFE_MSG_PTR(BSK_LinkAppData.CamStorageTlm.TelemetryHeader), true) != CFE_SUCCESS)
+    {
+        BSK_LinkAppData.StorePublishFail++;
+        if (BSK_LinkAppData.StorePublishFail == 1)
+        {
+            CFE_EVS_SendEvent(BSK_LINK_PUBLISH_ERR_EID, CFE_EVS_EventType_ERROR,
+                              "cam storage ledger publish rejected");
+        }
+    }
+}
+
+static void BSK_Link_IngestImageChunk(const void* Data, size_t Size)
+{
+    BskImageChunkHeader_t Header;
+    const uint8*          Slice = (const uint8*)Data;
+    char                  PartPath[64];
+    char                  FinalPath[64];
+    int32                 OsStatus;
+    size_t                SliceLen;
+
+    BSK_LinkAppData.ImgChunkCount++;
+    if (Size <= sizeof(Header) || Size - sizeof(Header) > (size_t)BSK_LINK_IMG_SLICE_MAX)
+    {
+        BSK_LinkAppData.ImgDropCount++;
+        return;
+    }
+    memcpy(&Header, Data, sizeof(Header));
+    SliceLen = Size - sizeof(Header);
+
+    if (Header.Part == 0)
+    {
+        /* a new capture: any still-open stream is a dropped corpse; close
+         * the fd but LEAVE the .part file - evidence, not garbage */
+        if (OS_ObjectIdDefined(BSK_LinkAppData.StoreFd))
+        {
+            OS_close(BSK_LinkAppData.StoreFd);
+            BSK_LinkAppData.StoreFd = OS_OBJECT_ID_UNDEFINED;
+        }
+        snprintf(PartPath, sizeof(PartPath), "/cf/img/.%llu_%llu.part",
+                 (unsigned long long)Header.CamId, (unsigned long long)Header.Capture);
+        OsStatus = OS_OpenCreate(&BSK_LinkAppData.StoreFd, PartPath,
+                                 OS_FILE_FLAG_CREATE | OS_FILE_FLAG_TRUNCATE, OS_WRITE_ONLY);
+        if (OsStatus != OS_SUCCESS)
+        {
+            BSK_LinkAppData.StoreFd     = OS_OBJECT_ID_UNDEFINED;
+            BSK_LinkAppData.ImgDropCount++;
+            if (BSK_LinkAppData.ImgDropCount == 1)
+            {
+                CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                                  "store cannot open %s (status %d)", PartPath, (int)OsStatus);
+            }
+            return;
+        }
+        BSK_LinkAppData.StoreCam      = Header.CamId;
+        BSK_LinkAppData.StoreCapture  = Header.Capture;
+        BSK_LinkAppData.StoreTotal    = Header.Total;
+        BSK_LinkAppData.StoreNextPart = 0;
+        BSK_LinkAppData.StoreBytes    = 0;
+    }
+    else if (!OS_ObjectIdDefined(BSK_LinkAppData.StoreFd) ||
+             Header.CamId != BSK_LinkAppData.StoreCam ||
+             Header.Capture != BSK_LinkAppData.StoreCapture ||
+             Header.Part != BSK_LinkAppData.StoreNextPart || Header.Total != BSK_LinkAppData.StoreTotal)
+    {
+        /* out of order, foreign, or mid-stream metadata drift: count it,
+         * do not chase it - the sender never hears back, by law */
+        BSK_LinkAppData.ImgDropCount++;
+        return;
+    }
+
+    OsStatus = OS_write(BSK_LinkAppData.StoreFd, Slice + sizeof(Header), SliceLen);
+    if (OsStatus != (int32)SliceLen)
+    {
+        OS_close(BSK_LinkAppData.StoreFd);
+        BSK_LinkAppData.StoreFd = OS_OBJECT_ID_UNDEFINED;
+        BSK_LinkAppData.ImgDropCount++;
+        if (BSK_LinkAppData.ImgDropCount == 1)
+        {
+            CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                              "store write refused (status %d, wanted %u)", (int)OsStatus,
+                              (unsigned)SliceLen);
+        }
+        return;
+    }
+    BSK_LinkAppData.StoreBytes += (uint64)SliceLen;
+    BSK_LinkAppData.StoreNextPart++;
+
+    if (Header.Part + 1u < Header.Total)
+    {
+        return; /* mid-capture: silence is the normal voice here */
+    }
+
+    /* the last byte landed: move the file into daylight under its real name */
+    snprintf(PartPath, sizeof(PartPath), "/cf/img/.%llu_%llu.part",
+             (unsigned long long)Header.CamId, (unsigned long long)Header.Capture);
+    snprintf(FinalPath, sizeof(FinalPath), "/cf/img/frame_%llu_%llu.png",
+             (unsigned long long)Header.CamId, (unsigned long long)Header.Capture);
+    OS_close(BSK_LinkAppData.StoreFd);
+    BSK_LinkAppData.StoreFd = OS_OBJECT_ID_UNDEFINED;
+    if (OS_mv(PartPath, FinalPath) != OS_SUCCESS)
+    {
+        BSK_LinkAppData.ImgDropCount++;
+        CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "store rename failed into %s", FinalPath);
+        return;
+    }
+    BSK_LinkAppData.FilesStored++;
+    BSK_LinkAppData.BytesStored += BSK_LinkAppData.StoreBytes;
+    BSK_Link_EmitCamStorage();
+    if (BSK_LinkAppData.FilesStored == 1 ||
+        BSK_LinkAppData.FilesStored % BSK_LINK_SENSOR_EVENT_EVERY == 0)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_STORE_INF_EID, CFE_EVS_EventType_INFORMATION,
+                          "cam stored %s (%llu B) files=%llu bytes=%llu", FinalPath,
+                          (unsigned long long)BSK_LinkAppData.StoreBytes,
+                          (unsigned long long)BSK_LinkAppData.FilesStored,
+                          (unsigned long long)BSK_LinkAppData.BytesStored);
+    }
+}
+
 static void BSK_Link_DrainOneFrame(void)
 {
     zmq_pollitem_t Item;
@@ -1065,6 +1201,13 @@ static void BSK_Link_DrainOneFrame(void)
                               (unsigned long)BSK_LinkAppData.SensorMsgCount);
         }
     }
+    else if (strcmp(TopicText, BSK_LINK_IMG_TOPIC) == 0)
+    {
+        /* CAM v2b store outlet: bytes become files. Fire-and-forget by
+         * design - counted and reported, never acked; the record of a
+         * damaged transfer is the .part file itself. */
+        BSK_Link_IngestImageChunk(zmq_msg_data(&Body), zmq_msg_size(&Body));
+    }
     else
     {
         /* Observability frames are registry rows (REG): one generic consumer
@@ -1138,6 +1281,14 @@ static int32 BSK_Link_AppInit(void)
      * error, loudly, not a silent drop. */
     CFE_MSG_Init(CFE_MSG_PTR(BSK_LinkAppData.SensorFrameTlm.TelemetryHeader),
                  CFE_SB_ValueToMsgId(BSK_LINK_SENSOR_FRAME_TLM_MID), sizeof(BSK_LinkAppData.SensorFrameTlm));
+    CFE_MSG_Init(CFE_MSG_PTR(BSK_LinkAppData.CamStorageTlm.TelemetryHeader),
+                 CFE_SB_ValueToMsgId(BSK_LINK_CAM_STORAGE_TLM_MID), sizeof(BSK_LinkAppData.CamStorageTlm));
+    /* CAM v2b: the store's home, and the idle seat of a fd that is only
+     * ever real mid-capture. mkdir is best-effort by law (EEXIST is fine);
+     * if the directory genuinely cannot exist, the first chunk's EVS line
+     * says so loudly instead of the first frame dying quietly. */
+    BSK_LinkAppData.StoreFd = OS_OBJECT_ID_UNDEFINED;
+    OS_mkdir("/cf/img", 0);
     for (unsigned RowIndex = 0; RowIndex < BSK_LINK_FRAME_ROWS; ++RowIndex)
     {
         /* One pre-initialized message per registry row: header sized once,
@@ -1449,7 +1600,7 @@ void BSK_LINK_AppMain(void)
         }
     }
 
-    CFE_ES_WriteToSysLog("BSK_LINK exit: recv=%lu frames=%lu bad=%lu other_topic=%lu torque=%lu/%lu/%lu acks=%lu/%lu/%lu cam=%lu/%lu/%lu\n",
+    CFE_ES_WriteToSysLog("BSK_LINK exit: recv=%lu frames=%lu bad=%lu other_topic=%lu torque=%lu/%lu/%lu acks=%lu/%lu/%lu cam=%lu/%lu/%lu store=%llu files/%llu B drops=%lu\n",
                          (unsigned long)BSK_LinkAppData.MsgRecvCount,
                          (unsigned long)BSK_LinkAppData.SensorMsgCount,
                          (unsigned long)BSK_LinkAppData.MalformedMsgCount,
@@ -1462,7 +1613,10 @@ void BSK_LINK_AppMain(void)
                          (unsigned long)BSK_LinkAppData.AckDropCount,
                          (unsigned long)BSK_LinkAppData.CamRecvCount,
                          (unsigned long)BSK_LinkAppData.CamFwdCount,
-                         (unsigned long)BSK_LinkAppData.CamDropCount);
+                         (unsigned long)BSK_LinkAppData.CamDropCount,
+                         (unsigned long long)BSK_LinkAppData.FilesStored,
+                         (unsigned long long)BSK_LinkAppData.BytesStored,
+                         (unsigned long)BSK_LinkAppData.ImgDropCount);
 
     CFE_ES_ExitApp(RunStatus);
 }
