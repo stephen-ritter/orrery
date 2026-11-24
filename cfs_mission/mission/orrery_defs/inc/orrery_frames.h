@@ -22,7 +22,7 @@
  * FitManifest; a mismatch means one side is stale, which no size check
  * can see (a stale binary is perfectly self-consistent). Rebuild:
  * uv run python -m codegen.emit_frames, then cfs_mission/build.sh. */
-#define BSK_LINK_FIT_REGISTRY_HASH 0x0477f6ffu
+#define BSK_LINK_FIT_REGISTRY_HASH 0xa22eeb9cu
 
 typedef struct
 {
@@ -51,9 +51,9 @@ static const BskLink_WorldFrameDef_t BskLink_WorldFrames[BSK_LINK_FRAME_ROWS] = 
     { "OPNAV", "BSK_LINK/OpNavState", BSK_LINK_OPNAV_STATE_TLM_MID,
       /* evs */ 72, 20 /* BSK_LINK_OPNAV_INF_EID */,
       "OpNav knowledge" },
-    /* name: camstate - Camera device state (CAM v2a: confirmed shutter, rate, captures) */
+    /* name: camstate - Camera device state (CAM v2b: confirmed shutter, rate, captures, store outlet) */
     { "CAMSTATE", "BSK_LINK/CamState", BSK_LINK_CAM_STATE_TLM_MID,
-      /* evs */ 48, 21 /* BSK_LINK_CAM_STATE_INF_EID */,
+      /* evs */ 56, 21 /* BSK_LINK_CAM_STATE_INF_EID */,
       "CamState" },
 };
 

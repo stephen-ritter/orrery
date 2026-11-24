@@ -78,6 +78,27 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
         "<dQII",
         {"SimTimeS": 8.5, "Frame": 17, "DeclaredBits": 0x5, "RegistryHash": 0xDEADBEEF},
     ),
+    # CAM v2a/v2b: the device's confirmed view is packed by the sim through
+    # this same DB and read by a hand-written C twin (cam app subscribes it),
+    # so the layout needs a pin on this side too - 56 B is parts.toml's row.
+    "CamState": (
+        "<dQQQdQQ",
+        {
+            "SimTimeS": 9.5,
+            "Frame": 19,
+            "CameraId": 1,
+            "Shutter": 1,
+            "RenderRateS": 2.0,
+            "Captured": 3,
+            "FramesRecorded": 1,
+        },
+    ),
+    # CAM v2b ledger: written by bsk_link's C struct, read on the ground via
+    # the generated defs. 32 B, the orrery_bus_msg.h assert's other half.
+    "CamStorage": (
+        "<dQQQ",
+        {"SimTimeS": 10.5, "Frame": 21, "FilesStored": 4, "BytesStored": 8192},
+    ),
     "TruthState": (
         "<14d",
         {

@@ -65,8 +65,9 @@ static const RsMidEntry_t ORRERY_MID_TABLE[] = {
     {0x08D2, "CAM_HK_TLM"},
     {0x08D3, "BSK_LINK_CAM_STATE_TLM"},
     {0x08D4, "BSK_LINK_CAM_CONFIG_TLM"},
+    {0x08D5, "BSK_LINK_CAM_STORAGE_TLM"},
 };
 
-#define ORRERY_MID_COUNT 51
+#define ORRERY_MID_COUNT 52
 
 #endif /* RS_MID_TABLE_H */

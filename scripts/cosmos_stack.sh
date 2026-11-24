@@ -69,7 +69,7 @@ run_cli setpassword >/dev/null 2>&1 || true
 # load of a gem it just made; version bumps stay free to skip nothing now.
 # Bump GEM_VERSION whenever plugin.txt changes anyway - it names what is flying.
 # 0.1.5: CAM v2a - the command surface (CAM_SET_CONFIG on its own interface).
-GEM_VERSION=0.1.5
+GEM_VERSION=0.1.6
 rm -f "$REPO/cosmos_plugin"/openc3-cosmos-orrery-*.gem \
       # a stale gem in here gets bundled as DATA and re-extracts as a nested plugin on load
 docker run --rm -v "$REPO/cosmos_plugin:/p" --user "$(id -u):$(id -g)" ruby:3.4-slim \

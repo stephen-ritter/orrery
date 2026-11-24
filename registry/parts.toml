@@ -217,13 +217,13 @@ epoch = "strict"                       # knowledge rides the same world tick
 # human would read a log).
 [[part]]
 name = "camstate"
-display = "Camera device state (CAM v2a: confirmed shutter, rate, captures)"
+display = "Camera device state (CAM v2b: confirmed shutter, rate, captures, store outlet)"
 landed = true                          # the circuit exists end to end (v2a command surface)
 bskforge_type = "camera"               # same presence gate as "opnav": [[camera]]
 plant_output = ""                      # not a plant message: the forge samples the module
 zmq_topic = "CAMSTATE"
 eds_container = "BSK_LINK/CamState"
-container_bytes = 48                   # SimTimeS + Frame + CameraId + Shutter + RenderRateS + Captured
+container_bytes = 56                   # SimTimeS + Frame + CameraId + Shutter + RenderRateS + Captured + FramesRecorded
 topic_offset = 211                     # TM+210 is CAM_HK (hand-written app row)
 topic_name = "BSK_LINK_CAM_STATE_TLM_TOPICID"
 mid_name = "BSK_LINK_CAM_STATE_TLM"

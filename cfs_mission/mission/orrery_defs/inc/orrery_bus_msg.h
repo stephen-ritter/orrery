@@ -212,8 +212,8 @@ typedef struct
     uint8  AlignPad[4];         /* explicit EDS pad before the doubles  */
     double LastConfigSimTimeS;  /* sim time of the last frame forwarded */
     double RenderRateCmd;       /* last commanded image interval [s]    */
-    uint32 FramesRecorded;      /* v2b promise: 0 until that phase lands */
-    uint32 FramesStored;        /* v2b promise: 0 until that phase lands */
+    uint32 FramesRecorded;      /* sim store outlet sent (CamState, v2b)    */
+    uint32 FramesStored;        /* bsk_link completed /cf/img files (v2b)   */
     uint32 FramesTransferred;   /* v2c promise: 0 until that phase lands */
 } __attribute__((packed)) CamHkTlm_Payload_t;
 
@@ -239,6 +239,58 @@ typedef struct
     CFE_MSG_TelemetryHeader_t TelemetryHeader;
     BskCamConfig_Payload_t    Payload;
 } BskCamConfigTlm_t;
+
+/* BSK_LINK/CamStorage: the onboard image ledger (CAM v2b). bsk_link owns
+ * this truth - it is the one that reassembles bytes into /cf/img files -
+ * and cam app merely reports it. Divergence from CamState.FramesRecorded
+ * (what the sim's outlet sent) is the airgap eating a frame. */
+typedef struct
+{
+    double  SimTimeS;    /* sim time of the newest sensor frame [s] */
+    uint64  Frame;       /* sim frame at that stamp                 */
+    uint64  FilesStored; /* complete files under /cf/img since boot  */
+    uint64  BytesStored; /* payload bytes across those files         */
+} __attribute__((packed)) BskCamStorage_Payload_t;
+
+typedef struct
+{
+    CFE_MSG_TelemetryHeader_t  TelemetryHeader;
+    BskCamStorage_Payload_t    Payload;
+} BskCamStorageTlm_t;
+
+/* BSK_LINK/CamState as C reads it (CAM v2b): the registry row is decoded by
+ * EdsLib on the generic path, but cam app wants the store tally on the bus,
+ * and a hand-written twin with a size pin beats linking the whole DB for
+ * one field. Drift vs bsk_link.xml is a compile error, not a screen lie. */
+typedef struct
+{
+    double  SimTimeS;
+    uint64  Frame;
+    uint64  CameraId;
+    uint64  Shutter;
+    double  RenderRateS;
+    uint64  Captured;
+    uint64  FramesRecorded; /* store outlet sends (CAM v2b) */
+} __attribute__((packed)) BskCamState_Payload_t;
+
+typedef struct
+{
+    CFE_MSG_TelemetryHeader_t TelemetryHeader;
+    BskCamState_Payload_t     Payload;
+} BskCamStateTlm_t;
+
+/* IMG chunk header (CAM v2b): orrery's OWN framing for the image byte
+ * stream, deliberately outside the EDS telemetry model (the STEP_ACK
+ * precedent for non-ground frames) - packed 24 B header, then the binary
+ * slice. The sim's struct.pack("<QQII") mirror lives in sim/forge_scenario;
+ * this assert is where the two agree or the build fails. */
+typedef struct
+{
+    uint64 CamId;    /* the [[camera]] that captured it          */
+    uint64 Capture;  /* capture ordinal since boot (1-based)     */
+    uint32 Part;     /* 0-based index within this capture        */
+    uint32 Total;    /* parts in this capture                    */
+} __attribute__((packed)) BskImageChunkHeader_t;
 
 /* OBC housekeeping (P4b-3, hk_app). Field order mirrors OBC/HkTlm_Payload,
  * pads included: everything here is bus-observed counts and freshest bus
@@ -331,5 +383,8 @@ _Static_assert(sizeof(SpsHkTlm_Payload_t) == 72, "SPS HK payload drift vs sps.xm
 _Static_assert(sizeof(CamSetConfig_Payload_t) == 16, "SetConfig payload drift vs cam.xml");
 _Static_assert(sizeof(CamHkTlm_Payload_t) == 40, "CAM HK payload drift vs cam.xml");
 _Static_assert(sizeof(BskCamConfig_Payload_t) == 40, "CamConfig payload drift vs bsk_link.xml");
+_Static_assert(sizeof(BskCamStorage_Payload_t) == 32, "CamStorage payload drift vs bsk_link.xml");
+_Static_assert(sizeof(BskCamState_Payload_t) == 56, "CamState payload drift vs bsk_link.xml row");
+_Static_assert(sizeof(BskImageChunkHeader_t) == 24, "IMG chunk header drift vs sim framing");
 
 #endif /* ORRERY_BUS_MSG_H */

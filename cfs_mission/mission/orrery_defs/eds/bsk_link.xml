@@ -172,6 +172,7 @@
           <Entry name="Shutter" type="uint64" shortDescription="shutter the sim is running (1 open): the module's own field" />
           <Entry name="RenderRateS" type="float64" shortDescription="image interval in use [s] (module nanoseconds converted)" />
           <Entry name="Captured" type="uint64" shortDescription="image responses received since boot (firstPass boot stream included)" />
+          <Entry name="FramesRecorded" type="uint64" shortDescription="frames the store outlet has sent (CAM v2b; 0 until record_rate > 0)" />
         </EntryList>
       </ContainerDataType>
 
@@ -321,6 +322,23 @@
         </EntryList>
       </ContainerDataType>
 
+      <!-- The store ledger (CAM v2b): what bsk_link actually reassembled
+           into /cf/img files. The sim's CamState.FramesRecorded is what
+           the outlet SENT; their divergence is the airgap eating frames. -->
+      <ContainerDataType name="CamStorage" shortDescription="Onboard image storage ledger (CAM v2b)">
+        <EntryList>
+          <Entry name="SimTimeS" type="float64" shortDescription="sim time of the newest sensor frame [s]" />
+          <Entry name="Frame" type="uint64" shortDescription="sim frame counter at that stamp" />
+          <Entry name="FilesStored" type="uint64" shortDescription="complete files reassembled under /cf/img since boot" />
+          <Entry name="BytesStored" type="uint64" shortDescription="payload bytes across those files" />
+        </EntryList>
+      </ContainerDataType>
+      <ContainerDataType name="CamStorageTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="CamStorage" />
+        </EntryList>
+      </ContainerDataType>
+
     </DataTypeSet>
 
     <ComponentSet>
@@ -371,6 +389,11 @@
               <GenericTypeMap name="TelemetryDataType" type="CamConfigTlm" />
             </GenericTypeMapSet>
           </Interface>
+          <Interface name="CAM_STORAGE_TLM" shortDescription="Software bus image storage ledger from bsk_link (CAM v2b)" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="CamStorageTlm" />
+            </GenericTypeMapSet>
+          </Interface>
         </RequiredInterfaceSet>
         <Implementation>
           <VariableSet>
@@ -383,6 +406,7 @@
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="TorqueCommandTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_TORQUE_COMMAND_TLM_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="StepAckTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_STEP_ACK_TLM_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="CamConfigTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_CAM_CONFIG_TLM_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="CamStorageTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_CAM_STORAGE_TLM_TOPICID}" />
           </VariableSet>
           <ParameterMapSet>
             <ParameterMap interface="SENSOR_FRAME_TLM" parameter="TopicId" variableRef="SensorFrameTlmTopicId" />
@@ -394,6 +418,7 @@
             <ParameterMap interface="TORQUE_COMMAND_TLM" parameter="TopicId" variableRef="TorqueCommandTlmTopicId" />
             <ParameterMap interface="STEP_ACK_TLM" parameter="TopicId" variableRef="StepAckTlmTopicId" />
             <ParameterMap interface="CAM_CONFIG_TLM" parameter="TopicId" variableRef="CamConfigTlmTopicId" />
+            <ParameterMap interface="CAM_STORAGE_TLM" parameter="TopicId" variableRef="CamStorageTlmTopicId" />
           </ParameterMapSet>
         </Implementation>
       </Component>

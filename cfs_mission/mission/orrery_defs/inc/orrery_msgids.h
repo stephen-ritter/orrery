@@ -79,6 +79,7 @@
 
 /** \brief accepted camera config (cam -> bsk_link -> sim, never gates) */
 #define BSK_LINK_CAM_CONFIG_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_CAM_CONFIG_TLM_TOPICID)
+#define BSK_LINK_CAM_STORAGE_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_CAM_STORAGE_TLM_TOPICID)
 
 /** \brief cFS TIME service commands (link uses SET_MET to slave MET to the
  * sim timecode, D8) */

@@ -205,6 +205,7 @@
     <Define name="CAM_SET_CONFIG_TOPICID"             value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 212" />
     <Define name="CAM_HK_TLM_TOPICID"                 value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 210" />
     <Define name="BSK_LINK_CAM_CONFIG_TLM_TOPICID"    value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 212" />
+    <Define name="BSK_LINK_CAM_STORAGE_TLM_TOPICID"   value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 213" />
 
     <!-- BEGIN GENERATED (codegen/emit_frames.py): registered part topics -->
     <Define name="BSK_LINK_NAV_STATE_TLM_TOPICID"      value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 207" />
