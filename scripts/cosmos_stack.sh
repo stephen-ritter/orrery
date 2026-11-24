@@ -90,5 +90,14 @@ if grep -q "No version change detected" <<<"$LOAD_OUT"; then
     echo "cosmos_stack: load right after a forced unload said 'No version change detected' - the plugin registry does not match storage; refusing to call that healthy" >&2
     exit 1
 fi
+# And a load may die outright instead of lying: the 2026-11-24 v0.1.5 bring-up
+# crashed mid-load (Ruby backtrace ending at openc3cli:1133), the registry kept
+# serving the OLD gem, and this script still printed "loaded" - because
+# `script -qc` masks the child's exit code, set -e never saw anything. A
+# top-level backtrace IS the crash signature; trust it, not the echo.
+if grep -qE "in '<main>'" <<<"$LOAD_OUT"; then
+    echo "cosmos_stack: plugin load CRASHED (backtrace in output) - the station is still serving the previous gem; re-run this script, and if it repeats, read the trace" >&2
+    exit 1
+fi
 
 echo "COSMOS stack up, orrery plugin loaded"

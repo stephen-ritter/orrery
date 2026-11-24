@@ -83,7 +83,11 @@ SIM_PID=""
 cleanup() {
     [ -n "$SIM_PID" ] && kill "$SIM_PID" >/dev/null 2>&1 || true
     for name in "${CONTAINERS[@]:-}"; do
-        [ -n "$name" ] && "$RUNTIME" stop "$name" >/dev/null 2>&1 || true
+        [ -n "$name" ] || continue
+        # The console IS the flight evidence (FIT verdicts, EVS lines): archive
+        # before the stop erases it, the same way the sim log is kept.
+        "$RUNTIME" logs "$name" >"$LOG_DIR/${name#orrery-}_console.log" 2>&1 || true
+        "$RUNTIME" stop "$name" >/dev/null 2>&1 || true
     done
 }
 trap cleanup EXIT
@@ -240,4 +244,34 @@ for fact in "${FACTS[@]}"; do
         echo "[$name] digest $dig matches baseline"
     fi
 done
+
+# FIT-awareness (CAM law): a vehicle's camstate row must be DECLARED exactly
+# when the world gives it a camera - the fifth bit (0x10) on the eye's bird,
+# absent on its blind twin, each FIT MATCHED. This is the absence-visible
+# invariant at the manifest layer; a stale or eager manifest fails HERE,
+# not as a mis-decoded telemetry row later.
+if grep -qE '^[[:space:]]*\[\[camera\]\]' "$SCENARIO" 2>/dev/null; then
+    mapfile -t EYED < <(uv run python -c "
+import tomllib
+with open('$SCENARIO', 'rb') as fh:
+    world = tomllib.load(fh)
+print(' '.join(sorted({c['parent'] for c in world.get('camera', [])})))
+")
+    echo "--- FIT awareness: eyes on (${EYED[*]:-none}) ---"
+    for fact in "${FACTS[@]}"; do
+        read -r name _ <<<"$fact"
+        fit="$("$RUNTIME" logs "orrery-$name" 2>&1 | grep 'FIT MATCHED' | tail -1)"
+        [ -n "$fit" ] || { echo "[$name] FAILED: no FIT MATCHED on its console"; exit 1; }
+        declared=$(sed -E 's/.*declared=([0-9a-f]{8}).*/\1/' <<<"$fit")
+        eye=$(( 0x10 & 0x$declared ))
+        want=0
+        for e in "${EYED[@]:-}"; do [ "$e" = "$name" ] && want=$((0x10)); done
+        if [ "$eye" -ne "$want" ]; then
+            echo "[$name] FAILED: FIT declares camstate=$(printf 0x%02x "$eye"), want $(printf 0x%02x "$want")"
+            echo "    $fit"
+            exit 1
+        fi
+        echo "[$name] FIT declares camstate $( [ "$want" -eq 0 ] && echo 'absent (blind bird)' || echo 'present (rendered eye)' )"
+    done
+fi
 echo "TWIN ROUND TRIP OK"
