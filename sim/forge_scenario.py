@@ -554,15 +554,19 @@ class ForgeBody:
         The device side of the commanded-vs-confirmed pair: read from the
         module's live fields, which Basilisk re-reads every update
         (camera.cpp) - the Phase-0 spike flew this conclusion before the
-        schema was written. ``captured`` counts distinct image write times
-        at estimator-task granularity, boot stream included; two images
+        schema was written. ``captured`` counts distinct image timeTags at
+        estimator-task granularity, boot stream included; two images
         completing between consecutive recorder ticks would share one count,
         so this is a floor, and v2b's storage ledger is where the exact
         number lives.
         """
         assert self._opnav is not None, "cam_state_bytes without a rendered eye"
         camera_id, module, _, _, _, image_recorder = self._opnav
-        captured = len({t for t in image_recorder.writeTime if t > 0.0})
+        # timeTag is the camera's own stamp on each received frame; distinct
+        # positive values at recorder granularity is the honest capture door
+        # (CameraImageMsg carries no writeTime - the recorder's payload fields
+        # are exactly the message's, proven the hard way by a live flight).
+        captured = len({t for t in image_recorder.timeTag if t > 0.0})
         return encode_container(
             "BSK_LINK/CamState",
             {
