@@ -13,9 +13,24 @@
 # suspect a scenario before the zip: a craft at the central body's (0,0,0)
 # degenerates Vizard's orbit-line build on EVERY version - every renderable
 # scenario orbits (the lesson that made the forge's capture test deterministic).
+#
+# The startup-patience patch, and why this lock carries a second hash: stock
+# Vizard closes its socket forever when a world's first message lands after
+# the half-second window that starts at the bind - a service-started world
+# can lose its renderer on EVERY boot (measured; the defects are filed
+# upstream). Until upstream ships, the yard runs the same v2.4.0 sources with
+# tools/vizard-patience/patience.patch applied: patient by default in the
+# headless modes, retry-on-timeout always. Vizard is a Mono player, so that
+# is one DLL - scripts/build_vizard_patience.sh rebuilds it from the tag
+# against the unpack's own Managed/ assemblies and installs it only when the
+# hash below agrees. Image parity was flown first: same-scenario flights on
+# the official and the patched assembly produce byte-equal digests.
 
 url = "https://hanspeterschaub.info/bskFiles/Vizard_Linux.zip"
 sha256_zip = "c2482c11c4ae41eea810a44a15330623ca3bc300adab6aa8536cf9676b1e1fb0"
 unpack = ".vizard"
 binary = ".vizard/Vizard_Linux/Vizard.x86_64"
 license = "AVT research license: fetch it, verify it, run it; never commit it, never bake it into an image"
+version = "2.4.0+orrery-patience1"
+patched_assembly = ".vizard/Vizard_Linux/Vizard_Data/Managed/Assembly-CSharp.dll"
+patched_assembly_sha256 = "1567e94918dd3aad42d6a4706fbf8b2e4a6740b671b8f7275cf6be635db3dd41"

@@ -132,41 +132,20 @@ done
 
 LOG="$LOG_DIR/twin_sim.log"
 
-# The rendered eye (CAM): when the scenario mounts a [[camera]], the pinned
-# Vizard joins the yard the way every other part of it does - a named
-# container, started here, swept at cleanup. It probes the sim's render
-# socket itself (no borrowed sleep), and the unpack is vizard.lock's: a
-# missing one stops the run BEFORE any container boots, because the world
-# would otherwise die at its render wait minutes into the flight.
+# The rendered eye (CAM): a [[camera]] scenario stages its pinned Vizard as
+# a named container, swept by the cleanup loop - the full choreography law
+# (patient direct exec, squat guard, vizard.lock gate) lives in
+# scripts/renderer.sh.
 if grep -qE '^[[:space:]]*\[\[camera\]\]' "$SCENARIO" 2>/dev/null; then
-    viz_bin="$(sed -n 's/^binary = "\([^"]*\)".*/\1/p' "$REPO/vizard.lock")"
-    if [ ! -x "$REPO/$viz_bin" ]; then
-        echo "fly_fleet: $viz_bin is not here - run scripts/get_vizard.sh (vizard.lock pins the renderer)" >&2
-        exit 2
-    fi
-    if ! "$RUNTIME" image inspect orrery-viz:dev >/dev/null 2>&1; then
-        echo "--- building orrery-viz:dev (renderer runtime) ---"
-        "$RUNTIME" build -q -t orrery-viz:dev -f "$REPO/docker/viz.Dockerfile" "$REPO/docker" >/dev/null
-    fi
-    "$RUNTIME" rm -f orrery-camera-viz >/dev/null 2>&1 || true
-    "$RUNTIME" run -d --name orrery-camera-viz --network host \
-        --user "$(id -u):$(id -g)" -e HOME=/tmp \
-        -w /viz/Vizard_Linux \
-        -v "$REPO/.vizard/Vizard_Linux:/viz/Vizard_Linux:ro" \
-        orrery-viz:dev bash -c '
-          for ((end = SECONDS + 300; SECONDS < end; )); do
-            (exec 3<>"/dev/tcp/127.0.0.1/5556") 2>/dev/null && break
-            sleep 1
-          done
-          exec xvfb-run -a ./Vizard.x86_64 -args -batchmode -noDisplay tcp://127.0.0.1:5556' >/dev/null
+    RUNTIME="$RUNTIME" bash "$REPO/scripts/renderer.sh" stage "$SCENARIO" orrery-camera-viz
     CONTAINERS+=("orrery-camera-viz")
-    echo "--- renderer container up (orrery-camera-viz, waiting on the sim's render socket) ---"
 fi
 
 echo "--- basilisk fleet sim (lockstep, paced, ${SIM_DURATION} sim-s) ---"
 # unbuffered: a SWIG-side abort loses a block-buffered log, and an empty
 # log turns every failure into an autopsy with no body
-PYTHONUNBUFFERED=1 uv run python -m sim.forge_scenario --scenario "$SCENARIO" --duration "$SIM_DURATION" \
+PYTHONUNBUFFERED=1 \
+    uv run python -m sim.forge_scenario --scenario "$SCENARIO" --duration "$SIM_DURATION" \
     --zmq --pace >"$LOG" 2>&1 &
 SIM_PID=$!
 sleep 3

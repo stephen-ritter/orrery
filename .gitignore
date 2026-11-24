@@ -38,3 +38,6 @@ cfs_mission/mission/last_build.log
 
 # local working journal: publication-scope decisions, receipts - never shipped
 ROADMAP.md
+
+# patience-build scratch: the v2.4.0 clone dotnet compiles Assembly-CSharp from
+.vizard-build/

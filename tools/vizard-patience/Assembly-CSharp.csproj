@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>Assembly-CSharp</AssemblyName>
+    <LangVersion>9</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <AutomaticallyUseReferenceAssemblyPackages>false</AutomaticallyUseReferenceAssemblyPackages>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <NoWarn>CS0618;CS0169;CS0414;CS1591;CS0067</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+    <PackageReference Include="NUnit" Version="3.13.3" PrivateAssets="All" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="$(VizardAssets)/**/*.cs" Exclude="$(VizardAssets)/**/Editor/**/*.cs;$(VizardAssets)/Tests/**/*.cs" />
+  </ItemGroup>
+  <Target Name="UsePlayerBcl" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Reference.HintPath)' == '' or $([System.String]::Copy('%(Reference.HintPath)').Contains('/packs/')) or $([System.String]::Copy('%(Reference.HintPath)').Contains('referenceassemblies'))" />
+      <Reference Include="$(ManagedDir)/*.dll" Exclude="$(ManagedDir)/Assembly-CSharp*.dll" />
+    </ItemGroup>
+  </Target>
+</Project>

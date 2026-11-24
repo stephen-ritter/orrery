@@ -19,9 +19,12 @@ FROM ubuntu:24.04
 
 # Xvfb for the display Unity insists on having, Mesa for the GL it insists on
 # calling, and the handful of X extension libs a Unity IL2CPP player probes
-# at init (cursor, randr, xinput, xtest). The compose service's probe-then-
-# start choreography lives in compose.yml, not here - this image only knows
-# how to hold a headless screen.
+# at init (cursor, randr, xinput, xtest). The wait-for-the-world-then-
+# exec-DIRECTLY choreography lives in compose.yml, not here - this image
+# only knows how to hold a headless screen. Note what this image does NOT
+# need: xvfb-run. Measured, the wrapper corrupts Vizard's launch inside a
+# container (child dies in the first seconds; the wrapper outlives it).
+# Run Xvfb by hand and exec the player directly, as compose.yml does.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libgl1 \
@@ -41,4 +44,4 @@ LABEL org.opencontainers.image.title="orrery-viz" \
 
 WORKDIR /viz
 
-CMD ["bash", "-c", "echo 'orrery-viz: the renderer (Vizard, headless; no binary in the image).'; echo '  mount the vizard.lock-verified unpack at /viz and run as your host UID,'; echo '  then: xvfb-run -a ./Vizard_Linux/Vizard.x86_64 -args -batchmode -noDisplay tcp://127.0.0.1:5556'"]
+CMD ["bash", "-c", "echo 'orrery-viz: the renderer (Vizard, headless; no binary in the image).'; echo '  mount the vizard.lock-verified unpack at /viz and run as your host UID,'; echo '  then: Xvfb :97 -screen 0 1280x1024x24 & DISPLAY=:97'; echo '    exec ./Vizard_Linux/Vizard.x86_64 -args -batchmode -noDisplay tcp://127.0.0.1:5556'; echo '    (directly - never via xvfb-run: that wrapper kills the child in a container)'"]

@@ -1,0 +1,231 @@
+From 907bacfa750ec469fff2a3d8db23e3ba44a2bfe4 Mon Sep 17 00:00:00 2001
+From: stephen-ritter <sritter1995@gmail.com>
+Date: Tue, 24 Nov 2026 10:05:22 -0600
+Subject: [PATCH] Make live-stream startup patient and retryable
+
+The startup screen gave up 0.5 s after binding its socket and closed it
+permanently, so a world whose first message arrived late (headless or
+service startup) could only be reached by restarting the app. Timeouts
+now reopen the socket and keep waiting; the headless CLI modes
+(-opNavMode, -directComm) default to waiting indefinitely, and
+-messageTimeout sets the retry period in any mode. The response socket
+receive is also made cancellable so stopping a silent listener no
+longer blocks.
+---
+ .../DirectCommunicationController.cs          | 30 +++++++-
+ .../Assets/Scripts/LiveStreaming/ResSocket.cs |  3 +-
+ .../StartupScene/StartUpScreenManager.cs      | 77 ++++++++++++++-----
+ 3 files changed, 88 insertions(+), 22 deletions(-)
+
+diff --git a/VizardUnityProject/Assets/Scripts/LiveStreaming/DirectCommunicationController.cs b/VizardUnityProject/Assets/Scripts/LiveStreaming/DirectCommunicationController.cs
+index a4a326d..d917531 100644
+--- a/VizardUnityProject/Assets/Scripts/LiveStreaming/DirectCommunicationController.cs
++++ b/VizardUnityProject/Assets/Scripts/LiveStreaming/DirectCommunicationController.cs
+@@ -80,8 +80,11 @@ public class DirectCommunicationController : MonoBehaviour
+         if (DataManager.SocketIsReceiveOnly) //Set up receive only socket
+         {
+             //Add only the NetMQ message types that can be handled in receive only
+-            messageSubscriptions.Add("SIM_UPDATE");
+-            messageSubscriptions.Add("SYNC_SETTINGS");
++            if (!messageSubscriptions.Contains("SIM_UPDATE"))
++            {
++                messageSubscriptions.Add("SIM_UPDATE");
++                messageSubscriptions.Add("SYNC_SETTINGS");
++            }
+             //Create the subscription socket
+             subSocket = new SubSocket(ReceiveVizMessageSubSocket, address, messageSubscriptions);
+             //Start the socket
+@@ -111,6 +114,29 @@ public class DirectCommunicationController : MonoBehaviour
+         NetMQConfig.Cleanup();
+     }
+ 
++    /// <summary>
++    /// Reopen the communication socket without tearing down NetMQ, so a timed-out
++    /// startup connection can be retried from within the app
++    /// </summary>
++    /// <param name="address">Socket address to connect Vizard</param>
++    /// <returns></returns>
++    public bool RebindSocket(string address)
++    {
++        if (DataManager.SocketIsReceiveOnly)
++        {
++            if (subSocket != null)
++            {
++                subSocket.Stop();
++            }
++        }
++        else if (resSocket != null)
++        {
++            resSocket.Stop();
++        }
++
++        return StartCommunication(address);
++    }
++
+     /// <summary>
+     /// Returns the correct response for a Basilisk request message
+     /// </summary>
+diff --git a/VizardUnityProject/Assets/Scripts/LiveStreaming/ResSocket.cs b/VizardUnityProject/Assets/Scripts/LiveStreaming/ResSocket.cs
+index ee16c68..7319c65 100644
+--- a/VizardUnityProject/Assets/Scripts/LiveStreaming/ResSocket.cs
++++ b/VizardUnityProject/Assets/Scripts/LiveStreaming/ResSocket.cs
+@@ -17,6 +17,7 @@
+ 
+  */
+ 
++using System;
+ using System.Threading;
+ using NetMQ;
+ using NetMQ.Sockets;
+@@ -101,7 +102,7 @@ public class ResSocket
+         {
+             NetMQMessage message = new NetMQMessage();
+ 
+-            if (!server.TryReceiveMultipartMessage(ref message))
++            if (!server.TryReceiveMultipartMessage(TimeSpan.FromMilliseconds(100), ref message))
+             {
+                 continue;
+             }
+diff --git a/VizardUnityProject/Assets/Scripts/StartupScene/StartUpScreenManager.cs b/VizardUnityProject/Assets/Scripts/StartupScene/StartUpScreenManager.cs
+index 6591132..3739453 100755
+--- a/VizardUnityProject/Assets/Scripts/StartupScene/StartUpScreenManager.cs
++++ b/VizardUnityProject/Assets/Scripts/StartupScene/StartUpScreenManager.cs
+@@ -18,6 +18,8 @@
+  */
+ 
+ using System;
++using System.Collections;
++using System.Globalization;
+ using UnityEngine;
+ using UnityEngine.UI;
+ using UnityEngine.SceneManagement;
+@@ -56,6 +58,12 @@ public class StartUpScreenManager : MonoBehaviour
+ 
+     private Save lastSave; // Vizard Configuration data from last use (used to set up Startup Screen GUI)
+ 
++    private const float DefaultMessageLoadTimeout = 0.5f; // Seconds before a startup wait is retried
++
++    private float messageLoadTimeoutSeconds = DefaultMessageLoadTimeout; // Negative waits indefinitely
++
++    private bool messageTimeoutRequested; // True when -messageTimeout is given on the command line
++
+     private readonly Color
+         inactiveTextColor = new Color(0.3962f, 0.3868f, 0.3868f, 1f); //Text color for inactive GUI components
+ 
+@@ -115,6 +123,16 @@ public class StartUpScreenManager : MonoBehaviour
+             {
+                 DataManager.SaveFPSMetricsToFile = true;
+             }
++
++            if (args[i] == "-messageTimeout")
++            {
++                if (i + 1 < args.Length &&
++                    float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float timeout))
++                {
++                    messageLoadTimeoutSeconds = timeout;
++                    messageTimeoutRequested = true;
++                }
++            }
+         }
+ 
+         for (int i = 0; i < args.Length; i++)
+@@ -126,6 +144,11 @@ public class StartUpScreenManager : MonoBehaviour
+                 DataManager.SocketAddress = socketAddress;
+                 Debug.Log("Connecting to socketAddress: " + DataManager.SocketAddress);
+                 SetDataManagerSettingsAndUpdateToggles(true, false, true);
++                if (!messageTimeoutRequested)
++                {
++                    messageLoadTimeoutSeconds = -1f;
++                }
++
+                 StartVisualizationButtonClicked();
+                 return;
+             }
+@@ -137,6 +160,11 @@ public class StartUpScreenManager : MonoBehaviour
+                 DataManager.SocketAddress = socketAddress;
+                 Debug.Log("Connecting to SocketAddress: " + DataManager.SocketAddress);
+                 SetDataManagerSettingsAndUpdateToggles(true, false, false);
++                if (!messageTimeoutRequested)
++                {
++                    messageLoadTimeoutSeconds = -1f;
++                }
++
+                 StartVisualizationButtonClicked();
+                 return;
+             }
+@@ -320,42 +348,53 @@ public class StartUpScreenManager : MonoBehaviour
+             return;
+         }
+ 
+-        DateTime startTime = DateTime.Now;
++        StartCoroutine(LoadFirstMessageRoutine());
++    }
++
++    private IEnumerator LoadFirstMessageRoutine()
++    {
++        bool isLiveSim = DataManager.IsLiveSim;
++        float waited = 0f;
++        int attempt = 1;
++
+         while (MessageList.TimestepsTotal < 1)
+         {
+             Debug.Log("Waiting for messages to load.");
+-            TimeSpan interval = DateTime.Now - startTime;
+-            if (interval.TotalSeconds > 0.5)
+-            {
+-                Debug.Log("Timed out waiting for messages to load.");
+-                if (DataManager.IsLiveSim)
+-                {
+-                    errorText.color = Color.red;
+-                    errorText.text = "Timed out waiting for connection. Please check address and try again.";
+-                    directCommController.StopSocket();
+-                }
++            yield return new WaitForSeconds(0.05f);
++            waited += 0.05f;
+ 
+-                return;
++            if (!isLiveSim || messageLoadTimeoutSeconds < 0f || waited <= messageLoadTimeoutSeconds)
++            {
++                continue;
+             }
+ 
+-            System.Threading.Thread.Sleep(50);
++            errorText.color = Color.red;
++            errorText.text = "Timed out waiting for messages to load. Reopening the socket (attempt " + attempt +
++                             "). Please check the connection address.";
++            Debug.LogWarning("Timed out waiting for messages to load. Reopening socket, attempt " + attempt + ".");
++            directCommController.RebindSocket(DataManager.SocketAddress);
++            waited = 0f;
++            attempt++;
+         }
+ 
+-        if (DataManager.IsLiveSim && DataManager.SocketIsReceiveOnly)
++        if (isLiveSim && DataManager.SocketIsReceiveOnly)
+         {
++            float settingsTimeout =
++                messageLoadTimeoutSeconds < 0f ? DefaultMessageLoadTimeout : messageLoadTimeoutSeconds;
++            float settingsWaited = 0f;
+             while (!MessageList.SettingsMessageReceived)
+             {
+                 Debug.Log("Waiting on settings message.");
+-                TimeSpan interval = DateTime.Now - startTime;
+-                if (interval.TotalSeconds > 0.5)
++                yield return new WaitForSeconds(0.05f);
++                settingsWaited += 0.05f;
++                if (settingsWaited > settingsTimeout)
+                 {
+                     MessageList.SettingsMessageReceived = true;
+                     VizardGUISettings.UpdateErrorMessages(
+-                        "Setting message was not received within the first four seconds of Receive Only live streaming and could not be applied.",
++                        "Setting message was not received within " + settingsTimeout +
++                        " seconds of Receive Only live streaming and could not be applied.",
+                         true);
+                 }
+-
+-                System.Threading.Thread.Sleep(50);
+             }
+         }
+ 
+-- 
+2.43.0
+

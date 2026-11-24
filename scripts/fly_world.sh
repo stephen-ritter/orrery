@@ -30,6 +30,10 @@ SIM_MODULE="${SIM_MODULE:-sim.detumble_scenario}"
 # sim/scenarios/chief.toml" flies the P4a operations plant (wheels + IMU)
 # through the exact same closed loop.
 SIM_ARGS="${SIM_ARGS:-}"
+# Positional scenario (fly_fleet symmetry): fly_world.sh sim/scenarios/x.toml
+# runs the bskforge plant through this exact closed loop - and a scenario
+# carrying [[camera]] gets the rendered eye (staged below, same law).
+if [ -n "${1:-}" ]; then SIM_MODULE="sim.forge_scenario"; SIM_ARGS="--scenario $1"; fi
 LOG="${LOG:-/tmp/opencode/world_scenario_$(basename "$SIM_MODULE").log}"
 
 # D10: this harness flies ONE vehicle on the legacy port block. Fleet work
@@ -48,8 +52,10 @@ stale="$("$RUNTIME" ps -q --filter ancestor=orrery-cfs:dev || true)"
 
 CONTAINER=""
 SIM_PID=""
+RENDERER=""
 cleanup() {
     [ -n "$SIM_PID" ] && kill "$SIM_PID" >/dev/null 2>&1 || true
+    [ -n "$RENDERER" ] && "$RUNTIME" rm -f "$RENDERER" >/dev/null 2>&1 || true
     [ -n "$CONTAINER" ] && "$RUNTIME" stop "$CONTAINER" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -88,8 +94,19 @@ fi
 echo "--- app console ---"
 "$RUNTIME" logs "$CONTAINER" 2>&1 | grep -E "GS_TCP|FCS |BSK_LINK" | head -10
 
+# The rendered eye (fly_fleet symmetry): a scenario carrying [[camera]]
+# stages the patient direct-exec renderer BEFORE the world starts - the
+# shared law lives in scripts/renderer.sh, the squat guard included.
+SCENARIO="${1:-}"
+if [ -z "$SCENARIO" ] && [[ "$SIM_ARGS" == *--scenario* ]]; then SCENARIO="${SIM_ARGS#*--scenario }"; fi
+if [ -n "$SCENARIO" ] && grep -qE '^[[:space:]]*\[\[camera\]\]' "$SCENARIO" 2>/dev/null; then
+    RUNTIME="$RUNTIME" bash "$REPO/scripts/renderer.sh" stage "$SCENARIO" orrery-world-viz
+    RENDERER="orrery-world-viz"
+fi
+
 echo "--- basilisk scenario (lockstep, paced, ${SIM_DURATION} sim-s) ---"
-uv run python -m "$SIM_MODULE" --duration "$SIM_DURATION" --zmq --pace $SIM_ARGS >"$LOG" 2>&1 &
+# unbuffered: a SWIG-side abort loses a block-buffered log
+PYTHONUNBUFFERED=1 uv run python -m "$SIM_MODULE" --duration "$SIM_DURATION" --zmq --pace $SIM_ARGS >"$LOG" 2>&1 &
 SIM_PID=$!
 sleep 3  # let the sim bind and pace a couple of ticks before ground connects
 # A host ZMQ bind collision (a standing fleet owns 5580+) kills the world at

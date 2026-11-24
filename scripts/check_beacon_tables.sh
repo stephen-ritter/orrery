@@ -11,6 +11,8 @@
 # then runs sim/beacon_tables.py against the COSMOS JSON-RPC API. Finishes
 # by counting UNKNOWN/length faults the operator logged SINCE the client
 # started: the beacon table and the defs must match byte-for-byte, both ways.
+# SCENARIO picks the world (default chief.toml); a [[camera]] world also
+# proves the OPNAV frame decodes while the eye streams.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,6 +22,11 @@ bash "$REPO/scripts/firmware.sh" check
 COSMOS_HOME="${COSMOS_HOME:-$HOME/Projects/cosmos}"
 export OPENC3_API_PASSWORD="${OPENC3_API_PASSWORD:-orrery-dev}"
 SIM_DURATION="${SIM_DURATION:-90}"
+# Which world feeds the beacon. The default keeps the historic wrap
+# (chief.toml, every instrument but the eye); a [[camera]] scenario like
+# camera_ops.toml also proves the OPNAV frame decodes with REAL knowledge -
+# it gets the staged renderer (scripts/renderer.sh) exactly like fly_world.
+SCENARIO="${SCENARIO:-sim/scenarios/chief.toml}"
 cd "$REPO"
 
 if ! docker ps --format '{{.Names}}' | grep -q '^cosmos-openc3-operator-1$'; then
@@ -32,8 +39,10 @@ stale="$(docker ps -q --filter ancestor=orrery-cfs:dev || true)"
 
 CONTAINER=""
 SIM_PID=""
+RENDERER=""
 cleanup() {
     [ -n "$SIM_PID" ] && kill "$SIM_PID" >/dev/null 2>&1 || true
+    [ -n "$RENDERER" ] && docker rm -f "$RENDERER" >/dev/null 2>&1 || true
     [ -n "$CONTAINER" ] && docker stop "$CONTAINER" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -65,9 +74,18 @@ if ! grep -q "OBC HK App Initialized" <<<"$LOGS"; then
     exit 1
 fi
 
-echo "--- basilisk operations plant (paced, ${SIM_DURATION} sim-s) ---"
-uv run python -m sim.forge_scenario --duration "$SIM_DURATION" --zmq --pace \
-    --scenario sim/scenarios/chief.toml >/tmp/opencode/beacon_wrap_scenario.log 2>&1 &
+# The rendered eye: a [[camera]] world stages the patient renderer BEFORE
+# the world starts (shared law: scripts/renderer.sh) so the OPNAV frame
+# carries real knowledge for the decode wrap below.
+if grep -qE '^[[:space:]]*\[\[camera\]\]' "$SCENARIO" 2>/dev/null; then
+    bash "$REPO/scripts/renderer.sh" stage "$SCENARIO" orrery-beacon-viz
+    RENDERER="orrery-beacon-viz"
+fi
+
+echo "--- basilisk operations plant (paced, ${SIM_DURATION} sim-s, $SCENARIO) ---"
+PYTHONUNBUFFERED=1 \
+    uv run python -m sim.forge_scenario --duration "$SIM_DURATION" --zmq --pace \
+    --scenario "$SCENARIO" >/tmp/opencode/beacon_wrap_scenario.log 2>&1 &
 SIM_PID=$!
 sleep 3
 # a standing fleet holds 5580+: the host sim dies silently while the mission

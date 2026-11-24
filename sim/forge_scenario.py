@@ -110,6 +110,7 @@ PART_ROWS = {p.name: p for p in load_registry()}
 FIT_ROWS = frame_rows(load_registry())
 FIT_HASH = registry_digest(load_registry())
 
+
 # The celestial id this Basilisk's message stream assigns Earth (CAM). Not a
 # guess and not a name: the Vizard scene tags its limb findings with it
 # (measured: planetIds sample == 2), and horizonOpNav reads its planet RADIUS
@@ -777,8 +778,13 @@ class ForgeScenario:
         )
         self.bundle = self.body.bundle
 
-        ctx.sim.InitializeSimulation()
-
+        # Rig wired BEFORE init: the loop's first tick IS the renderer's
+        # greeting, and nothing may jump the queue - a stolen step left
+        # that tick out of every rate history and MOVED the twin digests,
+        # and a pre-first-scan WriteProtobuffer divides by a renderRate no
+        # scan has copied yet (gdb: divq, greeter v2). The patience build
+        # pinned in vizard.lock waits for the world as long as the world
+        # needs, so nothing here choreographs the player's startup.
         rig = LockstepRig(
             ctx.sim,
             control_period_s=control_period_s,
@@ -796,6 +802,8 @@ class ForgeScenario:
             ),
         )
         self._rig = rig
+
+        ctx.sim.InitializeSimulation()
 
     # ---- rig delegations: identical harness surface to DetumbleScenario ----
 
@@ -962,8 +970,9 @@ class ForgeFleet:
             for index, sc_cfg in enumerate(config.spacecraft)
         ]
 
-        ctx.sim.InitializeSimulation()
-
+        # Rig before init, same law as the single-vehicle path: the loop's
+        # first tick is the renderer's greeting (see ForgeScenario for both
+        # falsified greeters).
         rig = LockstepRig(
             ctx.sim,
             control_period_s=control_period_s,
@@ -987,6 +996,8 @@ class ForgeFleet:
             pace=pace,
         )
         self._rig = rig
+
+        ctx.sim.InitializeSimulation()
 
     # ---- harness surface ----------------------------------------------------
 

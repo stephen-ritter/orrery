@@ -101,13 +101,23 @@ def test_the_world_takes_scenario_duration_and_fit_knobs_from_the_environment() 
     assert "${ORRERY_FIT_ARGS:-}" in cmd
 
 
-def test_the_camera_renderer_is_gated_probes_and_mounts() -> None:
-    """The CAM renderer: profile-gated, socket-probed, binary mounted.
+def test_the_camera_renderer_is_gated_starts_and_mounts() -> None:
+    """The CAM renderer: profile-gated, patient by default, direct exec, mounted.
 
-    The licensed Vizard binary joins the yard only by the camera profile,
-    waits on the sim's REQ socket before dialing (the forge capture test's
-    choreography law), and arrives from the vizard.lock unpack - it is
-    never baked into an image.
+    The licensed Vizard binary joins the yard only by the camera profile and
+    arrives from the vizard.lock unpack - never baked into an image. It
+    starts WITH the yard and nothing else: the patience assembly the lock
+    pins (tools/vizard-patience/) waits for the world's first message as
+    long as the world needs, so the old sentinel handoff and its freshness
+    gate are retired, and their ABSENCE is the contract - a renderer that
+    waits for the world can only ever deadlock behind a marker that is an
+    EFFECT of streaming. Two measured laws still run the launch: the
+    service never touches the port before owning it - the world's REP dials
+    THIS service, so a probe connection while it waits poisons the latch
+    (measured), and squatters are refused at the yard door (scripts/fleet.sh
+    refuses to raise a camera world onto an already-listening 5556) - and
+    the player is exec'd DIRECTLY behind a hand-started Xvfb, because the
+    xvfb-run wrapper corrupts Vizard's launch inside a container.
     """
     cam = SERVICES["camera"]
     assert cam["profiles"] == ["camera"], "an ordinary yard must not depend on a renderer"
@@ -116,11 +126,48 @@ def test_the_camera_renderer_is_gated_probes_and_mounts() -> None:
     cmd = cam["command"]
     assert cmd[:2] == ["bash", "-c"] and len(cmd) == 3
     script = cmd[2]
-    assert "/dev/tcp/127.0.0.1/" in script, "probe the sim's REQ socket before dialing it"
-    assert "exit 1" in script, "the wait must end loudly, never as a silent doomed dial"
-    assert "./Vizard.x86_64" in script and "xvfb-run" in script
-    assert cam["volumes"][0].endswith(":/viz/Vizard_Linux:ro")
+    assert "/dev/tcp" not in script, "a probe CONNECTION poisons the REP that dials us"
+    assert "/proc/net/tcp" not in script, "the port is OURS to bind; squatters die at the door"
+    assert "camera-wait" not in script and "renderer-started" not in script, (
+        "the renderer starts with the yard: patience is in the assembly, not the choreography"
+    )
+    assert "exit 1" in script, "a screen that never comes up must end the service loudly"
+    assert "xvfb-run" not in script, "the wrapper corrupts Vizard's launch in a container"
+    assert "exec ./Vizard.x86_64" in script, "the player is the service itself"
+    assert "tcp://127.0.0.1:" in script, "the zmq URI is colon-form; a slash mutes the renderer"
+    assert "-batchmode" in script
+    assert "Xvfb :97" in script and "DISPLAY=:97" in script, "the screen, held by hand"
+    assert any(v.endswith(":/viz/Vizard_Linux:ro") for v in cam["volumes"])
+    assert not any("/work" in v for v in cam["volumes"]), "the renderer reads no world state now"
     assert cam["environment"]["ORRERY_VIZ_PORT"] == "${CHIEF_VIZ:-5556}"
+    world_env = SERVICES["world"]["environment"]
+    assert "BSKFORGE_VIZ_WAIT_FILE" not in world_env, "the sentinel handoff is retired"
+    assert "ORRERY_VIZ_READY_FILE" not in world_env
+
+
+def test_the_staged_renderer_is_patient_and_lock_verified() -> None:
+    """scripts/renderer.sh: the fleet-side staging obeys the same patience law.
+
+    Staging refuses a scenario without [[camera]], refuses an unpack that
+    is not there, and refuses an assembly that is not the patience build
+    the lock hashes - the check that makes vizard.lock's
+    2.4.0+orrery-patience1 label a fact, with the fixing command in the
+    refusal. The container body mirrors the compose service: no sentinel
+    wait, no probe, direct exec behind a hand-started Xvfb; the squatter
+    refusal stays at the yard door.
+    """
+    script = (REPO / "scripts" / "renderer.sh").read_text()
+    assert r"\[\[camera\]\]" in script, "a world without a camera stages no renderer"
+    assert 'binary = "' in script and "get_vizard.sh" in script
+    assert "patched_assembly_sha256" in script and "build_vizard_patience.sh" in script, (
+        "a renderer that is not the patience build stops here, with the fixing command"
+    )
+    assert "camera-wait" not in script, "the staged renderer starts with the yard"
+    body = script.split("bash -c '", 1)[1]
+    assert "/dev/tcp" not in body, "no probe: the port is OURS to bind"
+    assert "xvfb-run" not in body and "exec ./Vizard.x86_64" in body
+    assert "DISPLAY=:97" in body, "the screen, held by hand"
+    assert "5556 already has a listener" in script, "squatters are refused at the yard door"
 
 
 def test_volumes_are_declared_and_name_pinned() -> None:

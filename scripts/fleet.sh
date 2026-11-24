@@ -117,6 +117,15 @@ scenario_up() {
             echo "        run scripts/get_vizard.sh first (vizard.lock pins the renderer)" >&2
             return 1
         fi
+        # yard-door squat guard: the world's REP DIALS tcp/5556 (Vizard owns
+        # it), so a listener here BEFORE anything starts is a renderer
+        # squatting from a dead world - it would accept the world's dial
+        # with a deaf scene (measured: a silent stall mid-flight).
+        if ss -tln | grep -qE ':5556([[:space:]]|$)'; then
+            echo "[$STEM] tcp/5556 already has a listener: sweep the squatting renderer" >&2
+            echo "        (docker ps for a stray Vizard; pkill -9 -x Vizard.x86_64)" >&2
+            return 1
+        fi
     fi
 
     fleet_down

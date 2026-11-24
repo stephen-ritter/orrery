@@ -33,6 +33,7 @@ x-engine-env: &engine-env
   HOME: /tmp
   OMP_NUM_THREADS: "1" # BLAS threads change float summation; digests are float
   EDSLINK_DIST: /opt/edslink/dist # the binding THIS interpreter built
+  PYTHONUNBUFFERED: "1" # an empty buffered log turns every failure into a bodyless autopsy
 
 services:
   # the flight-side init: fetch the cFS core pinned in cfs_mission/cfs.lock,
@@ -177,13 +178,21 @@ services:
   # attaches the profile (and refuses early if vizard.lock's binary has not
   # been fetched) when the scenario carries [[camera]].
   #
-  # Probe-then-start, not sleep-then-hope: Vizard DIALS the sim's REQ socket,
-  # which the world binds mid-InitializeSimulation; dialing the dark steals
-  # nothing but waits forever quietly. The service polls the port and exits
-  # loudly after ORRERY_VIZ_WAIT_S with the one question that matters - does
-  # this scenario even carry a camera? In-container the renderer's process
-  # tree dies with the container (the host-side zombie-renderer lesson from
-  # the forge's capture test cannot escape a cgroup).
+  # Three measured laws run this service. The FIRST is patience: Vizard IS
+  # the render socket's server (the sim connects OUT, retrying while the
+  # world builds), and the patience build pinned in vizard.lock waits for
+  # the world's first message as long as the world needs - so the renderer
+  # simply starts with the yard. (Stock Vizard closed its socket 0.5 s after
+  # the bind, which no service-started world can beat: the first scene
+  # message physically needs a full scan. That window is why this service
+  # once gated on a sentinel; the patch upstream removes the need, and the
+  # lock pins the interim.) The SECOND: no port probe - a listener on 5556
+  # can only be ourselves, and a probe CONNECTION while the world waits
+  # poisons its latch (measured); squatters are swept at the yard door
+  # (scripts/fleet.sh). The THIRD: the player is exec'd DIRECTLY behind a
+  # hand-started Xvfb - the xvfb-run wrapper corrupts Vizard's launch
+  # inside a container (measured: the child dies in the first seconds,
+  # and the wrapper outlives it, squatting the socket as a zombie).
   camera:
     profiles: ["camera"]
     image: orrery-viz:dev
@@ -199,7 +208,6 @@ services:
     environment:
       HOME: /tmp
       ORRERY_VIZ_PORT: "${CHIEF_VIZ:-5556}"
-      ORRERY_VIZ_WAIT_S: "${ORRERY_VIZ_WAIT_S:-300}"
     depends_on:
       sync:
         condition: service_completed_successfully
@@ -207,15 +215,21 @@ services:
       - bash
       - -c
       - |
-        for ((end = SECONDS + ORRERY_VIZ_WAIT_S; SECONDS < end; )); do
-          (exec 3<>"/dev/tcp/127.0.0.1/$${ORRERY_VIZ_PORT}") 2>/dev/null && break
-          sleep 1
+        # NO port probe here, on purpose: the world's REP dials THIS service
+        # (Vizard binds the port), so a listener can only ever be ourselves -
+        # and a probe CONNECTION while the world waits poisons its latch.
+        # Squatters are swept at the yard door instead (scripts/fleet.sh).
+        # direct exec behind Xvfb: the wrapper kills Vizard's launch here
+        Xvfb :97 -screen 0 1280x1024x24 -nolisten tcp >/dev/null 2>&1 &
+        export DISPLAY=:97
+        for ((t = 0; t < 50; ++t)); do
+          [ -e /tmp/.X11-unix/X97 ] && break
+          sleep 0.2
         done
-        if ! (exec 3<>"/dev/tcp/127.0.0.1/$${ORRERY_VIZ_PORT}") 2>/dev/null; then
-          echo "camera: no sim socket on :$${ORRERY_VIZ_PORT} after $${ORRERY_VIZ_WAIT_S}s -" >&2
-          echo "        does the scenario carry [[camera]]? (fleet.sh gates this service on it)" >&2
+        if [ ! -e /tmp/.X11-unix/X97 ]; then
+          echo "camera: Xvfb :97 never came up" >&2
           exit 1
         fi
-        exec xvfb-run -a ./Vizard.x86_64 -args -batchmode -noDisplay \
-          "tcp://127.0.0.1/$${ORRERY_VIZ_PORT}"
+        exec ./Vizard.x86_64 -args -batchmode -noDisplay \
+          "tcp://127.0.0.1:$${ORRERY_VIZ_PORT}"
     stop_grace_period: 15s
