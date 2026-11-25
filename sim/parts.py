@@ -77,6 +77,12 @@ class Part:
     # pure-row parts, whose frames ride the generic consumer. The startup
     # generator (codegen/emit_startup.py) turns these into wake-up lists.
     fsw_apps: tuple[str, ...] = ()
+    # the mounts law: how many mount blocks of a named hardware type ONE
+    # vehicle may carry (absent = single). A row may legislate only for the
+    # types it names; rows naming one type must agree. The forge enforces
+    # the law at world build - silently ignoring a duplicate mount was the
+    # old silence, and silence is the one verdict this bench does not print.
+    instances: dict[str, int] = field(default_factory=dict)
 
 
 def _row_to_part(row: dict[str, Any]) -> Part:
@@ -106,6 +112,7 @@ def _row_to_part(row: dict[str, Any]) -> Part:
         declared=dict(row.get("declared", {})),
         exhibit=exhibit,
         fsw_apps=tuple(row.get("fsw_apps", ())),
+        instances={str(t): int(n) for t, n in row.get("instances", {}).items()},
     )
 
 
@@ -129,7 +136,40 @@ def load_registry(path: str | Path = REGISTRY) -> list[Part]:
     topics = [p.zmq_topic for p in parts]
     if len(topics) != len(set(topics)):
         raise ValueError(f"duplicate zmq_topic in {path}: {topics}")
+    _validate_mounts_laws(parts, path)
     return parts
+
+
+def _validate_mounts_laws(parts: list[Part], path: str | Path) -> None:
+    """The mounts law grammar: legislate only for hardware you name, and never twice.
+
+    A row fixes how many of a type one vehicle may carry only if the row
+    carries that type's readings - a typo must not install a law for some
+    other part's hardware. And where several rows name one type, they are
+    several witnesses to one fact: a disagreement is refused like a row that
+    lies about a topic, because the forge enforces whatever they agree on.
+    """
+    for p in parts:
+        for t, limit in p.instances.items():
+            if t not in p.bskforge_types:
+                raise ValueError(
+                    f"{p.name}: instances names {t}, which the row does not "
+                    f"name as hardware ({path})"
+                )
+            if limit < 1:
+                raise ValueError(
+                    f"{p.name}: instances {t} = {limit}; a law of zero is a "
+                    f"refusal to carry the part"
+                )
+    raised: dict[str, list[str]] = {}
+    for p in parts:
+        for t, limit in p.instances.items():
+            raised.setdefault(t, []).append(f"{p.name}={limit}")
+    for t, laws in raised.items():
+        if len(set(laws)) > 1:
+            raise ValueError(
+                f"{t}: rows disagree on its mounts law: {', '.join(sorted(laws))} ({path})"
+            )
 
 
 def registered_bskforge_types() -> set[str]:
@@ -139,6 +179,41 @@ def registered_bskforge_types() -> set[str]:
     before factory).
     """
     return {t for part in load_registry() for t in part.bskforge_types}
+
+
+def mount_limits(parts: list[Part] | None = None) -> dict[str, int]:
+    """How many mounts of each registered type ONE vehicle may carry.
+
+    Every type a row names is under law: single unless a naming row raises
+    the number. Types NO row names are absent - unlegislated physics the
+    wire does not carry (the plant IMU, the command-path effectors) is not
+    the registry's to count.
+    """
+    rows = load_registry() if parts is None else parts
+    limits = {t: 1 for p in rows for t in p.bskforge_types}
+    for p in rows:
+        for t, limit in p.instances.items():
+            limits[t] = limit
+    return limits
+
+
+def mount_law_violations(mounts: Iterable[str], parts: list[Part] | None = None) -> list[str]:
+    """Sentences for every type mounted past its law, in first-breach order.
+
+    ``mounts`` names every sensor/effector block the vehicle mounts, one
+    entry per block. The forge speaks these with the vehicle's name in
+    front; the arithmetic lives here, bare of Basilisk, so the law is
+    unit-testable on a list like every other verdict.
+    """
+    limits = mount_limits(parts)
+    counts: dict[str, int] = {}
+    for t in mounts:
+        counts[t] = counts.get(t, 0) + 1
+    return [
+        f"{count} {t} mounts; the registry law is {limits[t]} per vehicle"
+        for t, count in counts.items()
+        if t in limits and count > limits[t]
+    ]
 
 
 # --- the fit vocabulary        -------------------------------------------

@@ -21,7 +21,7 @@ from typing import get_args, get_origin
 
 import pytest
 
-from sim.parts import Part, load_registry
+from sim.parts import Part, load_registry, mount_law_violations, mount_limits
 
 REPO = Path(__file__).resolve().parent.parent
 MISSION_DEFS = REPO / "cfs_mission" / "mission" / "orrery_defs"
@@ -234,3 +234,70 @@ def test_bus_subscribers_actually_subscribe(part: Part) -> None:
         assert any(part.mid_name in f.read_text() for f in files), (
             f"{part.name}: {app} never mentions {part.mid_name} - not a subscriber"
         )
+
+
+# --- the mounts law ---------------------------------------------------------
+
+_MINIMAL_ROW = """\
+schema_version = 1
+
+[[part]]
+name = "altimeter"
+display = "radar altimeter"
+bskforge_type = "radarAltimeter"
+zmq_topic = "ALTSTATE"
+eds_container = "BSK_LINK/AltitudeState"
+container_bytes = 32
+topic_offset = 209
+topic_name = "BSK_LINK_ALTITUDE_STATE_TLM_TOPICID"
+mid_name = "BSK_LINK_ALTITUDE_STATE_TLM"
+consumer = "bsk_link"
+"""
+
+
+def _write_registry(tmp_path: Path, body: str) -> Path:
+    path = tmp_path / "parts.toml"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def test_a_mounts_law_may_only_legislate_for_hardware_the_row_names(tmp_path: Path) -> None:
+    """A typo must not install a law for some other part's hardware."""
+    path = _write_registry(tmp_path, _MINIMAL_ROW + "[part.instances]\nmagnetometer = 1\n")
+    with pytest.raises(ValueError, match="does not name"):
+        load_registry(path)
+
+
+def test_two_rows_naming_one_type_must_agree_on_its_law(tmp_path: Path) -> None:
+    """Several rows naming one type are several witnesses to one fact."""
+    path = _write_registry(
+        tmp_path,
+        _MINIMAL_ROW.replace("radarAltimeter", "coarseSunSensor")
+        + '[part.instances]\ncoarseSunSensor = 4\n\n[[part]]\nname = "b"\ndisplay = "b"\n'
+        'bskforge_type = "coarseSunSensor"\nzmq_topic = "B"\neds_container = "B"\n'
+        'container_bytes = 8\ntopic_offset = 210\ntopic_name = "TB"\nmid_name = "MB"\n'
+        'consumer = "bsk_link"\n[part.instances]\ncoarseSunSensor = 2\n',
+    )
+    with pytest.raises(ValueError, match="disagree"):
+        load_registry(path)
+
+
+def test_the_law_defaults_to_single_and_the_registry_raises_it() -> None:
+    """Every registered type is under law; the unlegislated stay absent."""
+    limits = mount_limits()
+    assert limits["coarseSunSensor"] == 4  # raised by the onboard row's table
+    for t in ("starTracker", "magnetometer", "gpsReceiver", "reactionWheels", "camera"):
+        assert limits[t] == 1, f"{t}: single is the law until a row says otherwise"
+    assert "imuSensor" not in limits, "the barrier's IMU is physics, not a wire part"
+
+
+def test_mount_law_violations_name_the_type_the_count_and_the_law() -> None:
+    """Sentences the forge speaks with the vehicle's name in front."""
+    assert mount_law_violations(["starTracker", "starTracker"]) == [
+        "2 starTracker mounts; the registry law is 1 per vehicle"
+    ]
+    assert mount_law_violations(["coarseSunSensor"] * 4) == []
+    assert mount_law_violations(["coarseSunSensor"] * 5) == [
+        "5 coarseSunSensor mounts; the registry law is 4 per vehicle"
+    ]
+    assert mount_law_violations(["imuSensor", "imuSensor", "magnetometer"]) == []

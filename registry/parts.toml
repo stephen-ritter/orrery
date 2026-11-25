@@ -20,6 +20,13 @@
 #   fsw_apps      payload apps a mounting vehicle wakes with (codegen/
 #                 emit_startup.py); empty = a pure-row part riding the
 #                 generic consumer. Names must exist in registry/apps.toml.
+#   instances     the mounts law: how many mount blocks of a named type ONE
+#                 vehicle may carry; a type without a raised law is single.
+#                 A row may legislate only for hardware it names, and rows
+#                 naming one type must agree (the loader refuses a
+#                 disagreement like a wrong topic). The forge enforces the
+#                 law at world build - a scenario cannot quietly mount
+#                 hardware no wire reports.
 #   subscribers   bus consumers AFTER bsk_link republishes ([] = the frame
 #                 exists for ground observation only).
 #   exhibit       the acceptance promise, declaratively: kind truth_pair =
@@ -109,6 +116,13 @@ evs_info_id = 14
 evs_label = "onboard state"
 consumer = "bsk_link"
 subscribers = ["fcs", "obc_hk"]
+
+[part.instances]
+# This container fixes four cosines (TOML order), so four CSS mounts per
+# vehicle is the law and the row - not the forge - says so. The wheel
+# AXES count lives inside one effector block (a shape of the frame, not a
+# mount count) and stays a forge door until the axes themselves go plural.
+coarseSunSensor = 4
 
 # --- the exit part: registered AND landed ------------------------------------
 #

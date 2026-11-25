@@ -253,3 +253,53 @@ def test_operations_plant_sees_the_sun_from_boot() -> None:
     assert state.css_cos[0] > 0.1, f"css1 blind at boot: {state.css_cos}"  # the +X eye
     assert abs(state.st_quat_bn[0]) > 0.5, "ST quaternion must be unit-ish, not a zero message"
     assert max(abs(v) for v in state.mag_b) > 1e-7, "magnetometer must feel the dipole"
+
+
+# --- the mounts law at the world door ----------------------------------------
+
+
+def _mount(kind: str, name: str) -> str:
+    """One valid sensor block, spelled as the shipped plants spell it."""
+    if kind == "starTracker":
+        return (
+            f'[[spacecraft.sensors]]\ntype = "starTracker"\nname = "{name}"\n'
+            "sigma_SB = [0.0, 0.0, 0.0]\nwhite_noise = 1.0e-4\n"
+        )
+    if kind == "magnetometer":
+        return (
+            f'[[spacecraft.sensors]]\ntype = "magnetometer"\nname = "{name}"\n'
+            "noise_sigma = 1.0e-8\n"
+        )
+    return (
+        f'[[spacecraft.sensors]]\ntype = "coarseSunSensor"\nname = "{name}"\n'
+        "boresight_B = [1.0, 0.0, 0.0]\nfov_deg = 60.0\nnoise_sigma = 0.005\n"
+    )
+
+
+def test_a_second_star_tracker_is_refused_not_ignored(tmp_path: Path) -> None:
+    """First-wins was the silence; a duplicate past the law stops the build."""
+    path = _write(
+        tmp_path, _MINIMAL_TOML + _mount("starTracker", "st1") + _mount("starTracker", "st2")
+    )
+    with pytest.raises(fz.ForgeError, match="2 starTracker mounts; the registry law is 1"):
+        fz.ForgeScenario(path)
+
+
+def test_a_second_magnetometer_is_refused_not_ignored(tmp_path: Path) -> None:
+    """The field sensor answers to the law too, with its own model in place."""
+    toml = _MINIMAL_TOML.replace(
+        "[[spacecraft]]",
+        '[environment.magnetic_field]\ntype = "centered_dipole"\n\n[[spacecraft]]',
+    )
+    path = _write(tmp_path, toml + _mount("magnetometer", "mag1") + _mount("magnetometer", "mag2"))
+    with pytest.raises(fz.ForgeError, match="2 magnetometer mounts"):
+        fz.ForgeScenario(path)
+
+
+def test_the_fifth_sun_sensor_meets_the_law_the_row_fixes(tmp_path: Path) -> None:
+    """Four ride the bundle's slots - the fifth is met by the registry, not a forge literal."""
+    path = _write(
+        tmp_path, _MINIMAL_TOML + "".join(_mount("coarseSunSensor", f"css{n}") for n in range(1, 6))
+    )
+    with pytest.raises(fz.ForgeError, match="5 coarseSunSensor mounts; the registry law is 4"):
+        fz.ForgeScenario(path)

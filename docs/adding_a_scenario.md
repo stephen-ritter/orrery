@@ -53,7 +53,11 @@ name = "st"              # this vehicle's instance of it
 ```
 
 Each vehicle mounts its own hardware — a heterogeneous fleet is an ordinary
-input, not a special case. A vehicle wakes exactly what its own mounts bring:
+input, not a special case. How many is law too: a registered part allows one
+mount per vehicle unless its registry row fixes more (the sun-sensor slots
+are four because the housekeeping container fixes four cosines), and a
+scenario that mounts past the law is refused at world build, naming the part
+and the count. A vehicle wakes exactly what its own mounts bring:
 the baseline organs every vehicle carries, plus the payload authorities whose
 parts it mounts (the registry row says which app a part brings; the eye's
 `[[camera]]` block, with `parent = "<vehicle>"`, brings the imager app on the

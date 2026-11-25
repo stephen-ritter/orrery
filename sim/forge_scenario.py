@@ -97,7 +97,13 @@ from sim.lockstep import (
 from sim.lockstep import CMD_ENDPOINT as _CMD_ENDPOINT  # noqa: F401 - re-export
 from sim.lockstep import SENSOR_ENDPOINT as _SENSOR_ENDPOINT  # noqa: F401
 from sim.lockstep import TRUTH_ENDPOINT as _TRUTH_ENDPOINT  # noqa: F401
-from sim.parts import declared_mask, frame_rows, load_registry, registry_digest
+from sim.parts import (
+    declared_mask,
+    frame_rows,
+    load_registry,
+    mount_law_violations,
+    registry_digest,
+)
 
 DEFAULT_SCENARIO = Path(__file__).parent / "scenarios" / "detumble_forge.toml"
 
@@ -357,6 +363,19 @@ class ForgeBody:
             out_msg, _ = bundle.sensor_msgs[imu.name]
             self._imu_sub = out_msg.addSubscriber()
 
+        # The rows say how many: every hardware type the parts registry
+        # names is capped per vehicle by that registry's mounts law (single
+        # unless the row fixes more). First-wins was the old silence - a
+        # scenario quietly mounting hardware no wire reports; a duplicate
+        # past the law now stops the world build, naming the part and the
+        # count. Unlegislated types (the plant IMU, command-path effectors)
+        # are physics the wire does not carry, and stay uncapped.
+        law = mount_law_violations(
+            [s.type for s in sc_cfg.sensors] + [e.type for e in sc_cfg.effectors]
+        )
+        if law:
+            raise ForgeError(f"{self.name}: {law[0]}")
+
         # Onboard state providers: every sensor the plant fitted, plus
         # the wheel array, sampled at tick time into OnboardState frames.
         # What the plant lacks stays zero - the frame is the OBC's view, and
@@ -366,21 +385,16 @@ class ForgeBody:
         self._mag_sub = None
         for sensor in sc_cfg.sensors:
             out_msg, _ = bundle.sensor_msgs[sensor.name]
-            if sensor.type == "starTracker" and self._st_sub is None:
+            if sensor.type == "starTracker":
                 self._st_sub = out_msg.addSubscriber()
             elif sensor.type == "coarseSunSensor":
                 self._css_subs.append(out_msg.addSubscriber())
-            elif sensor.type == "magnetometer" and self._mag_sub is None:
+            elif sensor.type == "magnetometer":
                 self._mag_sub = out_msg.addSubscriber()
         if self._num_wheels > 3:
             raise ForgeError(
                 f"{self.name}: the OnboardState wire fixes three wheel axes, "
                 f"this plant has {self._num_wheels}"
-            )
-        if len(self._css_subs) > 4:
-            raise ForgeError(
-                f"{self.name}: the OnboardState wire fixes four CSS units, "
-                f"this plant has {len(self._css_subs)}"
             )
 
         self._bias = np.asarray(gyro_bias_rads, dtype=float)

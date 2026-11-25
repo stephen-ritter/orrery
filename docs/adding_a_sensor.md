@@ -31,7 +31,7 @@ right and this file is a bug.**
 | the simulation's own timing — rate knowledge, the lockstep handshake, the torque frame | no, deliberately | those frames are hardcoded on purpose: a control law is only worth writing if the tick it is frame-exact against is not a configuration option |
 | data that exists only on the ground, such as the navigator's truth | no, and it must never | the truth gateway. Its container carries no topic, so it has no MsgId, so no flight-software packet for it can exist |
 
-Two rules hold that table together:
+Two rules hold that table together, and a third governs how many:
 
 - **Knowledge flows one way.** If the world measures it, it becomes a registry
   row. If the ground commands it, it becomes a command definition. A device that
@@ -42,6 +42,14 @@ Two rules hold that table together:
   registered part costs the fleet file and a world restart; the boot handshake
   then reports the vehicle's new fit. Only a wire that does not exist yet costs
   the procedure below.
+- **Mounting counts are law.** A part's row says how many mounts of its
+  hardware one vehicle may carry — one, unless the row fixes more (the
+  housekeeping bundle fixes four sun sensors because its container fixes four
+  cosines). A fleet file that mounts past the law is refused at world build,
+  naming the part and the count: silently wiring the first mount and ignoring
+  the rest was the old silence. A row may legislate only for hardware it
+  names, and rows naming one type must agree — the loader refuses the
+  disagreement like a wrong topic.
 
 ## Four rules you cannot work around
 
@@ -294,6 +302,7 @@ the digest moving on purpose is the evidence that it closed.
 | `topic_offset` / `topic_name` / `mid_name` | bus identity, rendered onto the generated surfaces | mirror tests, collision-checked at load |
 | `evs_info` / `evs_info_id` | the consumer's own voice on the event bus | the event-id audit |
 | `consumer` / `subscribers` | which flight-software app reads the frame | audited against the app's source |
+| `instances` | how many mounts of the type one vehicle may carry (single unless the row raises it, and only for hardware it names) | the loader (agreement) and the world-build door (count) |
 | `[part.declared]` | field *names* whose values are the acceptance bounds | read out of the fleet file at run time |
 | `[part.exhibit]` | the promise the part arrives with: what is compared, against what, within what | the acceptance check refuses what it cannot execute |
 
