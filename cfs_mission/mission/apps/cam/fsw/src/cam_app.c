@@ -8,6 +8,7 @@
  */
 
 #include <math.h>
+#include <stdio.h> /* snprintf, for the manifest's name,size lines */
 #include <string.h>
 
 #include "cfe.h"
@@ -139,6 +140,115 @@ static void CAM_HandleSetConfig(const CFE_SB_Buffer_t *BufPtr)
 
 /* -------------------------------------------------------------------------- */
 
+/* The inventory: walk the store, draft the manifest whole, swap it in.
+ *
+ * Names starting with '.' are store internals (bsk_link's .part files): the
+ * inventory lists what the ground may ask for, and a half-written part is
+ * not that. Sizes come from OS_stat per name - this OSAL's dirent carries a
+ * name only. A file that vanishes between the read and the stat is skipped,
+ * counted nothing: an inventory line for a file nobody can request is the
+ * kind of line that makes liars of good tables.
+ *
+ * The draft-and-swap is not ceremony: a CFDP read already in flight holds
+ * the OLD file whole while the new manifest lands, so a manifest rewrite
+ * mid-downlink corrupts neither generation. */
+static void CAM_HandleManifest(void)
+{
+    osal_id_t   DirId;
+    os_dirent_t Entry;
+    os_fstat_t  Stats;
+    int32       Status;
+    osal_id_t   Fd;
+    uint32      Files    = 0;
+    uint64      Bytes    = 0;
+    bool        WriteOk  = true;
+    char        Line[160];
+
+    Status = OS_DirectoryOpen(&DirId, CAM_IMG_DIR);
+    if (Status != OS_SUCCESS)
+    {
+        CAM_AppData.HkTlm.Payload.CommandErrorCounter++;
+        CFE_EVS_SendEvent(CAM_MANIFEST_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "manifest refused: %s unreadable (status %d) - has the store ever run?", CAM_IMG_DIR,
+                          (int)Status);
+        return;
+    }
+
+    Status = OS_OpenCreate(&Fd, CAM_MANIFEST_TMP, OS_FILE_FLAG_CREATE | OS_FILE_FLAG_TRUNCATE, OS_WRITE_ONLY);
+    if (Status != OS_SUCCESS)
+    {
+        OS_DirectoryClose(DirId);
+        CAM_AppData.HkTlm.Payload.CommandErrorCounter++;
+        CFE_EVS_SendEvent(CAM_MANIFEST_ERR_EID, CFE_EVS_EventType_ERROR, "manifest refused: %s unopenable (status %d)",
+                          CAM_MANIFEST_TMP, (int)Status);
+        return;
+    }
+
+    snprintf(Line, sizeof(Line), "# orrery cam manifest dir=%s\n", CAM_IMG_DIR);
+    if (OS_write(Fd, Line, strlen(Line)) < 0)
+    {
+        WriteOk = false;
+    }
+
+    while (WriteOk && OS_DirectoryRead(DirId, &Entry) == OS_SUCCESS)
+    {
+        char Path[OS_MAX_PATH_LEN];
+        const char *Name = OS_DIRENTRY_NAME(Entry);
+
+        if (Name[0] == '\0' || Name[0] == '.')
+        {
+            continue;
+        }
+        snprintf(Path, sizeof(Path), "%s/%s", CAM_IMG_DIR, Name);
+        if (OS_stat(Path, &Stats) != OS_SUCCESS)
+        {
+            continue;
+        }
+        snprintf(Line, sizeof(Line), "%s,%llu\n", Name, (unsigned long long)OS_FILESTAT_SIZE(Stats));
+        if (OS_write(Fd, Line, strlen(Line)) != (int32)strlen(Line))
+        {
+            WriteOk = false; /* a partial line is worse than no manifest */
+            break;
+        }
+        Files++;
+        Bytes += (uint64)OS_FILESTAT_SIZE(Stats);
+    }
+    OS_DirectoryClose(DirId);
+
+    if (WriteOk)
+    {
+        snprintf(Line, sizeof(Line), "# %lu files, %llu bytes\n", (unsigned long)Files, (unsigned long long)Bytes);
+        WriteOk = OS_write(Fd, Line, strlen(Line)) == (int32)strlen(Line);
+    }
+    OS_close(Fd);
+
+    if (!WriteOk)
+    {
+        OS_remove(CAM_MANIFEST_TMP); /* the old manifest, if any, stays valid */
+        CAM_AppData.HkTlm.Payload.CommandErrorCounter++;
+        CFE_EVS_SendEvent(CAM_MANIFEST_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "manifest write failed at file %lu of the walk - previous manifest kept",
+                          (unsigned long)Files);
+        return;
+    }
+
+    Status = OS_mv(CAM_MANIFEST_TMP, CAM_MANIFEST_PATH);
+    if (Status != OS_SUCCESS)
+    {
+        OS_remove(CAM_MANIFEST_TMP);
+        CAM_AppData.HkTlm.Payload.CommandErrorCounter++;
+        CFE_EVS_SendEvent(CAM_MANIFEST_ERR_EID, CFE_EVS_EventType_ERROR, "manifest swap failed (status %d)",
+                          (int)Status);
+        return;
+    }
+
+    CAM_AppData.HkTlm.Payload.CommandCounter++;
+    CFE_EVS_SendEvent(CAM_MANIFEST_INF_EID, CFE_EVS_EventType_INFORMATION, "manifest written: %s - %lu files, %llu bytes",
+                      CAM_MANIFEST_PATH, (unsigned long)Files, (unsigned long long)Bytes);
+}
+
+/* -------------------------------------------------------------------------- */
+
 static void CAM_HandleCmd(const CFE_SB_Buffer_t *BufPtr)
 {
     CFE_MSG_FcnCode_t FcnCode = 0;
@@ -166,6 +276,10 @@ static void CAM_HandleCmd(const CFE_SB_Buffer_t *BufPtr)
                               "CAM No-op command, Version %u.%u.%u, camera %u, configs forwarded %lu",
                               CAM_APP_VERSION, CAM_APP_REV_MAJOR, CAM_APP_REV_MINOR, (unsigned int)CAM_AppData.CameraId,
                               (unsigned long)CAM_AppData.ConfigFramesForwarded);
+            break;
+
+        case 1: /* MANIFEST */
+            CAM_HandleManifest();
             break;
 
         default:

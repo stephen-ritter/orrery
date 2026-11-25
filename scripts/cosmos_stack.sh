@@ -71,7 +71,8 @@ run_cli setpassword >/dev/null 2>&1 || true
 # 0.1.5: CAM v2a - the command surface (CAM_SET_CONFIG on its own interface).
 # 0.1.8: EDS strings reach the ground as typed STRING - CFDP_DOWN paths can be
 #        typed into the Command Installer; EOT filenames read as text.
-GEM_VERSION=0.1.8
+# 0.1.9: CAM_CMD FC 1 ManifestCmd - the store inventory has a ground name.
+GEM_VERSION=0.1.9
 rm -f "$REPO/cosmos_plugin"/openc3-cosmos-orrery-*.gem \
       # a stale gem in here gets bundled as DATA and re-extracts as a nested plugin on load
 docker run --rm -v "$REPO/cosmos_plugin:/p" --user "$(id -u):$(id -g)" ruby:3.4-slim \

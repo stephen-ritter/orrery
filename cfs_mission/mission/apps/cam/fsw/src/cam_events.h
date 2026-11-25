@@ -12,5 +12,7 @@
 #define CAM_SET_CONFIG_ERR_EID  5 /* config refused (bad value or length)  */
 #define CAM_CONFIG_ERR_EID      6 /* config publish rejected (reported 1x) */
 #define CAM_PIPE_ERR_EID        7 /* pipe/subscribe failure at init        */
+#define CAM_MANIFEST_INF_EID    8 /* manifest written                      */
+#define CAM_MANIFEST_ERR_EID    9 /* manifest refused or failed mid-write  */
 
 #endif /* CAM_EVENTS_H */

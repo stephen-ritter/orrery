@@ -13,6 +13,13 @@
  *
  * Commands:
  *   CAM_CMD         FC 0 NOOP
+ *                   FC 1 MANIFEST - write /cf/manifest.txt, the store's
+ *                   requestable inventory (name,size per file). The ground
+ *                   then requests the manifest through FCS_CFDP_DOWN like
+ *                   any other file: inventory is a file too, so the file
+ *                   path stays the only data plane. No arguments, so it
+ *                   rides CAM_CMD (own-interface law binds payload commands
+ *                   only - the SetGain law is about losing arguments).
  *   CAM_SET_CONFIG  upload shutter + camera id + render rate (own packet,
  *                   payload command per the SetGain law: arguments need a
  *                   real payload or codegen loses them)
@@ -51,6 +58,13 @@
  * dead payload, not a payload with opinions.
  */
 #define CAM_RENDER_RATE_MAX 3600.0
+
+/** The store's directory (the image store's home) and the inventory CAM_MANIFEST
+ *  writes into. The ground requests /cf/manifest.txt through FCS_CFDP_DOWN
+ *  by this exact name; one name, one law, both sides. */
+#define CAM_IMG_DIR       "/cf/img"
+#define CAM_MANIFEST_PATH "/cf/manifest.txt"
+#define CAM_MANIFEST_TMP  "/cf/manifest.new"
 
 typedef struct
 {

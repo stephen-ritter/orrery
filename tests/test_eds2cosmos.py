@@ -193,6 +193,19 @@ def test_sps_router_knows_the_request_length(packets: list[Packet]) -> None:
     assert '{0x18D6, 0, 136, "FCS_CFDP_DOWN"}' in table
 
 
+def test_manifest_rides_cam_cmd_with_a_ground_name(packets: list[Packet]) -> None:
+    """CAM_MANIFEST is FC 1 on CAM_CMD - named everywhere, no new MID.
+
+    The inventory request has no arguments, so the own-interface law does
+    not bind it; but an FC the ground cannot name is an FC nobody sends.
+    """
+    pkt = _pkt(packets, "CAM_CMD")
+    assert pkt.msgid == 0x18D2
+    cmd_text, _ = emit_cosmos(packets)
+    assert 'STATE "ManifestCmd" 1' in cmd_text
+    assert '{0x18D2, 1, 0, "CAM_CMD.ManifestCmd"}' in emit_c_cmd_table(packets, "088b2fa")
+
+
 def test_vendor_repair_reports_a_fixed_upstream(tmp_path: Path) -> None:
     """A repair that finds nothing to repair says so, so it cannot fossilize."""
     xml = tmp_path / "apps/cf/eds/cf.xml"
