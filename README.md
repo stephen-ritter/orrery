@@ -78,6 +78,7 @@ pair in `compose.yml`: `docs/adding_a_spacecraft.md` walks through it.
 
 | Path | What |
 | --- | --- |
+| `docs/adding_a_scenario.md` | how to write a new mission over known vehicles and known parts — one file, and everything it implies |
 | `docs/adding_a_sensor.md` | how hardware gets from a schema type to a flight packet — start here if you are adding a part |
 | `docs/adding_a_spacecraft.md` | how to add a vehicle: a scenario block plus a service pair in `compose.yml` |
 | `docs/coverage.md` | what this project supports, refuses, and has not wired yet; generated from `registry/coverage.toml` |
