@@ -61,8 +61,10 @@ fly_cycle() {
         bash -c "cd /work/cfs_mission/mission/build/exe/cpu1 && ./container-start")"
 
     echo "=== [$mode] waiting for gs_tcp + fcs + cam (max ${BOOT_TIMEOUT}s) ==="
-    local SECONDS=0
-    while [ "$SECONDS" -lt "$BOOT_TIMEOUT" ]; do
+    # a plain counter: `local SECONDS` stops counting, and a wait loop that
+    # cannot age is a timeout that never fires
+    local waited=0
+    while [ "$waited" -lt "$BOOT_TIMEOUT" ]; do
         local logs
         logs="$("$RUNTIME" logs "$CONTAINER" 2>&1 || true)"
         if grep -q "gs_tcp downlink :$BEACON uplink :$UPLINK" <<<"$logs" \
@@ -75,6 +77,7 @@ fly_cycle() {
             return 1
         fi
         sleep 1
+        waited=$((waited + 1))
     done
     logs="$("$RUNTIME" logs "$CONTAINER" 2>&1 || true)"
     if ! grep -q "CAM App Initialized" <<<"$logs"; then
