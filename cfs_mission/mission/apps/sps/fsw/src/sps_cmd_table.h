@@ -312,7 +312,7 @@ static const SpsCmdEntry_t SPS_CMD_TABLE[] = {
     {0x18D2, 0, 0, "CAM_CMD.NoopCmd"},
     {0x18D3, 0, 0, "CAM_SEND_HK"},
     {0x18D4, 0, 16, "CAM_SET_CONFIG"},
-    {0x18D6, 0, 8, "FCS_CFDP_DOWN"},
+    {0x18D6, 0, 136, "FCS_CFDP_DOWN"},
 };
 
 #define SPS_CMD_COUNT (sizeof(SPS_CMD_TABLE) / sizeof(SPS_CMD_TABLE[0]))

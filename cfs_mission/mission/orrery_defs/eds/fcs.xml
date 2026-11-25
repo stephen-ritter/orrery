@@ -111,8 +111,8 @@
             </Constraints>
           </Entry>
           <Entry name="Pad" type="BASE_TYPES/uint8" arraySize="3" shortDescription="explicit alignment filler" />
-          <Entry name="SrcPath" type="BASE_TYPES/uint8" arraySize="64" shortDescription="onboard path, e.g. /cf/img/img_0007.png (NUL-terminated)" />
-          <Entry name="DstName" type="BASE_TYPES/uint8" arraySize="64" shortDescription="the name the ground receives it under (NUL-terminated)" />
+          <Entry name="SrcPath" type="BASE_TYPES/PathName" shortDescription="onboard path, e.g. /cf/img/img_0007.png (NUL-terminated)" />
+          <Entry name="DstName" type="BASE_TYPES/PathName" shortDescription="the name the ground receives it under (NUL-terminated)" />
         </EntryList>
       </ContainerDataType>
 

@@ -127,7 +127,7 @@ class Leaf:
 
     name: str
     bits: int
-    cbase: str  # uint | int | float | binary
+    cbase: str  # uint | int | float | string | binary
     states: dict[int, str] = field(default_factory=dict)
     array_count: int = 1
     big_endian: bool = False  # wire order; False = target-native (x86 = LE)
@@ -341,9 +341,10 @@ class Eds:
         if kind == "BooleanDataType":
             return [Leaf(name, 1, "uint")]
         if kind == "StringDataType":
-            # strings carry an explicit `length` in characters, no encoding child
+            # strings carry an explicit `length` in characters, no encoding
+            # child; "string" (not "binary") so the ground defs stay text
             length = elem.get("length", "0")
-            return [Leaf(name, 8 * self.constants.expand_to_int(length), "binary")]
+            return [Leaf(name, 8 * self.constants.expand_to_int(length), "string")]
         if kind == "BinaryDataType":
             enc = _find_local(elem, "BinaryDataEncoding")
             return [Leaf(name, self._bits_attr(enc, "0"), "binary")]
@@ -391,11 +392,20 @@ class Eds:
                 ref = entry.get("type", "")
                 sub = entry.get("name", "") or ref.rsplit("/", 1)[-1]
                 try:
-                    items.extend(self.leaf(ref, f"{prefix}.{sub}", depth + 1, owner))
+                    leaves = self.leaf(ref, f"{prefix}.{sub}", depth + 1, owner)
                 except UnknownType:
                     # An entry we cannot size would misalign every later
                     # field: keep the failure loud, the caller skips packet.
                     raise
+                # arraySize repeats the entry's type: ignoring it would
+                # silently shrink a packet, so the repeat happens here.
+                count = self.constants.expand_to_int(entry.get("arraySize", "1"))
+                if count > 1:
+                    if len(leaves) == 1 and count <= 64:
+                        leaves = [_index(leaves[0], i) for i in range(count)]
+                    else:
+                        leaves = [Leaf(f"{prefix}.{sub}", _bits(leaves) * count, "binary")]
+                items.extend(leaves)
             elif tag == "PaddingEntry":
                 items.append(
                     Padding("padding", self.constants.expand_to_int(entry.get("sizeInBits", "0")))

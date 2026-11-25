@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from codegen.eds2cosmos import build_eds, emit_c_cmd_table, emit_c_table, emit_cosmos
-from codegen.eds_model import Eds, Packet
+from codegen.eds_model import Eds, Leaf, Packet
 
 REPO = Path(__file__).resolve().parents[1]
 CFS = REPO / "cfs_mission/cFS"
@@ -153,6 +153,44 @@ def test_cf_eot_survives_the_vendor_typo(packets: list[Packet]) -> None:
     from codegen.eds2cosmos import mission_packets
 
     assert "CF_EOT_TLM" in emit_c_table(mission_packets(packets), "088b2fa")
+
+
+def test_cfdp_down_payload_is_a_real_packet(packets: list[Packet]) -> None:
+    """The file request arrives on the wire exactly as declared.
+
+    144 B: two 64-character path strings and three pad bytes, no more. The
+    fields were once declared ``BASE_TYPES/uint8`` with an ``arraySize`` the
+    model silently ignored, and both the COSMOS def and the SPS router table
+    shrank to the resulting 8-byte lie - ground requests flew only because
+    the SPS length check was generous.
+    """
+    pkt = _pkt(packets, "FCS_CFDP_DOWN")
+    assert pkt.total_bytes() == 144
+    names = [i.name.rsplit(".", 1)[-1] for i in pkt.items]
+    assert all(pad in names for pad in ("Pad_0", "Pad_1", "Pad_2"))
+    for field in ("SrcPath", "DstName"):
+        leaf = next(i for i in pkt.items if i.name.endswith(f".{field}"))
+        assert isinstance(leaf, Leaf), f"{field} vanished behind a Padding"
+        assert leaf.bits == 512 and leaf.cbase == "string", f"{field} is not a 64-char string"
+
+
+def test_strings_reach_the_ground_as_text(packets: list[Packet]) -> None:
+    """EDS-declared strings emit as STRING, not BLOCK.
+
+    The station must be able to type a path into a command and read a
+    filename out of telemetry.
+    """
+    cmd_text, tlm_text = emit_cosmos(packets)
+    assert 'APPEND_PARAMETER SRC_PATH 512 STRING "auto-generated from EDS"' in cmd_text
+    assert 'APPEND_PARAMETER DST_NAME 512 STRING "auto-generated from EDS"' in cmd_text
+    assert "APPEND_ITEM SRC_FILENAME 512 STRING" in tlm_text
+    assert "SRC_FILENAME 512 BLOCK" not in tlm_text
+
+
+def test_sps_router_knows_the_request_length(packets: list[Packet]) -> None:
+    """The onboard SPS forward table carries the same 136-byte payload law."""
+    table = emit_c_cmd_table(packets, "088b2fa")
+    assert '{0x18D6, 0, 136, "FCS_CFDP_DOWN"}' in table
 
 
 def test_vendor_repair_reports_a_fixed_upstream(tmp_path: Path) -> None:

@@ -82,13 +82,20 @@ def _emit_item(item: Item, seen: set[str], is_cmd: bool) -> list[str]:
     if isinstance(item, Padding):
         kind, cbase = "UINT", "uint"
     else:
-        kind = {"uint": "UINT", "int": "INT", "float": "FLOAT", "binary": "BLOCK"}[item.cbase]
+        kind = {
+            "uint": "UINT",
+            "int": "INT",
+            "float": "FLOAT",
+            "string": "STRING",
+            "binary": "BLOCK",
+        }[item.cbase]
         cbase = item.cbase
     # non-header items are C struct fields: target-native (little) order;
-    # padding/binary have no meaningful endianness (and sub-byte LE is invalid)
+    # padding/string/binary have no meaningful endianness (and sub-byte LE
+    # is invalid)
     le = (
         not isinstance(item, Padding)
-        and cbase != "binary"
+        and cbase not in ("binary", "string")
         and not getattr(item, "big_endian", False)
     )
     if is_cmd:
