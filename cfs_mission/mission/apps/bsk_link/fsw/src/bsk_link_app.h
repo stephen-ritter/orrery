@@ -200,6 +200,16 @@ typedef struct
     uint32 FitStreamingBits; /* last derived streaming mask                    */
     uint32 FitSilentBits;    /* claimed, never seen                            */
     uint32 FitDeniedBits;    /* seen, denied by the manifest                   */
+    /* Instance attribution: slot k counts the k-th id-carrying frame row.
+     * The world ships the declared ids in the manifest; the streamed twin
+     * is this spacecraft's own observation, read from each arriving
+     * frame's id field by name. A verdict on ids names the instance that
+     * stalled, not just the part. */
+    uint32 FitDeclaredIds[BSK_LINK_FIT_ID_SLOTS]; /* ids claimed per slot    */
+    uint32 FitStreamedIds[BSK_LINK_FIT_ID_SLOTS]; /* ids seen in frames      */
+    uint8  FitIdSlot;        /* slot of the current id-level verdict           */
+    uint32 FitIdBits;        /* id mask of the current id-level verdict        */
+    bool   FitIdDenied;      /* the id-level verdict denies a stream           */
     uint32 FitDeclaredHash;  /* registry digest the world started with         */
     uint8  FitVerdict;       /* BSK_Link_FitVerdict_t, for transitions only    */
     bool   FitAbort;         /* stale firmware: refuse to fly (see FitFrame)   */

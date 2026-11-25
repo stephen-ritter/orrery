@@ -93,6 +93,14 @@ def test_digest_moves_with_wire_semantics_only(tmp_path: Path) -> None:
     assert display_only != base_text
     assert registry_digest(_write_registry(tmp_path, display_only)) == registry_digest(base)
 
+    # instance attribution counts at boot and decodes nothing: renaming the
+    # id field is a law change, not a layout change, and must not demand a
+    # rebuild - the frame's own bytes are untouched (layout is pinned by the
+    # container audit and the manifest codec, not by this digest)
+    id_field = base_text.replace('instance_field = "CameraId"', 'instance_field = "CameraIdV2"', 1)
+    assert id_field != base_text
+    assert registry_digest(_write_registry(tmp_path, id_field)) == registry_digest(base)
+
     for label, changed in (
         ("topic", _registry_text('zmq_topic = "NAVSTATE"', 'zmq_topic = "NAVSTATE2"')),
         (
@@ -158,17 +166,24 @@ def test_injections_lie_about_bits_and_never_the_digest() -> None:
     only that: a test about a missing sensor must not also pretend the catalog
     changed, or a passing verdict proves nothing about either.
     """
-    override, digest = resolve_fit_knobs(["attitude"], ["gnss"], "deadbeef")
+    override, id_inject, digest = resolve_fit_knobs(["attitude"], ["gnss"], "deadbeef", [])
     assert override == {"attitude": True, "gnss": False}
+    assert id_inject == {}
     assert digest == "deadbeef"
 
+    # the id knob aims only at id rows, only at ids the mask can hold
+    assert resolve_fit_knobs([], [], None, ["camstate=2"])[1] == {"camstate": {2}}
     with pytest.raises(ValueError, match="pick one per part"):
-        resolve_fit_knobs(["attitude"], ["attitude"], None)
+        resolve_fit_knobs(["attitude"], ["attitude"], None, [])
     with pytest.raises(ValueError, match="no such registered part"):
-        resolve_fit_knobs(["fluxCapacitor"], [], None)
+        resolve_fit_knobs(["fluxCapacitor"], [], None, [])
+    with pytest.raises(ValueError, match="wants ROW=ID"):
+        resolve_fit_knobs([], [], None, ["attitude=2"])
+    with pytest.raises(ValueError, match="does not fit"):
+        resolve_fit_knobs([], [], None, ["camstate=33"])
     with pytest.raises(ValueError, match="8 hex digits"):
-        resolve_fit_knobs([], [], "not-hex")
-    assert resolve_fit_knobs([], [], "0x0")[1] == "00000000"
+        resolve_fit_knobs([], [], "not-hex", [])
+    assert resolve_fit_knobs([], [], "0x0", [])[2] == "00000000"
 
 
 def test_handshake_never_reaches_the_ground() -> None:
@@ -186,6 +201,8 @@ def test_handshake_never_reaches_the_ground() -> None:
     block = block.split("</ContainerDataType>", 1)[0]
     for field in ("SimTimeS", "Frame", "DeclaredBits", "RegistryHash"):
         assert f'name="{field}"' in block
+    for slot in range(4):
+        assert f'name="DeclaredIds{slot}"' in block
 
     assert "FitManifest" not in TOPICIDS_XML.read_text()
     leaked = [
@@ -198,21 +215,29 @@ def test_handshake_never_reaches_the_ground() -> None:
 
 @pytest.mark.skipif(not available(), reason="EdsLib database not built")
 def test_the_handshake_round_trips_through_the_mission_schema() -> None:
-    """The two handshake numbers survive the mission's own codec.
+    """The handshake numbers survive the mission's own codec, id slots included.
 
-    The bits and the digest are the whole message; if either is silently
-    truncated by the container's width, the spacecraft compares two numbers that
-    were never meant to be equal - the quietest possible way to be wrong.
+    The bits, the digest, and the four instance masks are the whole message;
+    if any were silently truncated by the container's width, the spacecraft
+    would compare two numbers that were never meant to be equal - the
+    quietest possible way to be wrong.
     """
     from sim.eds_link import decode_fit_manifest, encode_fit_manifest
 
-    packed = bytes(encode_fit_manifest(12.5, 7, 0b101, "f0b0bfb6"))
-    assert len(packed) == 24
+    packed = bytes(encode_fit_manifest(12.5, 7, 0b101, "f0b0bfb6", [0b1, 0, 0, 0]))
+    assert len(packed) == 40
     frame = decode_fit_manifest(packed)
     assert frame.sim_time_s == 12.5
     assert frame.frame == 7
     assert frame.declared_bits == 0b101
     assert frame.registry_hash == "f0b0bfb6"
+    assert frame.declared_ids == (0b1, 0, 0, 0)
+
+    # an honest one-eye claim: slot 0 (camstate) carries id 1 and nothing else
+    honest = decode_fit_manifest(bytes(encode_fit_manifest(1.0, 2, 0b1, "f0b0bfb6", [0b1])))
+    assert honest.declared_ids == (0b1, 0, 0, 0)
+    with pytest.raises(ValueError, match="4 slots"):
+        encode_fit_manifest(1.0, 2, 0, "f0b0bfb6", [1, 2, 3, 4, 5])
 
 
 def test_the_handshake_is_not_a_part() -> None:

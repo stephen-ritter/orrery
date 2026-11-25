@@ -25,7 +25,7 @@ boot, not merely at commit time.
 
 from __future__ import annotations
 
-from sim.parts import REPO, Part, load_registry, registry_digest
+from sim.parts import FIT_ID_SLOT_CAPACITY, REPO, Part, id_rows, load_registry, registry_digest
 from sim.parts import frame_rows as registry_frame_rows
 
 DEFS = REPO / "cfs_mission" / "mission" / "orrery_defs"
@@ -81,13 +81,20 @@ def frame_rows(parts: list[Part]) -> list[Part]:
     return rows
 
 
-def table_row(part: Part) -> str:
-    """One C initializer, with the registry row's name above it for the reader."""
+def table_row(part: Part, slot: int) -> str:
+    """One C initializer, with the registry row's name above it for the reader.
+
+    The id column is the frame's instance attribution: the EDS entry naming
+    WHICH device this frame carries, and the manifest slot it counts into.
+    Rows with one opinion and no which carry NULL and -1.
+    """
+    ident = f'"{part.instance_field}", {slot}' if part.instance_field else "NULL, -1"
     return (
         f"    /* name: {part.name} - {part.display} */\n"
         f'    {{ "{part.zmq_topic}", "{part.eds_container}", {part.mid_name}_MID,\n'
         f"      /* evs */ {part.container_bytes}, {part.evs_info_id} /* {part.evs_info} */,\n"
-        f'      "{part.evs_label}" }},'
+        f'      "{part.evs_label}",\n'
+        f"      /* id */ {ident} }},"
     )
 
 
@@ -97,7 +104,8 @@ def emit_frames_header(parts: list[Part]) -> str:
     max_payload = max((p.container_bytes for p in rows), default=0)
     lines = [_HEADER]
     lines.append(f"#define BSK_LINK_FRAME_ROWS {len(rows)}\n")
-    lines.append(f"#define BSK_LINK_FRAME_MAX_PAYLOAD {max_payload}\n\n")
+    lines.append(f"#define BSK_LINK_FRAME_MAX_PAYLOAD {max_payload}\n")
+    lines.append(f"#define BSK_LINK_FIT_ID_SLOTS {FIT_ID_SLOT_CAPACITY}\n\n")
     lines.append(
         "/* Fit handshake: the digest of this table's SEMANTICS (row order,\n"
         " * topics, containers, sizes, MsgIds, EVS ids - not comments). The world\n"
@@ -116,13 +124,16 @@ def emit_frames_header(parts: list[Part]) -> str:
         "    uint16      Size;      /* payload bytes; EDS must agree at startup or row off    */\n"
         "    uint16      EvsId;     /* first/every-N EVS event identity                       */\n"
         "    const char *Label;     /* operator text for the event line                       */\n"
+        "    const char *IdField;   /* EDS entry naming WHICH instance the frame carries;     */\n"
+        "    int8_t       IdSlot;   /* manifest id slot it counts into, -1 with no IdField    */\n"
         "} BskLink_WorldFrameDef_t;\n\n"
     )
     lines.append(
         "static const BskLink_WorldFrameDef_t BskLink_WorldFrames[BSK_LINK_FRAME_ROWS] = {\n"
     )
+    slots = {row.name: k for k, row in enumerate(id_rows(parts))}
     for row in rows:
-        lines.append(table_row(row) + "\n")
+        lines.append(table_row(row, slots.get(row.name, -1)) + "\n")
     lines.append("};\n\n#endif /* ORRERY_FRAMES_H */\n")
     return "".join(lines)
 

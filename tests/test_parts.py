@@ -21,7 +21,14 @@ from typing import get_args, get_origin
 
 import pytest
 
-from sim.parts import Part, load_registry, mount_law_violations, mount_limits
+from sim.parts import (
+    Part,
+    declared_id_masks,
+    id_rows,
+    load_registry,
+    mount_law_violations,
+    mount_limits,
+)
 
 REPO = Path(__file__).resolve().parent.parent
 MISSION_DEFS = REPO / "cfs_mission" / "mission" / "orrery_defs"
@@ -301,3 +308,53 @@ def test_mount_law_violations_name_the_type_the_count_and_the_law() -> None:
         "5 coarseSunSensor mounts; the registry law is 4 per vehicle"
     ]
     assert mount_law_violations(["imuSensor", "imuSensor", "magnetometer"]) == []
+
+
+# --- the instance id ----------------------------------------------------------
+
+
+def test_instance_ids_are_counted_only_on_frames_that_reach_firmware(tmp_path: Path) -> None:
+    """An id no verdict can see is a promise no handshake can keep."""
+    path = _write_registry(tmp_path, _MINIMAL_ROW + 'instance_field = "CameraId"\n')
+    with pytest.raises(ValueError, match="firmware never carries"):
+        load_registry(path)
+
+
+def test_only_id_rows_are_aimable() -> None:
+    """The eye is plural at the byte level today; injection aims only where ids count."""
+    rows = load_registry()
+    assert [row.name for row in id_rows(rows)] == ["camstate"]
+    with pytest.raises(ValueError, match="no id row"):
+        declared_id_masks({"camera": [1]}, {"attitude": [2]}, rows)
+
+
+def test_declared_id_masks_claim_the_mounted_ids_and_the_injected() -> None:
+    """A mount claims its id, an injection adds one, an oversized id is refused."""
+    rows = load_registry()
+    assert declared_id_masks({"camera": [1]}, None, rows) == [0b1]
+    assert declared_id_masks({"camera": [1, 2]}, None, rows) == [0b11]
+    assert declared_id_masks({"camera": [1]}, {"camstate": [3]}, rows) == [0b101]
+    assert declared_id_masks({}, None, rows) == [0]
+    with pytest.raises(ValueError, match="does not fit"):
+        declared_id_masks({"camera": [33]}, None, rows)
+
+
+@pytest.mark.parametrize("part", [p for p in LANDED if p.instance_field], ids=lambda p: p.name)
+def test_instance_field_is_a_real_container_entry(part: Part) -> None:
+    """The handshake resolves the id by NAME - the name must live in the bytes.
+
+    A drift here polices itself at boot (the id never counts and SILENT names
+    the claim), but the offline audit refuses to let a boot be the first
+    reader of a typo.
+    """
+    from codegen.eds2cosmos import build_eds
+
+    core = REPO / "cfs_mission/cFS"
+    if not core.is_dir():
+        pytest.skip("pinned cFS core not fetched here: scripts/fetch_cfs.sh")
+    eds = build_eds(core, EDS_DIR)
+    pkg, _, _ = part.eds_container.partition("/")
+    names = {item.name.rpartition(".")[2] for item in eds.leaf(part.eds_container, pkg)}
+    assert part.instance_field in names, (
+        f"{part.name}: {part.instance_field} is not an entry of {part.eds_container}"
+    )

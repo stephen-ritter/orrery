@@ -303,6 +303,7 @@ the digest moving on purpose is the evidence that it closed.
 | `evs_info` / `evs_info_id` | the consumer's own voice on the event bus | the event-id audit |
 | `consumer` / `subscribers` | which flight-software app reads the frame | audited against the app's source |
 | `instances` | how many mounts of the type one vehicle may carry (single unless the row raises it, and only for hardware it names) | the loader (agreement) and the world-build door (count) |
+| `instance_field` | the container entry naming WHICH device a frame carries; the handshake counts ids so a verdict names the instance that stalled | the loader (landed frame rows, four slots) and the boot handshake (per-id masks) |
 | `[part.declared]` | field *names* whose values are the acceptance bounds | read out of the fleet file at run time |
 | `[part.exhibit]` | the promise the part arrives with: what is compared, against what, within what | the acceptance check refuses what it cannot execute |
 
@@ -327,6 +328,8 @@ bit is one row.
 | `FIT MATCHED: declared=… streamed=… registry=…` | all views agree | nothing — though a vehicle legitimately carrying nothing reports `declared=00000000` |
 | `FIT SILENT: manifest claims <part> … bus never streamed it` | the fleet file declares the device, the world published no frame | did the provider's `if` fire? is the device's message ever written (a `BSK_WARNING … not properly initialized` in the world log is the plant telling you)? is the row landed but disabled at boot by a size disagreement, which is reported by row name? |
 | `FIT DENIED: bus streams <part> … the manifest denies` | the world streams a frame its own manifest does not claim | almost always `bskforge_types`: the list must name the hardware whose readings are in the container. A deliberate injection produces this too — the world log prints the injection, so read that before believing the alarm |
+| `FIT SILENT: manifest claims <row> id <n> but no frame carried it` | the manifest claims an instance id that never appeared in any frame of that row | the device exists? its render loop runs? every frame carries the id (`instance_field`) in 1..32? A row-level SILENT outranks an id-level one — if the part also shows silent, fix that first |
+| `FIT DENIED: bus streams <row> id <n> that the manifest denies` | a frame carries an id the fleet file never mounted | a duplicate mount whose id no block declared, or a hand-injected manifest id; the world log prints injections loudly |
 | `FIT ABORT: firmware built from registry A, world runs B` | the mission is **refusing to fly**: bytes decoded under the wrong layout are not knowledge. The world stalls shortly after | you edited a row without running `emit_frames`, or ran it without rebuilding the mission, or you are booting a container from an older tree. Fix: `emit_frames` → `edslink/build.sh` → `mission_build.sh`. The offline mirrors fail in the same situation, before a fleet ever does |
 | no `FIT …` line at all | the link never heard a manifest | read the world's log: it died before the first tick |
 | `FIT MATCHED` once, then silence | correct | verdicts fire on transitions. A verdict repeating at 1 Hz would drown the console it reports to |

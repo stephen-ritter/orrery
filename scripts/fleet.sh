@@ -130,13 +130,37 @@ scenario_up() {
 
     fleet_down
 
+    # A dead world can outlive its container by seconds (its exit path drains
+    # Basilisk), and a craft that dials a squatting old world completes the
+    # ZMQ handshake with a dying peer - the socket lives, the frames never
+    # come, and the world's first tick stalls on an ack nobody will send
+    # (measured: FIT probes booting green, receiving zero, forever). The link
+    # farm belongs to the NEW world; wait for the old one's sockets to die,
+    # and name the squatter if it refuses.
+    local port waited=0 fact _n _i _b _u
+    for fact in "${FLEET[@]}"; do
+        read -r _n _i _b _u port _ <<<"$fact"
+        for port in "$port" "${_}"; do
+            while ss -tln | grep -qE ":${port}([[:space:]]|$)"; do
+                if [ "$waited" -ge 30 ]; then
+                    echo "[$STEM] tcp/$port still held 30 s after down:" >&2
+                    ss -tlnp | grep -E ":${port}([[:space:]]|$)" >&2 || true
+                    echo "        kill the squatting process before flying" >&2
+                    return 1
+                fi
+                sleep 1; waited=$((waited + 1))
+            done
+        done
+    done
+
     # fit knobs: a world that lies about its fit prints the lie here and
     # forwards it to the world verbatim (see scripts/check_fit_handshake.sh)
     local fit_args="" part
     for part in ${FIT_DECLARE:-}; do fit_args+=" --fit-declare $part"; done
     for part in ${FIT_HIDE:-}; do fit_args+=" --fit-hide $part"; done
+    [ -n "${FIT_DECLARE_ID:-}" ] && fit_args+=" --fit-declare-id $FIT_DECLARE_ID"
     [ -n "${FIT_DIGEST:-}" ] && fit_args+=" --fit-digest $FIT_DIGEST"
-    [ -n "$fit_args" ] && echo "[${STEM}] FIT INJECTION declare='${FIT_DECLARE:-}' hide='${FIT_HIDE:-}' digest='${FIT_DIGEST:-}'"
+    [ -n "$fit_args" ] && echo "[${STEM}] FIT INJECTION declare='${FIT_DECLARE:-}' hide='${FIT_HIDE:-}' id='${FIT_DECLARE_ID:-}' digest='${FIT_DIGEST:-}'"
     export ORRERY_FIT_ARGS="$fit_args"
 
     # launch-era host logs must not survive as evidence (containers log to

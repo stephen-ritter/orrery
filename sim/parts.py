@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import tomllib
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -28,6 +28,12 @@ REGISTRY = REPO / "registry" / "parts.toml"
 # for a decade of parts here, and a registry that outgrows it fails the loader
 # rather than silently aliasing two parts onto one bit.
 FIT_BIT_CAPACITY = 32
+
+# The manifest carries this many declared-id slots (BSK_LINK/FitManifest):
+# each id-capable frame row takes one, in frame order, and an id mask is a
+# uint32 over ids 1..32. Rows outgrowing the slots fail the loader, never
+# the boot - the same law as the fit bits, one tier down.
+FIT_ID_SLOT_CAPACITY = 4
 
 
 @dataclass(frozen=True)
@@ -83,6 +89,13 @@ class Part:
     # the law at world build - silently ignoring a duplicate mount was the
     # old silence, and silence is the one verdict this bench does not print.
     instances: dict[str, int] = field(default_factory=dict)
+    # the instance id: the FIELD NAME in this row's container that says
+    # WHICH device the frame carries (empty = the frame is one opinion with
+    # no which). The boot handshake counts these per row, so a verdict can
+    # name the instance that stalled, not just the part. The name resolves
+    # against the EDS container at runtime: a typo streams no ids and the
+    # handshake's own SILENT verdict names the claim that never arrived.
+    instance_field: str = ""
 
 
 def _row_to_part(row: dict[str, Any]) -> Part:
@@ -113,6 +126,7 @@ def _row_to_part(row: dict[str, Any]) -> Part:
         exhibit=exhibit,
         fsw_apps=tuple(row.get("fsw_apps", ())),
         instances={str(t): int(n) for t, n in row.get("instances", {}).items()},
+        instance_field=str(row.get("instance_field", "")),
     )
 
 
@@ -137,7 +151,27 @@ def load_registry(path: str | Path = REGISTRY) -> list[Part]:
     if len(topics) != len(set(topics)):
         raise ValueError(f"duplicate zmq_topic in {path}: {topics}")
     _validate_mounts_laws(parts, path)
+    _validate_instance_fields(parts, path)
     return parts
+
+
+def _validate_instance_fields(parts: list[Part], path: str | Path) -> None:
+    """An id is only countable on a frame that reaches firmware, in a slot that exists.
+
+    Counting instances is the boot handshake's job, and the handshake only
+    sees landed ``bsk_link`` rows: an id field on any other row is a promise
+    no verdict can ever keep. And a fleet of id rows larger than the
+    manifest's slots fails here, at the catalog, rather than at a boot where
+    one row's ids would silently share another's mask.
+    """
+    for p in parts:
+        if p.instance_field and not (p.landed and p.consumer == "bsk_link"):
+            raise ValueError(
+                f"{p.name}: instance_field counts ids on a frame firmware never carries ({path})"
+            )
+    cap = FIT_ID_SLOT_CAPACITY
+    if len(id_rows(parts)) > cap:
+        raise ValueError(f"{path}: id rows exceed the manifest's {cap} slots")
 
 
 def _validate_mounts_laws(parts: list[Part], path: str | Path) -> None:
@@ -239,6 +273,16 @@ def frame_rows(parts: list[Part]) -> list[Part]:
     return [p for p in parts if p.landed and p.consumer == "bsk_link"]
 
 
+def id_rows(parts: list[Part]) -> list[Part]:
+    """The frame rows whose payloads carry an instance id, in slot order.
+
+    Slot k of the manifest's declared-id region belongs to the k-th row
+    here - the same order the generated frame table renders, so one number
+    means the same row in the manifest, the C table, and the verdict.
+    """
+    return [p for p in frame_rows(parts) if p.instance_field]
+
+
 def fit_bit(name: str) -> int:
     """The single bit a part occupies in a fit mask (``frame_rows`` order)."""
     names = [row.name for row in frame_rows(load_registry())]
@@ -283,6 +327,40 @@ def declared_mask(
         if claimed:
             mask |= fit_bit(row.name)
     return mask
+
+
+def declared_id_masks(
+    claims: Mapping[str, Iterable[int]],
+    inject: Mapping[str, Iterable[int]] | None = None,
+    rows: list[Part] | None = None,
+) -> list[int]:
+    """One uint32 per id row: the instance ids this vehicle CLAIMS to carry.
+
+    ``claims`` maps a bskforge type to the ids its mounts carry; a row
+    claims the union over the hardware it names. ``inject`` is the
+    acceptance lie - ids this manifest claims that no device carries - and
+    the driver prints every injection, because no run may whisper one. An
+    id outside the 1..32 mask is refused by name: a claim that cannot be
+    counted is a claim no verdict could judge.
+    """
+    table = frame_rows(load_registry()) if rows is None else rows
+    ids = [r for r in table if r.instance_field]
+    if inject:
+        unknown = sorted(set(inject) - {r.name for r in ids})
+        if unknown:
+            raise ValueError(f"no id row(s): {unknown} (id rows: {sorted(r.name for r in ids)})")
+    masks: list[int] = []
+    for row in ids:
+        claimed: set[int] = set()
+        for t in row.bskforge_types:
+            claimed.update(claims.get(t, ()))
+        if inject and row.name in inject:
+            claimed.update(inject[row.name])
+        for value in sorted(claimed):
+            if not 1 <= value <= 32:
+                raise ValueError(f"{row.name}: instance id {value} does not fit the 1..32 mask")
+        masks.append(sum(1 << (value - 1) for value in claimed))
+    return masks
 
 
 def registry_digest(parts: list[Part]) -> str:

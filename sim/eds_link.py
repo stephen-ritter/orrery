@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -157,10 +158,18 @@ class FitManifest:
     frame: int
     declared_bits: int
     registry_hash: str
+    # one mask per manifest id slot (bit n is id n+1); slot order is
+    # sim.parts.id_rows, and an all-zero slot claims no instance - either no
+    # id row occupies it or nothing is fitted there
+    declared_ids: tuple[int, ...] = (0, 0, 0, 0)
 
 
 def encode_fit_manifest(
-    sim_time_s: float, frame: int, declared_bits: int, registry_hash: str
+    sim_time_s: float,
+    frame: int,
+    declared_bits: int,
+    registry_hash: str,
+    declared_ids: Iterable[int] = (),
 ) -> Any:  # noqa: ANN401 - stub-less C extension
     """Build a packed ``BSK_LINK/FitManifest`` (the boot handshake).
 
@@ -168,13 +177,22 @@ def encode_fit_manifest(
     ``encode_container`` refuses containers that are not landed registry parts,
     and that refusal is the point - a part's frame must be registered to reach
     the bus. A control frame is not a part, so it encodes by name.
+
+    ``declared_ids`` fills the instance-attribution slots in order; a longer
+    sequence than the container's four slots is refused here, at the edge of
+    the world, rather than as a decode error inside the spacecraft.
     """
     lib = _lib()
+    ids = list(declared_ids)
+    if len(ids) > 4:
+        raise ValueError(f"{len(ids)} declared-id masks exceed the manifest's 4 slots")
     obj = entry("BSK_LINK/FitManifest")()
     obj["SimTimeS"] = float(sim_time_s)
     obj["Frame"] = int(frame)
     obj["DeclaredBits"] = int(declared_bits)
     obj["RegistryHash"] = int(registry_hash, 16)
+    for slot, mask in enumerate(ids):
+        obj[f"DeclaredIds{slot}"] = int(mask)
     return lib.PackedObject(obj)
 
 
@@ -187,6 +205,7 @@ def decode_fit_manifest(payload: bytes) -> FitManifest:
         frame=int(obj["Frame"]()),
         declared_bits=int(obj["DeclaredBits"]()),
         registry_hash=f"{int(obj['RegistryHash']()):08x}",
+        declared_ids=tuple(int(obj[f"DeclaredIds{slot}"]()) for slot in range(4)),
     )
 
 

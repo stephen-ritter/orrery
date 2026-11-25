@@ -56,7 +56,7 @@ import argparse
 import math
 import struct
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -98,8 +98,10 @@ from sim.lockstep import CMD_ENDPOINT as _CMD_ENDPOINT  # noqa: F401 - re-export
 from sim.lockstep import SENSOR_ENDPOINT as _SENSOR_ENDPOINT  # noqa: F401
 from sim.lockstep import TRUTH_ENDPOINT as _TRUTH_ENDPOINT  # noqa: F401
 from sim.parts import (
+    declared_id_masks,
     declared_mask,
     frame_rows,
+    id_rows,
     load_registry,
     mount_law_violations,
     registry_digest,
@@ -165,15 +167,16 @@ def plant_observers(
 
 
 def resolve_fit_knobs(
-    declare: list[str], hide: list[str], digest: str | None
-) -> tuple[dict[str, bool], str | None]:
-    """Validate the fit-injection knobs into (override map, digest or None).
+    declare: list[str], hide: list[str], digest: str | None, declare_ids: list[str]
+) -> tuple[dict[str, bool], dict[str, set[int]], str | None]:
+    """Validate the fit-injection knobs into (override map, id claims, digest or None).
 
     Every lie this tool can tell is checked here, in one place, before a plant
-    is built: a part name no row owns, a part both claimed and concealed, a
-    digest that is not eight hex digits. Rejecting early is what lets the
-    acceptance script trust that the verdict it read came from the lie it meant
-    to plant.
+    is built: a part name no row owns, a part both claimed and concealed, an
+    id aimed at a row that carries no instance field, an id the mask cannot
+    hold, a digest that is not eight hex digits. Rejecting early is what lets
+    the acceptance script trust that the verdict it read came from the lie it
+    meant to plant.
     """
     overlap = sorted(set(declare) & set(hide))
     if overlap:
@@ -183,12 +186,23 @@ def resolve_fit_knobs(
     if unknown:
         rows = [row.name for row in FIT_ROWS]
         raise ValueError(f"no such registered part(s): {unknown} (fit rows: {rows})")
+    id_inject: dict[str, set[int]] = {}
+    id_names = {row.name for row in id_rows(FIT_ROWS)}
+    for spec in declare_ids:
+        name, sep, value = spec.partition("=")
+        if not sep or not value.isdigit() or name not in id_names:
+            raise ValueError(
+                f"--fit-declare-id wants ROW=ID for an id row {sorted(id_names)}, got {spec!r}"
+            )
+        if not 1 <= int(value) <= 32:
+            raise ValueError(f"--fit-declare-id: instance id {value} does not fit the 1..32 mask")
+        id_inject.setdefault(name, set()).add(int(value))
     if digest is not None:
         try:
             digest = f"{int(digest, 16):08x}"
         except ValueError:
             raise ValueError(f"--fit-digest must be 8 hex digits, got {digest!r}") from None
-    return override, digest
+    return override, id_inject, digest
 
 
 def announce_fit_injections(args: argparse.Namespace, quiet: bool) -> None:
@@ -202,6 +216,11 @@ def announce_fit_injections(args: argparse.Namespace, quiet: bool) -> None:
         return
     if getattr(args, "fit_override", None):
         print(f"FIT OVERRIDE (acceptance injection): {args.fit_override}", flush=True)
+    if getattr(args, "fit_id_inject", None):
+        print(
+            f"FIT ID INJECTION (acceptance): manifest claims instances {args.fit_id_inject}",
+            flush=True,
+        )
     if getattr(args, "fit_digest", None):
         print(
             f"FIT DIGEST INJECTION (acceptance): world claims {args.fit_digest}, "
@@ -215,6 +234,7 @@ def fit_provider(
     clock: Callable[[], tuple[float, int]],
     override: dict[str, bool] | None = None,
     digest: str | None = None,
+    declare_ids: Mapping[str, Iterable[int]] | None = None,
 ) -> Callable[[], bytes]:
     """The boot handshake provider: this vehicle's declared fit, per tick.
 
@@ -223,7 +243,9 @@ def fit_provider(
     subscription lands, and a mission that RESTARTS mid-run heals its verdict
     within a tick instead of flying on a stale handshake forever.
     """
-    return lambda: body.fit_manifest_bytes(*clock(), override=override, digest=digest)
+    return lambda: body.fit_manifest_bytes(
+        *clock(), override=override, digest=digest, declare_ids=declare_ids
+    )
 
 
 # bskforge puts every domain model on dynamicsTask at priority -1 and its
@@ -327,6 +349,14 @@ class ForgeBody:
         cams = [c for c in ctx.config.camera if c.parent == sc_cfg.name]
         self.fitted_types = frozenset(str(sensor.type) for sensor in sc_cfg.sensors) | (
             {"camera"} if cams else frozenset()
+        )
+        # Instances, kept as manifest data like the fit: WHICH ids of a
+        # hardware type this vehicle's TOML mounts. The handshake counts
+        # these per id-carrying frame row, so a verdict can name the
+        # instance that stalled. The eye is the first source; the shape is
+        # per hardware type, not per eye.
+        self._instance_ids: dict[str, set[int]] = (
+            {"camera": {int(c.camera_id) for c in cams}} if cams else {}
         )
         self._sim = ctx.sim
 
@@ -884,16 +914,25 @@ class ForgeBody:
         frame: int,
         override: dict[str, bool] | None = None,
         digest: str | None = None,
+        declare_ids: Mapping[str, Iterable[int]] | None = None,
     ) -> bytes:
-        """Pack ``BSK_LINK/FitManifest``: the declared fit plus the catalog digest.
+        """Pack ``BSK_LINK/FitManifest``: the declared fit, ids, and the catalog digest.
 
-        An override lies about the BITS only. The digest stays the world's true
-        catalog digest, because that is what the handshake checks: a lie that
-        also moved the digest would look like a stale binary, and a test that
-        simulates a missing sensor must not simulate a stale firmware.
+        An override lies about the BITS and ``declare_ids`` about the
+        INSTANCES - claim an id no device carries - and only about those.
+        The digest stays the world's true catalog digest, because that is
+        what the handshake checks: a lie that also moved the digest would
+        look like a stale binary, and a test that simulates a missing
+        instance must not simulate a stale firmware.
         """
         return bytes(
-            encode_fit_manifest(sim_time_s, frame, self.declared_fit(override), digest or FIT_HASH)
+            encode_fit_manifest(
+                sim_time_s,
+                frame,
+                self.declared_fit(override),
+                digest or FIT_HASH,
+                declared_id_masks(self._instance_ids, declare_ids, FIT_ROWS),
+            )
         )
 
     def attitude_state_bytes(self, sim_time_s: float, frame: int) -> bytes:
@@ -942,6 +981,7 @@ class ForgeScenario:
         pace: bool = False,
         fit_override: dict[str, bool] | None = None,
         fit_digest: str | None = None,
+        fit_declare_ids: dict[str, set[int]] | None = None,
     ) -> None:
         """Load the TOML, build the graph, fix the schedule, initialize.
 
@@ -996,7 +1036,11 @@ class ForgeScenario:
             observers=plant_observers(self.body, lambda: (rig.sim_time_s, rig.frame)),
             cam_sink=self.body.apply_cam_config if self.body.has_plant_cam else None,
             fit_provider=fit_provider(
-                self.body, lambda: (rig.sim_time_s, rig.frame), fit_override, fit_digest
+                self.body,
+                lambda: (rig.sim_time_s, rig.frame),
+                fit_override,
+                fit_digest,
+                fit_declare_ids,
             ),
         )
         self._rig = rig
@@ -1137,6 +1181,7 @@ class ForgeFleet:
         port_base: int = 0,
         fit_override: dict[str, bool] | None = None,
         fit_digest: str | None = None,
+        fit_declare_ids: dict[str, set[int]] | None = None,
     ) -> None:
         """Load the multi-vehicle TOML, build every body, initialize once.
 
@@ -1191,7 +1236,11 @@ class ForgeFleet:
                     observers=plant_observers(body, lambda: (rig.sim_time_s, rig.frame)),
                     cam_sink=body.apply_cam_config if body.has_plant_cam else None,
                     fit_provider=fit_provider(
-                        body, lambda: (rig.sim_time_s, rig.frame), fit_override, fit_digest
+                        body,
+                        lambda: (rig.sim_time_s, rig.frame),
+                        fit_override,
+                        fit_digest,
+                        fit_declare_ids,
                     ),
                 )
                 for body in self.bodies
@@ -1338,6 +1387,13 @@ def main(argv: list[str] | None = None) -> int:
         help="conceal a part this vehicle DOES declare (acceptance injection)",
     )
     ap.add_argument(
+        "--fit-declare-id",
+        action="append",
+        default=[],
+        metavar="ROW=ID",
+        help="claim an instance id the vehicle does not carry (acceptance injection)",
+    )
+    ap.add_argument(
         "--fit-digest",
         metavar="HEX8",
         help="claim this registry digest instead of the world's own (stale-firmware injection)",
@@ -1346,8 +1402,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
     try:
-        args.fit_override, args.fit_digest = resolve_fit_knobs(
-            args.fit_declare, args.fit_hide, args.fit_digest
+        args.fit_override, args.fit_id_inject, args.fit_digest = resolve_fit_knobs(
+            args.fit_declare, args.fit_hide, args.fit_digest, args.fit_declare_id
         )
     except ValueError as exc:
         ap.error(str(exc))
@@ -1375,6 +1431,7 @@ def _main_fleet(args: argparse.Namespace, names: list[str]) -> int:
         control_period_s=args.control_period,
         fit_override=args.fit_override or None,
         fit_digest=args.fit_digest,
+        fit_declare_ids=args.fit_id_inject or None,
         lockstep=args.zmq,
         ack_timeout_s=args.ack_timeout,
         pace=args.pace,
@@ -1449,6 +1506,7 @@ def _main_single(args: argparse.Namespace) -> int:
         control_period_s=args.control_period,
         fit_override=args.fit_override or None,
         fit_digest=args.fit_digest,
+        fit_declare_ids=args.fit_id_inject or None,
         lockstep=args.zmq,
         ack_timeout_s=args.ack_timeout,
         pace=args.pace,

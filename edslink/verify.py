@@ -71,12 +71,23 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
         },
     ),
     # Fit handshake: not a part and not telemetry - a declared fit in eight
-    # bytes plus the registry digest the world was started with. The hash here
-    # is a dummy on purpose: this test pins the LAYOUT, identity is compared at
-    # boot between the baked-in digest and the world's own.
+    # bytes plus the registry digest the world was started with, plus the
+    # instance attribution: four uint32 slots, bit n is id n+1, slot k is the
+    # k-th id-carrying frame row. The hash here is a dummy on purpose: this
+    # test pins the LAYOUT, identity is compared at boot between the baked-in
+    # digest and the world's own.
     "FitManifest": (
-        "<dQII",
-        {"SimTimeS": 8.5, "Frame": 17, "DeclaredBits": 0x5, "RegistryHash": 0xDEADBEEF},
+        "<dQII4I",
+        {
+            "SimTimeS": 8.5,
+            "Frame": 17,
+            "DeclaredBits": 0x5,
+            "RegistryHash": 0xDEADBEEF,
+            "DeclaredIds0": 0x1,
+            "DeclaredIds1": 0x0,
+            "DeclaredIds2": 0x0,
+            "DeclaredIds3": 0x0,
+        },
     ),
     # The camera's confirmed view is packed by the sim through
     # this same DB and read by a hand-written C twin (cam app subscribes it),

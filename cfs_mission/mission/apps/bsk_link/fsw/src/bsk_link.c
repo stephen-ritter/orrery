@@ -444,6 +444,19 @@ static bool BSK_Link_WorldFrame(unsigned RowIndex, const void *Payload, size_t S
     }
 
     BSK_LinkAppData.WorldFrameCounts[RowIndex]++;
+    if (Row->IdField != NULL)
+    {
+        /* The streamed twin of the manifest's claim, built from this frame's
+         * own words: read the row's id field by name. NULL never lands here,
+         * and a field name the container does not carry reads as NONE - the
+         * id then never counts, and the handshake's own SILENT verdict names
+         * the claim that failed to arrive. The typo polices itself. */
+        double Id = 0.0;
+        if (BSK_Link_ReadScalar(&Frame, Row->IdField, &Id) != EDSLIB_BASICTYPE_NONE && Id >= 1.0 && Id <= 32.0)
+        {
+            BSK_LinkAppData.FitStreamedIds[Row->IdSlot] |= 1u << ((unsigned)Id - 1u);
+        }
+    }
     if ((BSK_LinkAppData.WorldFrameCounts[RowIndex] == 1) ||
         ((BSK_LinkAppData.WorldFrameCounts[RowIndex] % BSK_LINK_SENSOR_EVENT_EVERY) == 0))
     {
@@ -774,6 +787,30 @@ static void BSK_Link_FitMaskNames(uint32 Mask, char *Out, size_t Size)
  * Events fire on TRANSITIONS only: the manifest arrives every tick, and a
  * verdict that repeated itself at 1 Hz would drown the console it reports to.
  */
+static const char *BSK_Link_FitSlotLabel(uint8 Slot)
+{
+    for (unsigned Index = 0; Index < BSK_LINK_FRAME_ROWS; ++Index)
+    {
+        if (BskLink_WorldFrames[Index].IdSlot == (int8_t)Slot)
+        {
+            return BskLink_WorldFrames[Index].Label;
+        }
+    }
+    return "instance";
+}
+
+static unsigned BSK_Link_FitFirstId(uint32 Mask)
+{
+    for (unsigned Bit = 0; Bit < 32; ++Bit)
+    {
+        if ((Mask & (1u << Bit)) != 0)
+        {
+            return Bit + 1;
+        }
+    }
+    return 0;
+}
+
 static void BSK_Link_EvaluateFit(void)
 {
     BSK_LinkAppData_t *App = &BSK_LinkAppData;
@@ -794,6 +831,7 @@ static void BSK_Link_EvaluateFit(void)
     {
         App->FitSilentBits = 0;
         App->FitDeniedBits = 0;
+        App->FitIdBits     = 0;
         Verdict            = BSK_LINK_FIT_STALE;
     }
     else if (App->FitFrameCount <= BSK_LINK_FIT_GRACE_TICKS)
@@ -805,6 +843,7 @@ static void BSK_Link_EvaluateFit(void)
          * verdict per boot, not a guess and then a correction. */
         App->FitSilentBits = 0;
         App->FitDeniedBits = 0;
+        App->FitIdBits     = 0;
         App->FitVerdict    = BSK_LINK_FIT_UNKNOWN;
         return;
     }
@@ -812,6 +851,8 @@ static void BSK_Link_EvaluateFit(void)
     {
         App->FitSilentBits = App->FitDeclaredBits & ~App->FitStreamingBits;
         App->FitDeniedBits = App->FitStreamingBits & ~App->FitDeclaredBits;
+        App->FitIdBits     = 0;
+        App->FitIdDenied   = false;
         if (App->FitSilentBits != 0)
         {
             Verdict = BSK_LINK_FIT_SILENT;
@@ -822,7 +863,32 @@ static void BSK_Link_EvaluateFit(void)
         }
         else
         {
+            /* Rows agree; are the instances honest? An id claim no frame
+             * carried, or an id on the bus the manifest never named, is the
+             * same defect one tier down - it names the instance that
+             * stalled, not just the part that went quiet. */
             Verdict = BSK_LINK_FIT_MATCHED;
+            for (uint8 Slot = 0; Slot < BSK_LINK_FIT_ID_SLOTS; ++Slot)
+            {
+                uint32 IdSilent = App->FitDeclaredIds[Slot] & ~App->FitStreamedIds[Slot];
+                uint32 IdDenied = App->FitStreamedIds[Slot] & ~App->FitDeclaredIds[Slot];
+                if (IdSilent != 0)
+                {
+                    App->FitIdBits     = IdSilent;
+                    App->FitIdSlot     = Slot;
+                    App->FitIdDenied   = false;
+                    Verdict            = BSK_LINK_FIT_SILENT;
+                    break;
+                }
+                if (IdDenied != 0)
+                {
+                    App->FitIdBits   = IdDenied;
+                    App->FitIdSlot   = Slot;
+                    App->FitIdDenied = true;
+                    Verdict          = BSK_LINK_FIT_DENIED;
+                    break;
+                }
+            }
         }
     }
 
@@ -843,20 +909,44 @@ static void BSK_Link_EvaluateFit(void)
                               (unsigned int)App->FitDeclaredBits);
             break;
         case BSK_LINK_FIT_SILENT:
-            BSK_Link_FitMaskNames(App->FitSilentBits, Claimed, sizeof(Claimed));
-            CFE_EVS_SendEvent(BSK_LINK_FIT_REPORT_EID, CFE_EVS_EventType_ERROR,
-                              "FIT SILENT: manifest claims %s (%08x) but the bus never streamed it - "
-                              "channel stays off, declared=%08x streamed=%08x",
-                              Claimed, (unsigned int)App->FitSilentBits, (unsigned int)App->FitDeclaredBits,
-                              (unsigned int)App->FitStreamingBits);
+            if (App->FitIdBits != 0)
+            {
+                CFE_EVS_SendEvent(BSK_LINK_FIT_REPORT_EID, CFE_EVS_EventType_ERROR,
+                                  "FIT SILENT: manifest claims %s id %u but no frame carried it - "
+                                  "ids declared=%08x streamed=%08x",
+                                  BSK_Link_FitSlotLabel(App->FitIdSlot), BSK_Link_FitFirstId(App->FitIdBits),
+                                  (unsigned int)App->FitDeclaredIds[App->FitIdSlot],
+                                  (unsigned int)App->FitStreamedIds[App->FitIdSlot]);
+            }
+            else
+            {
+                BSK_Link_FitMaskNames(App->FitSilentBits, Claimed, sizeof(Claimed));
+                CFE_EVS_SendEvent(BSK_LINK_FIT_REPORT_EID, CFE_EVS_EventType_ERROR,
+                                  "FIT SILENT: manifest claims %s (%08x) but the bus never streamed it - "
+                                  "channel stays off, declared=%08x streamed=%08x",
+                                  Claimed, (unsigned int)App->FitSilentBits, (unsigned int)App->FitDeclaredBits,
+                                  (unsigned int)App->FitStreamingBits);
+            }
             break;
         case BSK_LINK_FIT_DENIED:
-            BSK_Link_FitMaskNames(App->FitDeniedBits, Denied, sizeof(Denied));
-            CFE_EVS_SendEvent(BSK_LINK_FIT_REPORT_EID, CFE_EVS_EventType_ERROR,
-                              "FIT DENIED: bus streams %s (%08x) that the manifest denies - "
-                              "declared=%08x streamed=%08x",
-                              Denied, (unsigned int)App->FitDeniedBits, (unsigned int)App->FitDeclaredBits,
-                              (unsigned int)App->FitStreamingBits);
+            if (App->FitIdBits != 0)
+            {
+                CFE_EVS_SendEvent(BSK_LINK_FIT_REPORT_EID, CFE_EVS_EventType_ERROR,
+                                  "FIT DENIED: bus streams %s id %u that the manifest denies - "
+                                  "ids declared=%08x streamed=%08x",
+                                  BSK_Link_FitSlotLabel(App->FitIdSlot), BSK_Link_FitFirstId(App->FitIdBits),
+                                  (unsigned int)App->FitDeclaredIds[App->FitIdSlot],
+                                  (unsigned int)App->FitStreamedIds[App->FitIdSlot]);
+            }
+            else
+            {
+                BSK_Link_FitMaskNames(App->FitDeniedBits, Denied, sizeof(Denied));
+                CFE_EVS_SendEvent(BSK_LINK_FIT_REPORT_EID, CFE_EVS_EventType_ERROR,
+                                  "FIT DENIED: bus streams %s (%08x) that the manifest denies - "
+                                  "declared=%08x streamed=%08x",
+                                  Denied, (unsigned int)App->FitDeniedBits, (unsigned int)App->FitDeclaredBits,
+                                  (unsigned int)App->FitStreamingBits);
+            }
             break;
         case BSK_LINK_FIT_MATCHED:
             CFE_EVS_SendEvent(BSK_LINK_FIT_INF_EID, CFE_EVS_EventType_INFORMATION,
@@ -872,9 +962,10 @@ static void BSK_Link_EvaluateFit(void)
 /**
  * Decode and judge one BSK_LINK/FitManifest.
  *
- * Only the two handshake fields are read; SimTimeS and Frame exist so the
- * frame reads like every other frame on the wire, and so a stale counter in
- * the operator's log is a stale counter rather than an unreadable packet.
+ * The handshake fields are the declared fit mask, the registry digest, and
+ * the instance-id slots; SimTimeS and Frame exist so the frame reads like
+ * every other frame on the wire, and so a stale counter in the operator's
+ * log is a stale counter rather than an unreadable packet.
  */
 static bool BSK_Link_DecodeFitFrame(const void *Payload, size_t Size)
 {
@@ -910,6 +1001,18 @@ static bool BSK_Link_DecodeFitFrame(const void *Payload, size_t Size)
     {
         BSK_Link_ReportDecodeFailure(BSK_LINK_FIELD_REGISTRY_HASH, Size, BSK_LinkFitFrameSize);
         return false;
+    }
+    for (unsigned Slot = 0; Slot < BSK_LINK_FIT_ID_SLOTS; ++Slot)
+    {
+        char   Field[16];
+        double Mask = 0.0;
+        snprintf(Field, sizeof(Field), "DeclaredIds%u", Slot);
+        if (BSK_Link_ReadScalar(&Frame, Field, &Mask) == EDSLIB_BASICTYPE_NONE)
+        {
+            BSK_Link_ReportDecodeFailure(Field, Size, BSK_LinkFitFrameSize);
+            return false;
+        }
+        BSK_LinkAppData.FitDeclaredIds[Slot] = (uint32)Mask;
     }
 
     BSK_LinkAppData.FitDeclaredBits = (uint32)Bits;

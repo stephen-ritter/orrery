@@ -27,6 +27,11 @@
 #                 disagreement like a wrong topic). The forge enforces the
 #                 law at world build - a scenario cannot quietly mount
 #                 hardware no wire reports.
+#   instance_field  the container field naming WHICH device a frame
+#                 carries (empty = one opinion, no which). The boot
+#                 handshake counts these ids per row, so a verdict names
+#                 the instance that stalled, not just the part. Landed
+#                 frame rows only, and the manifest holds four slots.
 #   subscribers   bus consumers AFTER bsk_link republishes ([] = the frame
 #                 exists for ground observation only).
 #   exhibit       the acceptance promise, declaratively: kind truth_pair =
@@ -251,3 +256,7 @@ evs_label = "CamState"
 consumer = "bsk_link"                  # the generic consumer: zero C edits at landing
 fsw_apps = ["cam"]                     # same authority, same presence: one wake list
 subscribers = []                       # ground screens it; the cam app forwards, never reads
+instance_field = "CameraId"            # the handshake counts instances: every CamState
+#                                       says which eye it came from, so a verdict can name
+#                                       the eye that stalled. The opnav row stays
+#                                       single-eyed until its knowledge goes plural.

@@ -15,6 +15,7 @@
 #include "orrery_msgids.h"
 #define BSK_LINK_FRAME_ROWS 5
 #define BSK_LINK_FRAME_MAX_PAYLOAD 128
+#define BSK_LINK_FIT_ID_SLOTS 4
 
 /* Fit handshake: the digest of this table's SEMANTICS (row order,
  * topics, containers, sizes, MsgIds, EVS ids - not comments). The world
@@ -32,29 +33,36 @@ typedef struct
     uint16      Size;      /* payload bytes; EDS must agree at startup or row off    */
     uint16      EvsId;     /* first/every-N EVS event identity                       */
     const char *Label;     /* operator text for the event line                       */
+    const char *IdField;   /* EDS entry naming WHICH instance the frame carries;     */
+    int8_t       IdSlot;   /* manifest id slot it counts into, -1 with no IdField    */
 } BskLink_WorldFrameDef_t;
 
 static const BskLink_WorldFrameDef_t BskLink_WorldFrames[BSK_LINK_FRAME_ROWS] = {
     /* name: gnss - GNSS receiver (orbital knowledge) */
     { "NAVSTATE", "BSK_LINK/NavState", BSK_LINK_NAV_STATE_TLM_MID,
       /* evs */ 64, 15 /* BSK_LINK_NAV_INF_EID */,
-      "GNSS fix" },
+      "GNSS fix",
+      /* id */ NULL, -1 },
     /* name: onboard - onboard knowledge bundle (wheels/ST/CSS/mag in one frame) */
     { "ONBOARD", "BSK_LINK/OnboardState", BSK_LINK_ONBOARD_STATE_TLM_MID,
       /* evs */ 128, 14 /* BSK_LINK_ONBOARD_INF_EID */,
-      "onboard state" },
+      "onboard state",
+      /* id */ NULL, -1 },
     /* name: attitude - star tracker (attitude knowledge) */
     { "ATTSTATE", "BSK_LINK/AttitudeState", BSK_LINK_ATTITUDE_STATE_TLM_MID,
       /* evs */ 48, 16 /* BSK_LINK_ATTSTATE_INF_EID */,
-      "ST attitude" },
+      "ST attitude",
+      /* id */ NULL, -1 },
     /* name: opnav - Optical navigation (planet knowledge from rendered images, CAM) */
     { "OPNAV", "BSK_LINK/OpNavState", BSK_LINK_OPNAV_STATE_TLM_MID,
       /* evs */ 72, 20 /* BSK_LINK_OPNAV_INF_EID */,
-      "OpNav knowledge" },
+      "OpNav knowledge",
+      /* id */ NULL, -1 },
     /* name: camstate - Camera device state (confirmed shutter, rate, captures, store outlet) */
     { "CAMSTATE", "BSK_LINK/CamState", BSK_LINK_CAM_STATE_TLM_MID,
       /* evs */ 56, 21 /* BSK_LINK_CAM_STATE_INF_EID */,
-      "CamState" },
+      "CamState",
+      /* id */ "CameraId", 0 },
 };
 
 #endif /* ORRERY_FRAMES_H */

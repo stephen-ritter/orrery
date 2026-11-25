@@ -258,6 +258,18 @@
           <Entry name="Frame" type="uint64" shortDescription="sim frame counter" />
           <Entry name="DeclaredBits" type="uint32" shortDescription="fitted parts, bitmask over the generated frame table" />
           <Entry name="RegistryHash" type="uint32" shortDescription="registry semantics digest this world was started with" />
+          <!-- Instance attribution. Slot k is the k-th id-carrying frame row
+               in generated-table order (sim/parts.py id_rows); a bit is one
+               instance: bit n is id n+1. This frame is the world's CLAIM;
+               the spacecraft builds the streamed twin itself by reading each
+               arriving frame's id field, and the verdict names the instance
+               that stalled, not just the part. An unused slot is zero the
+               same way an absent part is a cleared fit bit: nothing there
+               pretends to be something. -->
+          <Entry name="DeclaredIds0" type="uint32" shortDescription="instance ids claimed, id-row slot 0 (bit n is id n+1)" />
+          <Entry name="DeclaredIds1" type="uint32" shortDescription="instance ids claimed, id-row slot 1; zero is no row in this slot" />
+          <Entry name="DeclaredIds2" type="uint32" shortDescription="instance ids claimed, id-row slot 2; zero is no row in this slot" />
+          <Entry name="DeclaredIds3" type="uint32" shortDescription="instance ids claimed, id-row slot 3; zero is no row in this slot" />
         </EntryList>
       </ContainerDataType>
 

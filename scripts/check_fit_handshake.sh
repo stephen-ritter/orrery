@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fit boot-handshake flight: the three views of a vehicle's fit, live.
 #
-#   scripts/check_fit_handshake.sh                 all four probes (~6 min)
+#   scripts/check_fit_handshake.sh                 all five probes (~9 min)
 #   PROBES=stale scripts/check_fit_handshake.sh    one probe, while iterating
 #
 # The claim is that absence is a fact the spacecraft knows, not a
@@ -39,6 +39,24 @@ GIT_AT_TAKEOFF="$(git status --porcelain)"
 
 echo "--- clearing the yard ---"
 bash scripts/fleet.sh down >/dev/null 2>&1 || true
+# A stray host-side craft (a diagnostic run that outlived its terminal) eats
+# POSIX message queues, and this box caps them at 10: every mission boot then
+# dies on CFE_SB_CreatePipe and the first probe fails with the yard's own
+# ghost in the story. Name the ghost before it stars in one.
+if pgrep -x core-cpu1 >/dev/null; then
+    echo "FAIL: a host core-cpu1 is running (pid $(pgrep -xd core-cpu1 | tr '\n' ' '));" \
+         "it squats the msg queues this yard needs - kill it first" >&2
+    exit 1
+fi
+# and the link farm must belong to nobody: a world that outlived its container
+# accepts a fresh craft's handshake with a dying peer, and that craft then
+# receives nothing while its socket reads connected (the zero-frame stall).
+if ss -tln | grep -qE ':5580([[:space:]]|$)'; then
+    echo "FAIL: tcp/5580 already has a listener before the first boot:" >&2
+    ss -tlnp | grep -E ':5580([[:space:]]|$)' >&2 || true
+    echo "      a squatting world squanders every probe - kill it first" >&2
+    exit 1
+fi
 
 # The probe vehicle: chief.toml, the superset plant the part-landing flight used
 # (GNSS + wheels + ST + CSS + mag), so all three registered rows are in play.
@@ -89,7 +107,10 @@ ticks_after_abort() {
 }
 
 # ---- the harness -----------------------------------------------------------
-# run_probe <tag> [KEY=VAL ...]: fleet up with those injections, soak, receipts
+# run_probe <tag> [KEY=VAL ...]: fleet up with those injections, soak, receipts.
+# Optional WITNESS_CMD runs during the soak (output to ${tag}_witness.log):
+# a witness has to speak while the yard is still up, and its receipts join
+# the other evidence files.
 run_probe() {
     local tag="$1" pair
     shift
@@ -103,8 +124,50 @@ run_probe() {
         echo "[$tag] FAIL: fleet did not come up" >&2
         exit 1
     fi
+    local witness_pid=""
+    if [ -n "${WITNESS_CMD:-}" ]; then
+        timeout 40 bash -c "$WITNESS_CMD" >"$WORK/${tag}_witness.log" 2>&1 &
+        witness_pid=$!
+    fi
     sleep "$SOAK"
     console_of "$WORK/console.log"
+    if ! grep -qE "basilisk sensor frame|FIT ABORT" "$WORK/console.log"; then
+        # The race this yard taught today (measured twice, logs as the proof):
+        # a world whose ack deadline is shorter than a craft boot executes its
+        # own stall before frame 1 is ever answered - the leg then proves
+        # nothing about the flight, only about boot choreography. This is NOT
+        # a verdict to assert on: it is a leg that never flew. Two sentences
+        # prove the world spoke to its craft: a decoded tick, or a FIT ABORT
+        # (the stale leg refuses the barrier BY DESIGN, so it never decodes a
+        # tick). Boot the pair once more; a second miss is a real failure and
+        # says so.
+        echo "[$tag] no sensor tick in ${SOAK}s - the world missed its craft; re-booting the pair once" >&2
+        [ -n "$witness_pid" ] && kill "$witness_pid" 2>/dev/null || true
+        bash scripts/fleet.sh down "$PROBE" >/dev/null 2>&1 || true
+        if ! bash scripts/fleet.sh up "$PROBE" >>"$log" 2>&1; then
+            echo "[$tag] FAIL: fleet did not come up on the retry" >&2
+            exit 1
+        fi
+        sleep "$SOAK"
+        console_of "$WORK/console.log"
+        if ! grep -qE "basilisk sensor frame|FIT ABORT" "$WORK/console.log"; then
+            echo "[$tag] FAIL: the mission heard no frame twice - this is not the race" >&2
+            exit 1
+        fi
+        if [ -n "$witness_pid" ]; then
+            # the witness dialed the ghost, not this world: start it fresh on
+            # the boot that actually flies, so its tally is a witness again
+            kill "$witness_pid" 2>/dev/null || true
+            timeout 40 bash -c "$WITNESS_CMD" >"$WORK/${tag}_witness.log" 2>&1 &
+            witness_pid=$!
+        fi
+    fi
+    if [ -n "$witness_pid" ]; then
+        wait "$witness_pid" 2>/dev/null || { echo "[$tag] FAIL: witness died" >&2; cat "$WORK/${tag}_witness.log" >&2; exit 1; }
+    fi
+    # the receipts are captured AFTER the leg is known to fly, from the boot
+    # that actually speaks (the pre-check capture above is the same file,
+    # refreshed; the world log joins it here)
     # The world's log is the second half of every receipt: a verdict that never
     # reached the sim is a verdict nobody acted on. The compose world logs to
     # its container (compose.yml names it orrery-world); a leftover file from
@@ -197,13 +260,46 @@ probe_stale() {
     echo "[stale] OK: stale firmware refuses to fly, and says which digest it was built from"
 }
 
-WANTED="${PROBES:-honest silent denied stale}"
+WANTED="${PROBES:-honest silent denied stale ids}"
 wanted() { case " $WANTED " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+# ---- probe 5: the handshake counts instances ------------------------------
+# The eye's frame says WHICH eye it came from, and the manifest claims ids.
+# Leg one is the honest eye: declared id 1, streamed id 1 - MATCHED must stay
+# byte-identical, because attribution that changes a clean verdict is noise.
+# Leg two claims a second eye no device carries: the verdict must name the
+# id, not just the part, and the mission flies on the fit it really has.
+# Each leg carries a raw-port witness: a ground tally of the ids the world
+# actually streams, dialed straight off the sensor PUB, so a verdict that
+# names an id has an outside witness that no verdict wrote.
+probe_ids() {
+    PROBE="$WORK/probe_ids.toml"
+    cp sim/scenarios/camera_ops.toml "$PROBE"
+    export WITNESS_CMD="uv run python -m sim.id_witness --row camstate --seconds 8"
+    local tally
+    run_probe ids-honest
+    tally="$(cat "$WORK/ids-honest_witness.log")"
+    expect_in_console "FIT MATCHED: declared=[0-9a-f]{8} streamed=[0-9a-f]{8} registry=[0-9a-f]{8}" "FIT MATCHED"
+    refuse_in_console "FIT (SILENT|DENIED|ABORT)" "a fit alarm beside an honest eye"
+    barrier_alive
+    [[ "$tally" == *"ids=[1]"* ]] || { echo "[ids-honest] FAIL: raw port streamed no id 1 ($tally)" >&2; exit 1; }
+    echo "[ids-honest] OK: an eye's id is counted ($tally), and a clean fit still reads clean"
+
+    run_probe ids-silent FIT_DECLARE_ID="camstate=2"
+    tally="$(cat "$WORK/ids-silent_witness.log")"
+    expect_in_console "FIT SILENT: manifest claims CamState id 2 but no frame carried it" "an id-level SILENT"
+    barrier_alive
+    refuse_in_console "FIT ABORT" "an abort"
+    [[ "$tally" == *"ids=[1]"* ]] || { echo "[ids-silent] FAIL: the bus must still carry only id 1 ($tally)" >&2; exit 1; }
+    echo "[ids-silent] OK: id 2 is claimed but nowhere on the wire ($tally) - named by id, mission flies on"
+    unset WITNESS_CMD
+}
 
 if wanted honest; then probe_honest; fi
 if wanted silent; then probe_silent; fi
 if wanted denied; then probe_denied; fi
 if wanted stale; then probe_stale; fi
+if wanted ids; then probe_ids; fi
 
 # ---- receipts --------------------------------------------------------------
 echo "=== what this flight edited ==="
