@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "cfe.h"
+#include "cf_msgids.h"
 #include "fcs_app.h"
 #include "fcs_events.h"
 #include "fcs_version.h"
@@ -315,6 +316,69 @@ static void FCS_HandleSetWheelLimit(const CFE_SB_Buffer_t *BufPtr)
 
 /* -------------------------------------------------------------------------- */
 
+/* CFDP downlink request: relay to CF's own TX_FILE, native layout
+ * (measured law: CF reads its command payload in machine endianness, and the
+ * CF-side build of the PDU is all CF's). FCS never learns CFDP - it carries
+ * one file's worth of bytes into a struct CF published, keeps its own file
+ * law (keep=1: a request may not delete craft files), and counts what it
+ * handed over. Whether the file exists or transfers is CF's testimony, not
+ * a second opinion here. */
+static void FCS_HandleCfdpDown(const CFE_SB_Buffer_t *BufPtr)
+{
+    const FcsCfdpDownCmd_t *Cmd = (const FcsCfdpDownCmd_t *)BufPtr;
+    CfTxFileCmd_t              Tx;
+    CFE_Status_t               Status;
+    size_t                     Size;
+
+    /* the request's fixed names and CF's fixed names are the same law: if
+     * either mirror is resized, this build fails here, not on the wire. */
+    _Static_assert(sizeof(((const FcsCfdpDownCmd_t *)NULL)->Payload.SrcPath) ==
+                       sizeof(((const CfTxFileCmd_t *)NULL)->Payload.SrcFilename),
+                   "CFDP_DOWN path width drifted from the CF TX_FILE mirror");
+
+    CFE_MSG_GetSize(&BufPtr->Msg, &Size);
+    if (Size != sizeof(FcsCfdpDownCmd_t))
+    {
+        FCS_AppData.HkTlm.Payload.CommandErrorCounter++;
+        CFE_EVS_SendEvent(FCS_CFDP_DOWN_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "CFDP_DOWN length %u, expected %u: ignored", (unsigned int)Size,
+                          (unsigned int)sizeof(FcsCfdpDownCmd_t));
+        return;
+    }
+    if (Cmd->Payload.CfdpClass > 1 || Cmd->Payload.SrcPath[0] == '\0' || Cmd->Payload.DstName[0] == '\0')
+    {
+        FCS_AppData.HkTlm.Payload.CommandErrorCounter++;
+        CFE_EVS_SendEvent(FCS_CFDP_DOWN_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "CFDP_DOWN rejected: class %u, empty path or name", (unsigned int)Cmd->Payload.CfdpClass);
+        return;
+    }
+
+    memset(&Tx, 0, sizeof(Tx));
+    CFE_MSG_Init(CFE_MSG_PTR(Tx.CommandHeader), CFE_SB_ValueToMsgId(CF_CMD_MID), sizeof(Tx));
+    CFE_MSG_SetFcnCode(CFE_MSG_PTR(Tx.CommandHeader), CF_TX_FILE_CC);
+    Tx.Payload.CfdpClass = Cmd->Payload.CfdpClass;
+    Tx.Payload.Keep      = 1; /* the craft keeps its own files: always */
+    Tx.Payload.ChanNum   = 0;
+    Tx.Payload.Priority  = 0;
+    Tx.Payload.DestId    = Cmd->Payload.DestEntityId;
+    memcpy(Tx.Payload.SrcFilename, Cmd->Payload.SrcPath, sizeof(Tx.Payload.SrcFilename));
+    memcpy(Tx.Payload.DstFilename, Cmd->Payload.DstName, sizeof(Tx.Payload.DstFilename));
+
+    Status = CFE_SB_TransmitMsg(CFE_MSG_PTR(Tx.CommandHeader), true);
+    if (Status != CFE_SUCCESS)
+    {
+        FCS_AppData.HkTlm.Payload.CommandErrorCounter++;
+        CFE_EVS_SendEvent(FCS_CFDP_DOWN_ERR_EID, CFE_EVS_EventType_ERROR, "CFDP_DOWN relay rejected: 0x%08X",
+                          (unsigned int)Status);
+        return;
+    }
+
+    FCS_AppData.HkTlm.Payload.CommandCounter++;
+    CFE_EVS_SendEvent(FCS_CFDP_DOWN_INF_EID, CFE_EVS_EventType_INFORMATION, "CFDP down: %s as %s -> entity %lu, class %u",
+                      Tx.Payload.SrcFilename, Tx.Payload.DstFilename, (unsigned long)Cmd->Payload.DestEntityId,
+                      (unsigned int)Cmd->Payload.CfdpClass);
+}
+
 static void FCS_HandleCmd(const CFE_SB_Buffer_t *BufPtr)
 {
     CFE_MSG_FcnCode_t FcnCode = 0;
@@ -421,6 +485,7 @@ static int32 FCS_AppInit(void)
         {FCS_CMD_MID, "commands"},
         {FCS_SET_GAIN_MID, "gain upload"},
         {FCS_SET_WHEEL_LIMIT_MID, "wheel limit upload"},
+        {FCS_CFDP_DOWN_MID, "file downlink request"},
         {FCS_SEND_HK_MID, "housekeeping request"},
     };
 
@@ -543,6 +608,10 @@ void FCS_AppMain(void)
 
                 case FCS_SET_WHEEL_LIMIT_MID:
                     FCS_HandleSetWheelLimit(BufPtr);
+                    break;
+
+                case FCS_CFDP_DOWN_MID:
+                    FCS_HandleCfdpDown(BufPtr);
                     break;
 
                 case FCS_SEND_HK_MID:

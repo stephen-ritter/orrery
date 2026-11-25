@@ -20,5 +20,7 @@
 #define FCS_ENABLE_REJ_ERR_EID  13 /* ENABLE refused: SAFE, wheels at limit   */
 #define FCS_SET_LIMIT_INF_EID   14 /* wheel trip threshold uploaded           */
 #define FCS_SET_LIMIT_ERR_EID   15 /* threshold rejected (non-finite, absurd) */
+#define FCS_CFDP_DOWN_INF_EID   16 /* file handed to CF for downlink          */
+#define FCS_CFDP_DOWN_ERR_EID   17 /* request malformed or relay rejected     */
 
 #endif /* FCS_EVENTS_H */

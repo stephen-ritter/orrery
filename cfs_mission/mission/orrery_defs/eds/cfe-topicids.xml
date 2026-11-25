@@ -185,6 +185,7 @@
     <Define name="FCS_SEND_HK_TOPICID"                value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 201" />
     <Define name="FCS_SET_GAIN_TOPICID"               value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 202" />
     <Define name="FCS_SET_WHEEL_LIMIT_TOPICID"        value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 203" />
+    <Define name="FCS_CFDP_DOWN_TOPICID"              value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 214" />
     <Define name="FCS_HK_TLM_TOPICID"                 value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 202" />
     <Define name="BSK_LINK_STEP_ACK_TLM_TOPICID"      value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 203" />
     <Define name="OBC_HK_TLM_TOPICID"                 value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 205" />

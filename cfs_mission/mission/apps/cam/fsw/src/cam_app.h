@@ -76,6 +76,7 @@ typedef struct
      * report exists so their divergence, not its prose, names the defect. */
     uint64 FramesRecorded;
     uint64 FilesStored;
+    uint64 FilesTransferred; /* CF EOT count: files CF closed clean, TX */
 
     /* Read-only stamping from the sensor feed (never a law input). */
     double LastSimTimeS;

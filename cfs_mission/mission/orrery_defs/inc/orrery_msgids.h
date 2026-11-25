@@ -39,6 +39,9 @@
 /** \brief fcs wheel supervisor threshold with payload (ground only, P4b-2) */
 #define FCS_SET_WHEEL_LIMIT_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_FCS_SET_WHEEL_LIMIT_TOPICID)
 
+/** \brief file downlink request with payload (ground only) */
+#define FCS_CFDP_DOWN_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_FCS_CFDP_DOWN_TOPICID)
+
 /** \brief OBC housekeeping telemetry (hk_app -> beacon, P4b-3) */
 #define OBC_HK_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_OBC_HK_TLM_TOPICID)
 

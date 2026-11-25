@@ -89,6 +89,39 @@
         </EntryList>
       </ContainerDataType>
 
+      <!-- File downlink request: one file per command, its own
+           interface per the SetGainPkt law. FCS relays it to CF's own
+           TX_FILE; CFDP itself belongs to CF. Fixed 64-byte names mirror
+           CF_FILENAME_MAX_LEN (a _Static_assert in fcs_app.c pins it),
+           and the 3-byte pad is declared, not compiler-decided. -->
+      <ContainerDataType name="CfdpDownCmd" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ContainerDataType name="CfdpDownPayload" shortDescription="one requested file, its name on the ground">
+        <EntryList>
+          <Entry name="DestEntityId" type="BASE_TYPES/uint32" shortDescription="ground CFDP entity to hand the file to" />
+          <Entry name="CfdpClass" type="BASE_TYPES/uint8" shortDescription="CF numbering: 0 = class 1, 1 = class 2">
+            <Constraints>
+              <EnumeratedValueConstraint>
+                <EnumerationList>
+                  <Enumeration label="CLASS_1" value="0" />
+                  <Enumeration label="CLASS_2" value="1" />
+                </EnumerationList>
+              </EnumeratedValueConstraint>
+            </Constraints>
+          </Entry>
+          <Entry name="Pad" type="BASE_TYPES/uint8" arraySize="3" shortDescription="explicit alignment filler" />
+          <Entry name="SrcPath" type="BASE_TYPES/uint8" arraySize="64" shortDescription="onboard path, e.g. /cf/img/img_0007.png (NUL-terminated)" />
+          <Entry name="DstName" type="BASE_TYPES/uint8" arraySize="64" shortDescription="the name the ground receives it under (NUL-terminated)" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="CfdpDownPkt" baseType="CfdpDownCmd">
+        <EntryList>
+          <Entry name="Payload" type="CfdpDownPayload" />
+        </EntryList>
+      </ContainerDataType>
+
       <ContainerDataType name="HkTlm_Payload" shortDescription="fcs housekeeping">
         <EntryList>
           <Entry name="CommandCounter" type="BASE_TYPES/uint8" shortDescription="valid commands received" />
@@ -150,6 +183,11 @@
               <GenericTypeMap name="TelecommandDataType" type="SetWheelLimitPkt" />
             </GenericTypeMapSet>
           </Interface>
+          <Interface name="CFDP_DOWN" shortDescription="Request one file to CFDP downlink" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="CfdpDownPkt" />
+            </GenericTypeMapSet>
+          </Interface>
           <Interface name="HK_TLM" shortDescription="Software bus housekeeping telemetry interface" type="CFE_SB/Telemetry">
             <GenericTypeMapSet>
               <GenericTypeMap name="TelemetryDataType" type="HkTlm" />
@@ -162,6 +200,7 @@
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="SendHkTopicId" initialValue="${CFE_MISSION/FCS_SEND_HK_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="SetGainTopicId" initialValue="${CFE_MISSION/FCS_SET_GAIN_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="SetWheelLimitTopicId" initialValue="${CFE_MISSION/FCS_SET_WHEEL_LIMIT_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="CfdpDownTopicId" initialValue="${CFE_MISSION/FCS_CFDP_DOWN_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="HkTlmTopicId" initialValue="${CFE_MISSION/FCS_HK_TLM_TOPICID}" />
           </VariableSet>
           <ParameterMapSet>
@@ -169,6 +208,7 @@
             <ParameterMap interface="SEND_HK" parameter="TopicId" variableRef="SendHkTopicId" />
             <ParameterMap interface="SET_GAIN" parameter="TopicId" variableRef="SetGainTopicId" />
             <ParameterMap interface="SET_WHEEL_LIMIT" parameter="TopicId" variableRef="SetWheelLimitTopicId" />
+            <ParameterMap interface="CFDP_DOWN" parameter="TopicId" variableRef="CfdpDownTopicId" />
             <ParameterMap interface="HK_TLM" parameter="TopicId" variableRef="HkTlmTopicId" />
           </ParameterMapSet>
         </Implementation>

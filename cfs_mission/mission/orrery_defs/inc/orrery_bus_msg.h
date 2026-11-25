@@ -139,6 +139,89 @@ typedef struct
     FcsSetWheelLimit_Payload_t Payload;
 } FcsSetWheelLimitCmd_t;
 
+/* FCS_CFDP_DOWN: the ground's request to hand one file to CF for
+ * downlink; CF speaks CFDP, FCS only relays. Packed with an explicit pad -
+ * an argument-bearing command's wire is defined by this struct, never by
+ * compiler padding. Class numbering is CF's own (0 = class 1, 1 = class 2);
+ * "keep" is not an argument, because deleting a craft file is not something
+ * a request may smuggle in. */
+typedef struct
+{
+    uint32 DestEntityId; /* ground CFDP entity to hand the file to   */
+    uint8  CfdpClass;    /* CF numbering: 0 = class 1, 1 = class 2   */
+    uint8  Pad[3];       /* explicit filler, the EDS declares it too */
+    char   SrcPath[64];  /* onboard path, e.g. /cf/img/img_0007.png  */
+    char   DstName[64];  /* the name the ground receives it under    */
+} __attribute__((packed)) FcsCfdpDown_Payload_t;
+
+typedef struct
+{
+    CFE_MSG_CommandHeader_t CommandHeader;
+    FcsCfdpDown_Payload_t   Payload;
+} FcsCfdpDownCmd_t;
+
+/* ---- CFDP wire mirrors --------------------------------------
+ * CF keeps its message structs in its private tree, and the mission does
+ * not reach into another app's headers; what crosses between apps is the
+ * published format, mirrored here the same law as orrery_topicids.h
+ * mirrors topic numbers. The mirrors are measured, not copied: the bench
+ * flights decode every byte below off live frames. */
+
+/* CF accepts its TX_FILE command with the payload in TARGET-NATIVE order
+ * (measured: a big-endian dest_id arrives byte-swapped and CF happily
+ * "starts" a transfer to entity 385875968). */
+#define CF_TX_FILE_CC 2 /* pinned by the generated sps_cmd_table: CF_CMD.TxFileCmd */
+
+typedef struct
+{
+    uint8  CfdpClass;   /* CF numbering: 0 = class 1, 1 = class 2      */
+    uint8  Keep;        /* 1 keeps the craft's own file; requests never delete */
+    uint8  ChanNum;
+    uint8  Priority;
+    uint32 DestId;
+    char   SrcFilename[64];
+    char   DstFilename[64];
+} __attribute__((packed)) CfTxFile_Payload_t;
+
+typedef struct
+{
+    CFE_MSG_CommandHeader_t CommandHeader;
+    CfTxFile_Payload_t      Payload;
+} CfTxFileCmd_t;
+
+/* CF's end-of-transaction telemetry: nine native u32s, then the two
+ * 64-byte names - CF_EotPacket_t's published shape. The mirror's total
+ * (180 B) is compiler-verified against CF's own headers and measured true
+ * off the beacon; a first capture once read its words byte-reversed
+ * because the frame was sliced at a 13-byte header while the telemetry
+ * header here is 16 (the compiler probe settled it: tlm header 16 B,
+ * command header 8). CF fills these from its private transaction record;
+ * only the wire values of Direction and TxnStat carry meaning for the
+ * mission (1 = TX, 0 = NO_ERROR). */
+typedef struct
+{
+    uint32 SeqNum;
+    uint32 Channel;
+    uint32 Direction; /* CF wire value: 1 = TX (toward the ground) */
+    uint32 State;
+    uint32 TxnStat; /* CF wire value: 0 = NO_ERROR               */
+    uint32 SrcEid;
+    uint32 PeerEid;
+    uint32 Fsize;
+    uint32 CrcResult;
+    char   SrcFile[64];
+    char   DstFile[64];
+} __attribute__((packed)) CfEot_Payload_t;
+
+typedef struct
+{
+    CFE_MSG_TelemetryHeader_t TelemetryHeader;
+    CfEot_Payload_t           Payload;
+} CfEotTlm_t;
+
+_Static_assert(sizeof(CfEotTlm_t) == 180, "EOT mirror drifted from CF's published 180-byte frame");
+_Static_assert(sizeof(CfTxFileCmd_t) == 144, "TX_FILE mirror drifted from CF's published 144-byte command");
+
 typedef struct
 {
     CFE_MSG_CommandHeader_t CommandHeader;
@@ -214,7 +297,7 @@ typedef struct
     double RenderRateCmd;       /* last commanded image interval [s]    */
     uint32 FramesRecorded;      /* sim store outlet sent (CamState, v2b)    */
     uint32 FramesStored;        /* bsk_link completed /cf/img files (v2b)   */
-    uint32 FramesTransferred;   /* v2c promise: 0 until that phase lands */
+    uint32 FramesTransferred;   /* CF EOT count: files CF closed clean, TX */
 } __attribute__((packed)) CamHkTlm_Payload_t;
 
 typedef struct

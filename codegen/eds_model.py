@@ -12,6 +12,7 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import ClassVar
 
 from codegen.eds_sources import core_xml_files
 
@@ -212,6 +213,47 @@ class Eds:
 
     # ---- loading -------------------------------------------------------- #
 
+    # One typo in NASA's CF EDS, repaired at load time instead of in the
+    # core. Its source is pristine by law (cfs_mission/cfs.lock); this dict
+    # is the mission-side record of the drift, like MODEL_DRIFT_EXCLUSIONS -
+    # but here the measured symptom was silence, not mismatch: the value of
+    # ``EotTlmTopicId`` closes its ${...} one byte late, so the constant
+    # never resolves and CF's whole EOT packet - the only per-file testimony
+    # CF gives - drops out of the defs and the beacon subscription table.
+    # The wire carries 180-byte EOTs either way; the ground just cannot read
+    # them. Drop an entry when the pin moves past the upstream fix: a repair
+    # that finds nothing to repair is reported as a warning below, so this
+    # table cannot quietly fossilize.
+    VENDOR_REPAIRS: ClassVar[dict[str, tuple[str, str]]] = {
+        "apps/cf/eds/cf.xml": (
+            "${CFE_MISSION/CF_EOT_TLM_TOPICID)}",
+            "${CFE_MISSION/CF_EOT_TLM_TOPICID}",
+        ),
+    }
+
+    def _vendor_repaired(self, path: Path) -> str:
+        """File text with this mission's known upstream typos corrected.
+
+        The core file on disk is never touched: the repair lives in memory,
+        between the pristine checkout and the model, where it can be named,
+        counted and deleted.
+        """
+        text = path.read_text()
+        repair = next(
+            (rule for name, rule in self.VENDOR_REPAIRS.items() if path.as_posix().endswith(name)),
+            None,
+        )
+        if repair is None:
+            return text
+        broken, fixed = repair
+        if broken not in text:
+            self.warnings.append(
+                f"{path.name}: repair target {broken} no longer present - upstream "
+                "fixed it, delete the VENDOR_REPAIRS entry"
+            )
+            return text
+        return text.replace(broken, fixed)
+
     def load_xml(self, path: Path, mission: bool = False) -> None:
         """Load one XML file: mission defines and/or data-type packages.
 
@@ -220,7 +262,7 @@ class Eds:
         so being in the mission list does not by itself mean "defines only":
         those parse as packages like any module EDS.
         """
-        root = ET.parse(path).getroot()
+        root = ET.fromstring(self._vendor_repaired(path))
         self.constants._scan_defines(root)
         if _local(root.tag) == "DesignParameters":
             return

@@ -50,6 +50,7 @@ static const RsMidEntry_t ORRERY_MID_TABLE[] = {
     {0x08A7, "LC_HK_TLM"},
     {0x08AA, "SC_HK_TLM"},
     {0x08AD, "HS_HK_TLM"},
+    {0x08B3, "CF_EOT_TLM"},
     {0x08B8, "DS_HK_TLM"},
     {0x08B9, "DS_DIAG_TLM"},
     {0x08BA, "DS_COMP_TLM"},
@@ -68,6 +69,6 @@ static const RsMidEntry_t ORRERY_MID_TABLE[] = {
     {0x08D5, "BSK_LINK_CAM_STORAGE_TLM"},
 };
 
-#define ORRERY_MID_COUNT 52
+#define ORRERY_MID_COUNT 53
 
 #endif /* RS_MID_TABLE_H */

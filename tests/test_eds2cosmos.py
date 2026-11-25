@@ -132,6 +132,41 @@ def test_model_drift_exclusion(packets: list[Packet]) -> None:
     assert MODEL_DRIFT_EXCLUSIONS  # list exists; wire_audit keeps it honest
 
 
+def test_cf_eot_survives_the_vendor_typo(packets: list[Packet]) -> None:
+    """CF_EOT_TLM reaches the beacon tables even though NASA's cf.xml is broken.
+
+    Its EotTlmTopicId closes the ${...} one byte early (``...TOPICID)}``),
+    which used to drop CF's only per-file telemetry out of the model in
+    silence. Eds.VENDOR_REPAIRS patches that in memory - the core file is
+    untouched, and the repair reports itself when upstream fixes it. The
+    field order and sizes here are the wire law measured off the beacon on
+    2026-11-25: 180 B total, sixteen-byte telemetry header, then nine
+    target-native uint32s and two 64-byte names.
+    """
+    eot = _pkt(packets, "CF_EOT_TLM")
+    assert eot.msgid == 0x08B3  # 0x0800 | (179-0): TM topic 179, cpu instance 1
+    assert eot.total_bytes() == 180
+    names = [i.name.rsplit(".", 1)[-1] for i in eot.items]
+    for field in ("seq_num", "direction", "txn_stat", "peer_eid", "src_filename", "dst_filename"):
+        assert field in names, f"measured EOT field missing from the def: {field}"
+    assert names.index("direction") < names.index("txn_stat") < names.index("src_filename")
+    from codegen.eds2cosmos import mission_packets
+
+    assert "CF_EOT_TLM" in emit_c_table(mission_packets(packets), "088b2fa")
+
+
+def test_vendor_repair_reports_a_fixed_upstream(tmp_path: Path) -> None:
+    """A repair that finds nothing to repair says so, so it cannot fossilize."""
+    xml = tmp_path / "apps/cf/eds/cf.xml"
+    xml.parent.mkdir(parents=True)
+    xml.write_text(
+        '<?xml version="1.0"?><PackageFile xmlns="http://www.ccsds.org/schema/sois/seds"/>'
+    )
+    eds = Eds()
+    eds.load_xml(xml)
+    assert any("no longer present" in w for w in eds.warnings)
+
+
 def test_c_table_telemetry_only(packets: list[Packet]) -> None:
     """gs_tcp header lists every telemetry MsgId, sorted, with the right count.
 
@@ -314,7 +349,7 @@ def test_topicids_header_mirrors_xml() -> None:
         assert c_topics.get(name) == value, (
             f"topic {name}: XML {value} != C header {c_topics.get(name)}"
         )
-    assert len(xml_topics) == len(c_topics) == 26  # 20 apps + 5 parts + CAM v2b storage TLM
+    assert len(xml_topics) == len(c_topics) == 27  # 20 apps + 5 parts + image ledger + CFDP down
 
 
 def test_time_cmd_mid_derives_from_topicids() -> None:

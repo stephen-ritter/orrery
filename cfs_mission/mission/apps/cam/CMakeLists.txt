@@ -7,3 +7,10 @@ project(CFE_CAM C)
 add_cfe_app(cam
     fsw/src/cam_app.c
 )
+# The transferred-file witness subscribes CF's EOT MID (cf_msgids.h); like
+# cf_tcp, that header's expansion reaches into CF's fsw/inc (same pattern,
+# same reason). Message layout stays on the mission mirror in
+# orrery_bus_msg.h.
+target_include_directories(cam PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../cFS/apps/cf/fsw/inc
+)

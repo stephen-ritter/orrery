@@ -51,6 +51,11 @@
 #define CFE_MISSION_CAM_SEND_HK_TOPICID 211
 #define CFE_MISSION_CAM_SET_CONFIG_TOPICID 212
 
+/* File downlink request: own topic per the SetGainPkt law - the
+ * argument is the file. FCS relays it to CF's own TX_FILE command; the CFDP
+ * transport is CF's, never the mission's. */
+#define CFE_MISSION_FCS_CFDP_DOWN_TOPICID 214
+
 /* cFS TIME service command port, block-relative (cfe-topicids.xml:
  * TIME_CMD = TELECOMMAND_BASE_TOPICID + 5). The link slaves mission MET to
  * the sim timecode over this port (D8). */

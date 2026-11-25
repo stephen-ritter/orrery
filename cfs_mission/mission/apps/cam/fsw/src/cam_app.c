@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "cfe.h"
+#include "cf_msgids.h"
 #include "cam_app.h"
 #include "cam_events.h"
 #include "cam_version.h"
@@ -29,6 +30,7 @@ static void CAM_SendHk(void)
      * one frame per render interval cannot reach 4 billion this century. */
     CAM_AppData.HkTlm.Payload.FramesRecorded = (uint32)CAM_AppData.FramesRecorded;
     CAM_AppData.HkTlm.Payload.FramesStored   = (uint32)CAM_AppData.FilesStored;
+    CAM_AppData.HkTlm.Payload.FramesTransferred = (uint32)CAM_AppData.FilesTransferred;
     CFE_SB_TimeStampMsg(CFE_MSG_PTR(CAM_AppData.HkTlm.TelemetryHeader));
     CFE_SB_TransmitMsg(CFE_MSG_PTR(CAM_AppData.HkTlm.TelemetryHeader), true);
 }
@@ -207,6 +209,7 @@ static int32 CAM_AppInit(void)
         {CAM_SEND_HK_MID, "housekeeping request"},
         {BSK_LINK_CAM_STATE_TLM_MID, "cam state (recorded witness, v2b)"},
         {BSK_LINK_CAM_STORAGE_TLM_MID, "image ledger (stored witness, v2b)"},
+        {CF_EOT_TLM_MID, "file transactions (transferred witness)"},
     };
 
     for (size_t i = 0; i < sizeof(Subscriptions) / sizeof(Subscriptions[0]); ++i)
@@ -303,6 +306,25 @@ void CAM_AppMain(void)
                     {
                         CAM_AppData.FilesStored =
                             ((const BskCamStorageTlm_t *)BufPtr)->Payload.FilesStored;
+                    }
+                    break;
+
+                case CF_EOT_TLM_MID:
+                    /* TRANSFERRED witness: CF ends every closed file
+                     * transaction with one EOT packet - the only per-file
+                     * testimony CF gives. Count only what crossed: TX
+                     * direction, clean status (wire values documented on
+                     * the mirror struct); every failure stays visible as a
+                     * divergence against STORED instead of being laundered
+                     * into the counter. Wrong length is schema drift -
+                     * count nothing, keep the last honest value. */
+                    if (Size == sizeof(CfEotTlm_t))
+                    {
+                        const CfEotTlm_t *Eot = (const CfEotTlm_t *)BufPtr;
+                        if (Eot->Payload.Direction == 1u && Eot->Payload.TxnStat == 0u)
+                        {
+                            CAM_AppData.FilesTransferred++;
+                        }
                     }
                     break;
 
