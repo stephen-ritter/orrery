@@ -15,7 +15,11 @@
    the bearer, and it prescribes no shape, so this is the mission's own:
    4-byte big-endian length covering the stream id and the PDU (value = 4
    + PDU bytes), a 4-byte stream id (value 1), then the raw CFDP PDU. The
-   interop flights pin it: real CFDP engines byte-matched through it. */
+   interop flights pin it: real CFDP engines byte-matched through it. On
+   the bus side the PDU starts where CF's own struct says it starts -
+   after the full telemetry message header, time secondary included
+   (measured law: the bridge once stripped the CCSDS primary alone, and
+   the engine drowned in 7-byte timestamps). */
 
 #include "cf_tcp_app.h"
 #include "cf_tcp_events.h"
@@ -47,7 +51,16 @@ static union
 
 static uint8 CF_TCP_TxFrame[CF_TCP_LEN_BYTES + CF_TCP_ID_BYTES + CF_TCP_PDU_MAX];
 
-#define CF_TCP_PRIMARY_HDR 6
+/* CF reads and writes PDUs at different offsets depending on the message
+ * type, and the bridge must honor each law exactly (both measured, the hard
+ * way): CF's TX messages are telemetry - CCSDS primary PLUS the 7-byte CFE
+ * time secondary, which is where offsetof(CF_PduTlmMsg_t, ph) points; PDUs
+ * arriving on the command RX MID are parsed at offsetof(CF_PduCmdMsg_t, ph)
+ * - primary plus the 2-byte function/checksum secondary, the same shape a
+ * ground upload has. One type each: if the mission ever changes a message
+ * header, the matching side moves with it. */
+#define CF_TCP_TX_HDR ((size_t)sizeof(CFE_MSG_TelemetryHeader_t))
+#define CF_TCP_RX_HDR ((size_t)sizeof(CFE_MSG_CommandHeader_t))
 
 /* -------------------------------------------------------------------------- */
 
@@ -176,22 +189,21 @@ static void CF_TCP_SendFrame(CF_TCP_Client_t *Client, const uint8 *Pdu, size_t P
 /**
  * Hand one complete inbound PDU to the bus on the CF channel RX MID.
  *
- * The CCSDS primary is stamped by hand from the compile-time MID (the
- * same two bytes the ground has always seen for our packets); cFE stamps
- * the command checksum at transmit.
+ * The message must look exactly like a ground upload: CF parses command-type
+ * messages at CF_PduCmdMsg_t's ph offset, so the primary is stamped by hand
+ * from the compile-time MID and the 2-byte command secondary is zero-filled;
+ * the PDU begins where CF's command struct says it begins.
  */
 static void CF_TCP_InjectPdu(const uint8 *Pdu, size_t PduLen)
 {
-    const uint16 Mid       = CF_CH0_RX_MID;
     CFE_Status_t Status;
 
-    CF_TCP_RxScratch.Bytes[0] = (uint8)(Mid >> 8);
-    CF_TCP_RxScratch.Bytes[1] = (uint8)(Mid & 0xFF);
+    memset(CF_TCP_RxScratch.Bytes, 0, CF_TCP_RX_HDR);
+    CF_TCP_RxScratch.Bytes[0] = (uint8)(CF_CH0_RX_MID >> 8);
+    CF_TCP_RxScratch.Bytes[1] = (uint8)(CF_CH0_RX_MID & 0xFF);
     CF_TCP_RxScratch.Bytes[2] = 0xC0; /* unsegmented, sequence 0 */
-    CF_TCP_RxScratch.Bytes[3] = 0x00;
-    CF_TCP_RxScratch.Bytes[4] = (uint8)(((PduLen)-1) >> 8);
-    CF_TCP_RxScratch.Bytes[5] = (uint8)(((PduLen)-1) & 0xFF);
-    memcpy(&CF_TCP_RxScratch.Bytes[CF_TCP_PRIMARY_HDR], Pdu, PduLen);
+    memcpy(&CF_TCP_RxScratch.Bytes[CF_TCP_RX_HDR], Pdu, PduLen);
+    CFE_MSG_SetSize(&CF_TCP_RxScratch.Buf.Msg, (CFE_MSG_Size_t)(CF_TCP_RX_HDR + PduLen));
 
     Status = CFE_SB_TransmitMsg(&CF_TCP_RxScratch.Buf.Msg, true);
     if (Status != CFE_SUCCESS)
@@ -407,15 +419,15 @@ void CF_TCP_AppMain(void)
             if (Status == CFE_SUCCESS)
             {
                 CFE_MSG_GetSize(&BufPtr->Msg, &MsgSize);
-                if (MsgSize > CF_TCP_PRIMARY_HDR &&
-                    (size_t)(MsgSize - CF_TCP_PRIMARY_HDR) <= CF_TCP_PDU_MAX &&
+                if (MsgSize > CF_TCP_TX_HDR &&
+                    (size_t)(MsgSize - CF_TCP_TX_HDR) <= CF_TCP_PDU_MAX &&
                     CF_TCP_AppData.Client[0].Used)
                 {
                     CF_TCP_SendFrame(&CF_TCP_AppData.Client[0],
-                                     &((const uint8 *)&BufPtr->Msg)[CF_TCP_PRIMARY_HDR],
-                                     (size_t)MsgSize - CF_TCP_PRIMARY_HDR);
+                                     &((const uint8 *)&BufPtr->Msg)[CF_TCP_TX_HDR],
+                                     (size_t)MsgSize - CF_TCP_TX_HDR);
                 }
-                else if (MsgSize > CF_TCP_PRIMARY_HDR)
+                else if (MsgSize > CF_TCP_TX_HDR)
                 {
                     CF_TCP_AppData.TxLinkDownDrops++;
                 }
