@@ -61,6 +61,29 @@ vehicle that declares it). A vehicle that mounts nothing extra boots a plane
 whose build never even compiled the organ it lacks — the whole chain from
 mount to object file is derived ([what the scenario rules](what_the_scenario_rules.md)).
 
+Taking a mount away is the same door in reverse, and it reaches the compiler:
+the organ leaves the vehicle's wake-up table (it never boots), the build list
+(its object file is never compiled into the image), and that vehicle's ground
+dictionary (ground cannot command what does not exist). The bench has flown
+this with the eye: the cut plane streams its beacon with no imager
+housekeeping frame at all; the all-parts plane carries it.
+
+Three boundaries on the promise:
+
+- Organs shipped with the core — the scheduler lab and friends — ride every
+  image whatever the scenario says, and the core's own packets are nobody's
+  to scope away.
+- An organ leaves a vehicle only when that vehicle's *last* mount naming it
+  goes: four sun sensors are one app and four table rows, so deleting three
+  leaves the app awake with three entries.
+- The physics frames between the world and a craft stay defined whatever the
+  wake list says — what disappears is the onboard organ and its traffic, not
+  the message.
+
+And the mirror of removal: dropping an organ another one still entails stops
+the door with a named sentence before any compile — nothing boots short
+quietly.
+
 ## 4. Fly it through the yard door
 
 ```bash
@@ -100,14 +123,27 @@ anchors they must not move, and `scripts/firmware.sh check` is green.
 `scripts/check_startup_config.sh` is that sentence flown for the declared
 organ — its `witness.py` is the pattern to borrow.
 
-## 6. When one file is not enough
+## 6. The surfaces you configure
 
-| You are adding | Where it is written |
-| --- | --- |
-| a device the registry has never carried | [adding a part](adding_a_sensor.md) — a row and its byte contract; every derived surface follows |
-| a vehicle name the yard has never launched | [adding a spacecraft](adding_a_spacecraft.md) — a scenario block plus a service pair in `compose.yml` |
-| a new onboard organ (a flight app) | a `registry/apps.toml` row and the app itself; [what the scenario rules](what_the_scenario_rules.md) says when an organ is a row and when it is an app |
+The mission is one file. Three registry files stand behind it, each the
+extension surface for exactly one kind of question:
 
-None of these three changes a line of the machinery above — the registries are
-the extension surface, and the doors read them so the laws hold for whatever
-arrives next.
+| File | You touch it when | One row or block is |
+| --- | --- | --- |
+| `sim/scenarios/*.toml` | every day — this is the mission | one world, one vehicle, its mounts: the only file whose edit changes what flies |
+| `registry/parts.toml` | the fleet carries a device type it never carried | the part's byte contract: the `bskforge` type, the message id, which app a mount wakes, the acceptance exhibit and its bounds — [adding a part](adding_a_sensor.md) walks it |
+| `registry/apps.toml` | a craft grows a new onboard organ | the boot record: plumbing or payload, the ground dictionaries the organ owns, what it entails — [what the scenario rules](what_the_scenario_rules.md) says when that belongs in a row instead |
+| `registry/coverage.toml` | classifying an asset `bskforge` exposes | landed, refused, or not wired yet, with a named first missing hop; a classification that disagrees with the parts registry fails the battery either way, and `docs/coverage.md` is this file rendered |
+
+The tail that is not TOML, so you know what you are not forgetting: a **new
+vehicle name** the yard has never launched needs its service pair in
+`compose.yml` — [adding a spacecraft](adding_a_spacecraft.md) walks it; a
+**new part's bytes** enter through the EDS contracts in
+`cfs_mission/mission/orrery_defs/eds/`; a **new organ** is app source beside
+the core; and `cfs.lock` pins the core, which is never edited to bend it.
+Every other TOML in the repository is Python's own plumbing
+(`pyproject.toml`, `ty.toml`), not mission configuration.
+
+None of the registries names a scenario, and no scenario names a registry —
+the generators marry the two, so the doors read the registries and every law
+above holds for fleets nobody has written yet.
