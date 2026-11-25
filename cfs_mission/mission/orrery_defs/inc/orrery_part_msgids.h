@@ -11,19 +11,19 @@
 #include "cfe_core_api_base_msgids.h"
 #include "orrery_part_topicids.h"
 
-/** \brief GNSS receiver (orbital knowledge, KN/KN2) (part "gnss") */
+/** \brief GNSS receiver (orbital knowledge) (part "gnss") */
 #define BSK_LINK_NAV_STATE_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_NAV_STATE_TLM_TOPICID)
 
-/** \brief onboard knowledge bundle (P4b; wheels/ST/CSS/mag in one frame) (part "onboard") */
+/** \brief onboard knowledge bundle (wheels/ST/CSS/mag in one frame) (part "onboard") */
 #define BSK_LINK_ONBOARD_STATE_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_ONBOARD_STATE_TLM_TOPICID)
 
-/** \brief star tracker (attitude knowledge, REG exit) (part "attitude") */
+/** \brief star tracker (attitude knowledge) (part "attitude") */
 #define BSK_LINK_ATTITUDE_STATE_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_ATTITUDE_STATE_TLM_TOPICID)
 
 /** \brief Optical navigation (planet knowledge from rendered images, CAM) (part "opnav") */
 #define BSK_LINK_OPNAV_STATE_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_OPNAV_STATE_TLM_TOPICID)
 
-/** \brief Camera device state (CAM v2b: confirmed shutter, rate, captures, store outlet) (part "camstate") */
+/** \brief Camera device state (confirmed shutter, rate, captures, store outlet) (part "camstate") */
 #define BSK_LINK_CAM_STATE_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_CAM_STATE_TLM_TOPICID)
 
 #endif /* ORRERY_PART_MSGIDS_H */

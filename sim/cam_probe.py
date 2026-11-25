@@ -5,24 +5,24 @@ CAM_HK (what the FSW COMMANDED) and BSK_LINK_CAM_STATE_TLM (what the device
 CONFIRMS) must converge - and their divergence is allowed to exist only in
 the flight-software refusal path, where EVS says so. Nothing here may move
 physics: the digest pair (control flight vs this spam cadence, flown by
-scripts/check_cam_v2a.sh) is the argument, this probe is the witness.
+scripts/check_cam_command.sh) is the argument, this probe is the witness.
 
 Three modes:
 
   control  send NOTHING, watch only: the eye runs as TOML built it - open,
            at scenario rate, captures rising. The control leg of the digest
            pair; its verdict is that the link is alive and nothing moved.
-  spam     the v2a cadence: close + rerate after the boot stream, reopen,
+  spam     the command cadence: close + rerate after the boot stream, reopen,
            two refusals at the app (the B1 zero, a shutter of 2), one
            ghost-eye order the app MUST accept and only the sim door
            refuses (the divergence pair, on purpose), then restore.
            Verdict: every accept landed on BOTH views, every app refusal
-           moved the error counter and nothing else, the v2b/v2c promises
+           moved the error counter and nothing else, the record/transfer promises
            stayed at their honest zero (there: no record_rate in TOML).
-  record   the v2b store outlet, flown by scripts/check_cam_v2b.sh: no
+  record   the store outlet, flown by scripts/check_cam_record.sh: no
            uplink at all. The four-number report, CamState's RECORDED
            tally, and CamStorage's STORED ledger must fill up unprompted
-           - while FramesTransferred stays zero until v2c earns it.
+           - while FramesTransferred stays zero until the ground asks for a file.
 
 Like every probe here it speaks the mission's own schema (build_eds), so a
 field rename is a crash at startup, not a silently wrong offset.
@@ -95,7 +95,7 @@ class CamState:
         self.shutter = u(".Shutter")
         self.rate = wire_float(pkt, model.byte_offset(".RenderRateS"))
         self.captured = u(".Captured")
-        self.frames_recorded = u(".FramesRecorded")  # store outlet sends (v2b)
+        self.frames_recorded = u(".FramesRecorded")  # store outlet sends
 
     def key(self) -> tuple[int, float]:
         """The state identity: transitions are (shutter, rate) pairs."""
@@ -110,7 +110,7 @@ class CamState:
 
 
 class CamStorage:
-    """One BSK_LINK_CAM_STORAGE_TLM: bsk_link's /cf/img ledger (v2b)."""
+    """One BSK_LINK_CAM_STORAGE_TLM: bsk_link's /cf/img ledger."""
 
     def __init__(self, pkt: bytes, model: Packet) -> None:
         """Decode the store ledger off the beacon bytes."""
@@ -134,7 +134,7 @@ def set_config(model: Packet, seq: int, shutter: int, camera_id: int, rate_s: fl
 def main(argv: list[str] | None = None) -> int:
     """Drive (or just watch) one camera flight; returns process exit code."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--instance", type=int, default=0, help="fleet port block (D9)")
+    ap.add_argument("--instance", type=int, default=0, help="fleet port block")
     ap.add_argument("--mode", choices=("control", "spam", "record"), default="spam")
     ap.add_argument("--duration", type=float, default=56.0, help="wall seconds to watch")
     args = ap.parse_args(argv)
@@ -160,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # cadence (spam), in wall seconds from connect; the paced sim keeps these
     # ~= sim seconds. The close waits for the boot stream to end (firstPass
-    # streams 11 renders past every gate - closing before it finishes would
+    # streams 11 renders past every check - closing before it finishes would
     # grade the shutter against a pattern it does not own). The ghost-eye
     # command is the divergence exhibit ON PURPOSE: the FSW must accept a
     # well-formed order for an eye this bird does not have - the app cannot
@@ -249,9 +249,9 @@ def main(argv: list[str] | None = None) -> int:
             reasons.append(
                 f"eye never streamed: captured={last_cs.captured} after {args.duration:g}s"
             )
-        verdict = "CAM V2A CONTROL OK" if not reasons else "CAM V2A CONTROL FAILED"
+        verdict = "CAM CONTROL OK" if not reasons else "CAM CONTROL FAILED"
     elif args.mode == "record":
-        # CAM v2b: the eye is a payload. Nobody commands anything here - the
+        # The eye is a payload. Nobody commands anything here - the
         # outlet lives in TOML (record_rate) and its whole life must be
         # visible without a single uplink: sim sends (CamState.recorded),
         # bsk_link files (CamStorage), and the four-number HK repeating both.
@@ -276,8 +276,10 @@ def main(argv: list[str] | None = None) -> int:
                     f"{last_store.files_stored}"
                 )
             if last_hk.transferred != 0:
-                reasons.append("FramesTransferred moved before v2c: that is a lie, not a feature")
-        verdict = "CAM V2B OK" if not reasons else "CAM V2B FAILED"
+                reasons.append(
+                    "FramesTransferred moved without a transfer: that is a lie, not a feature"
+                )
+        verdict = "CAM RECORD OK" if not reasons else "CAM RECORD FAILED"
     else:
         if last_hk is None:
             reasons.append("no CAM_HK ever arrived: the commanded view is deaf")
@@ -298,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             if (last_hk.recorded, last_hk.stored, last_hk.transferred) != (0, 0, 0):
                 reasons.append(
-                    "a v2b/v2c counter moved before its phase: that is a lie, not a feature"
+                    "a witness counter moved without its mechanism: that is a lie, not a feature"
                 )
         keys = [t.key() for t in transitions]
         for want, where in ((0, 4.0), (1, 4.0), (1, 2.0)):
@@ -317,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
         else:
             reasons.append("the close window never reached the device view at all")
-        verdict = "CAM V2A OK" if not reasons else "CAM V2A FAILED"
+        verdict = "CAM COMMAND OK" if not reasons else "CAM COMMAND FAILED"
 
     states_txt = keys if args.mode == "spam" else "watched"
     print(f"camstate frames={cs_seen} hk frames={hk_seen} states={states_txt}")

@@ -1,6 +1,6 @@
-"""P6 acceptance: a command scheduled aboard fires on the frame the world says.
+"""Scheduled-execution acceptance: a command scheduled aboard fires on the world's frame.
 
-Full-loop, mission-in-the-loop, LOCKSTEP (same rig as P3): the sim owns the
+Full-loop, mission-in-the-loop, LOCKSTEP (same rig as the closed loop): the sim owns the
 clock at 1 Hz, so "sim time T" is an observable the ground can check against
 the beacon itself. From a COSMOS-role client this drives and proves, in order:
 
@@ -116,9 +116,9 @@ class SpsHkSnapshot:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the P6 scheduled-execution acceptance; returns process exit code."""
+    """Run the scheduled-execution acceptance; returns process exit code."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--instance", type=int, default=0, help="fleet port block (D9) to address")
+    ap.add_argument("--instance", type=int, default=0, help="fleet port block to address")
     ap.add_argument(
         "--duration",
         type=float,
@@ -260,9 +260,9 @@ def main(argv: list[str] | None = None) -> int:
             )
         if last_sps_hk:
             print(last_sps_hk)
-        print(f"P6 SCHEDULED RUN FAILED: {reason}")
+        print(f"SCHEDULED RUN FAILED: {reason}")
         return 1
-    print("P6 SCHEDULED RUN OK")
+    print("SCHEDULED RUN OK")
     return 0
 
 

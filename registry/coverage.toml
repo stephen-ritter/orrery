@@ -1,4 +1,4 @@
-# Parts coverage ledger (D13): every asset bskforge exposes, classified.
+# Parts coverage ledger: every asset bskforge exposes, classified.
 #
 # registry/parts.toml says what a part MEANS on the wire. This file answers the
 # adjacent question, which is the one operators keep asking and which no other
@@ -26,7 +26,7 @@
 # --- status vocabulary ------------------------------------------------------
 #
 #   landed            a landed registry row exists and the circuit flies
-#   barrier           crosses as the D5 tick itself; deliberately never a row
+#   barrier           crosses as the barrier tick itself; never a row
 #   catalog-unlanded  schema + builder exist, no row, no wire yet
 #   command-path      not knowledge: it actuates, so it lands through fcs/sps
 #                     and never earns a MsgId of its own
@@ -42,7 +42,7 @@ bskforge = "schema+builder"
 wire = "BSK_LINK/SensorFrame (the tick itself)"
 first_hop = ""
 scenarios = ["chief.toml", "twin_ops.toml"]
-phase = ""
+owner = ""
 why = """Rate knowledge is the lockstep tick, not an observability part: it is the
 frame every control law is frame-exact against. Giving it a registry row would
 put the barrier on the same footing as a payload instrument (sim/lockstep.py
@@ -56,7 +56,7 @@ bskforge = "schema+builder"
 wire = "BSK_LINK/OnboardState -> BSK_LINK_ONBOARD_STATE_TLM"
 first_hop = ""
 scenarios = ["chief.toml", "twin_ops.toml"]
-phase = ""
+owner = ""
 why = """Four sun sensors, cosines in TOML order, inside the housekeeping bundle row."""
 
 [[type]]
@@ -67,7 +67,7 @@ bskforge = "schema+builder"
 wire = "BSK_LINK/OnboardState -> BSK_LINK_ONBOARD_STATE_TLM"
 first_hop = ""
 scenarios = ["chief.toml", "twin_ops.toml"]
-phase = ""
+owner = ""
 why = """Measured field body-frame, in the bundle row. Its actuator counterpart
 (mtb) is still command-path, so we sense the field without yet pushing on it."""
 
@@ -79,7 +79,7 @@ bskforge = "schema+builder"
 wire = "BSK_LINK/OnboardState + BSK_LINK/AttitudeState -> 0x08D0"
 first_hop = ""
 scenarios = ["chief.toml", "twin_ops.toml"]
-phase = ""
+owner = ""
 why = """the device's own quaternion (scalar-first, C2EP),
 compared to truth's MRP as the representation-free angle gap at tick-exact
 epochs. Also the registry's own fan-out specimen - one TOML line, two frames."""
@@ -92,10 +92,10 @@ bskforge = "schema+builder"
 wire = "BSK_LINK/NavState -> BSK_LINK_NAV_STATE_TLM"
 first_hop = ""
 scenarios = ["chief.toml", "twin_ops.toml"]
-phase = ""
+owner = ""
 why = """a modelled receiver whose declared sigmas ARE the acceptance
 bounds, read out of the manifest that built the plant. The first part where the
-fleet's physics and the gate's rubric share one source."""
+fleet's physics and the check's rubric share one source."""
 
 [[type]]
 name = "camera"
@@ -105,7 +105,7 @@ bskforge = "schema+builder"
 wire = "BSK_LINK/OpNavState -> 0x08D1"
 first_hop = ""
 scenarios = ["camera_ops.toml"]
-phase = ""
+owner = ""
 why = """Vizard paints the frame, the Basilisk camera module receives it, and the
 limb/horizon estimators turn pixels into a planet vector - the OPNAV frame
 carries that KNOWLEDGE (LOS + verdict flags), never the image. The exhibit
@@ -126,7 +126,7 @@ wire = "BSK_LINK/OnboardState -> BSK_LINK_ONBOARD_STATE_TLM (speeds back)"
 command_path = "COSMOS -> fcs law -> BSK_LINK/TorqueCommand -> the plant"
 first_hop = ""
 scenarios = ["chief.toml", "twin_ops.toml"]
-phase = ""
+owner = ""
 why = """The closed loop the project is built on: FSW computes, the world
 applies, the digest records. Every other effector wants this same shape."""
 
@@ -138,7 +138,7 @@ bskforge = "schema+builder"
 command_path = "missing: no FSW dipole law and no command frame to the plant"
 first_hop = "fsw-command"
 scenarios = []
-phase = "P9"
+owner = "authority"
 why = """The magnetometer already streams the field, so sensing is done; what is
 missing is the torque rod and the law that commands it. Momentum management is
 attitude *supervision*, which is the safe-mode study - declaring the effector
@@ -153,7 +153,7 @@ command_path = """partial: sps schedules pulses on the bus; nothing turns them i
     forces world-side"""
 first_hop = "fsw-command"
 scenarios = []
-phase = "P9"
+owner = "authority"
 why = """The cheapest-looking gap here: the SPS app exists and already uploads
 and runs a schedule, but the pulse terminates at the bus. Closing it needs a
 force path (and then pulse-width physics inside a 1 Hz lockstep tick, which is
@@ -167,7 +167,7 @@ bskforge = "schema+builder"
 command_path = "disturbance model, not a command"
 first_hop = "decision"
 scenarios = []
-phase = "P7"
+owner = "digest"
 why = """Not refused on principle - refused on evidence. Drag decays every
 pinned trajectory, and the project's whole argument is a digest ledger that
 means something; until per-configuration baselines exist, adding atmospheric
@@ -182,7 +182,7 @@ bskforge = "schema+builder"
 command_path = "disturbance model, not a command"
 first_hop = "decision"
 scenarios = []
-phase = "P7"
+owner = "digest"
 why = """Same ruling as drag, same reason: a real orbit-secularizing
 disturbance lands with per-configuration baselines, not before them."""
 
@@ -194,7 +194,7 @@ bskforge = "schema+builder"
 command_path = "disturbance model, not a command"
 first_hop = "decision"
 scenarios = []
-phase = "P7"
+owner = "digest"
 why = """Gravity-gradient torque on an extended body would change the attitude
 trajectory the ledger pins - and unlike drag it is a TORQUE, so it lands in the
 control loop rather than beside it."""
@@ -254,14 +254,14 @@ the same story."""
 name = "visualization"
 status = "unused-with-reason"
 why = """The operator's window is COSMOS, and it is graded: a viz path that no
-gate reads is decoration, and decoration in this repo tends to become a claim."""
+check reads is decoration, and decoration in this repo tends to become a claim."""
 
 [[area]]
 name = "camera"
 status = "unused-with-reason"
 why = """the circuit landed (row, wire, firmware table, vizard.lock-pinned renderer),
 but this area measures YARD usage: it flips to `used` when camera_ops.toml has
-flown the pair gate - the LOS exhibit on the live fleet and the anchored digest
+flown the pair check - the LOS exhibit on the live fleet and the anchored digest
 printing unchanged with and without the trailing camera sections. Declared
 before flown: the ledger is a map, not a wish."""
 

@@ -2,7 +2,7 @@
  * bsk_link: Basilisk <-> cFS bridge application.
  *
  * Connects as a ZeroMQ SUB to the Basilisk scenario and decodes the sensor feed with
- * the mission's own EDS schema (ROADMAP D6). The frames are the packed payload of
+ * the mission's own EDS schema. The frames are the packed payload of
  * BSK_LINK/SensorFrame, and the database that describes them is the one edslink/
  * compiles from the same XML that codegen/eds2cosmos turns into the ground
  * definitions - so this app, the simulator and COSMOS cannot disagree about a field
@@ -22,7 +22,7 @@
 #include <zmq.h>
 
 #include "cfe.h"
-#include "cfe_time_msg.h" /* TIME command structs + FC for the D8 timecode sync */
+#include "cfe_time_msg.h" /* TIME command structs + FC for the link timecode sync */
 #include "bsk_link_events.h"
 #include "edslib_binding_objects.h"
 #include "edslib_displaydb.h"
@@ -39,7 +39,7 @@ BSK_LinkAppData_t BSK_LinkAppData;
 static void *BSK_LinkZmqContext  = NULL;
 static void *BSK_LinkZmqSocket   = NULL;
 
-/* Fleet addressing (D9): resolved once at init from the host env, else the
+/* Fleet addressing: resolved once at init from the host env, else the
  * compiled defaults - a real unit compiles its link in and has no env.
  * Copies, not pointers: the env is untrusted and may change under us. */
 #define BSK_LINK_ENDPOINT_MAX 128
@@ -70,7 +70,7 @@ static EdsLib_Id_t BSK_LinkSensorTypeId = EDSLIB_ID_INVALID;
  */
 static EdsLib_Binding_Buffer_Content_t *BSK_LinkFrameBuffer = NULL;
 
-/* Boot handshake (OB): the FitManifest container, resolved like every other
+/* Boot handshake: the FitManifest container, resolved like every other
  * inbound schema. The handshake is NOT a registry row (it is the link's own
  * control chatter, with no MsgId and no ground definition), so it has its own
  * id and buffer beside the sensor frame's. */
@@ -83,7 +83,7 @@ static size_t                           BSK_LinkFitFrameSize = 0;
  * looks like corruption. */
 static size_t BSK_LinkSensorFrameSize = 0;
 
-/* World frames (REG): observability parts no longer each own a triple of
+/* World frames: observability parts no longer each own a triple of
  * statics - the generated registry table names them, and one array slot per
  * row holds what was once per-part ritual: resolved EDS identity, private
  * scratch buffer (decoding one frame must never scribble on another), and
@@ -344,10 +344,10 @@ static bool BSK_Link_ValidateMember(const EdsLib_Binding_DescriptorObject_t *Par
 }
 
 /**
- * Generic world-frame consumer (REG): decode, validate, publish.
+ * Generic world-frame consumer: decode, validate, publish.
  *
  * Observability parts used to ship a bespoke decoder and publisher each
- * (P4b, KN): hand-walked fields into a payload struct, copied to the bus.
+ * hand-walking fields into a payload struct, copied to the bus.
  * The registry knows each container now, so ONE function serves every row
  * of orrery_frames.h:
  *
@@ -470,18 +470,19 @@ static int BSK_Link_WorldFrameLookup(const char *Topic)
 /* -------------------------------------------------------------------------- */
 
 /**
- * Slave the mission clock to the link timecode (D8: the sim is the spacecraft's
- * time source - the HIL pattern in software).
+ * Slave the mission clock to the link timecode (the sim is the
+ * spacecraft's time source - the HIL pattern in software).
  *
  * Every sensor frame carries SimTimeS, the sim instant the frame describes.
  * Promote it to the mission clock with the same TIME ground command the
  * operator uses (SET_MET): on a real bird a timecode unit does this once per
  * tone; here the link does it once per frame - and a frame is one sim second
  * by construction. A frozen sim freezes MET: onboard time advances exactly
- * when sim time does, and a schedule (P6) waits with the sim. Between frames
+ * when sim time does, and the time-tagged schedule waits with the sim.
+ * Between frames
  * the TIME task's 1 Hz software tone free-runs - sub-second wall-clock slop
- * on pure observability traffic, which is what D8 allows ("if it only
- * watches, wall clock is fine"). Control-path logic reads the frame's
+ * on pure observability traffic, which is all a watching link is.
+ * Control-path logic reads the frame's
  * SimTimeS (frame-accurate by definition), never the CFE clock.
  *
  * TIME answers every SET_MET with its own EVS event and counts it in its HK:
@@ -514,7 +515,7 @@ static void BSK_Link_SyncMissionTime(void)
         if (BSK_LinkAppData.TimeSyncCount == 1)
         {
             CFE_EVS_SendEvent(BSK_LINK_TIME_INF_EID, CFE_EVS_EventType_INFORMATION,
-                              "mission MET slaved to link timecode (D8): %u s",
+                              "mission MET slaved to link timecode: %u s",
                               (unsigned int)Cmd.Payload.Seconds);
         }
     }
@@ -666,7 +667,7 @@ static void BSK_Link_ForwardStepAck(const CFE_SB_Buffer_t *BufPtr)
 /**
  * Forward one accepted camera config from the bus out to the Basilisk sim.
  *
- * CAM v2a. The sim drains this topic between ticks and applies it at the next
+ * The sim drains this topic between ticks and applies it at the next
  * frame boundary; nothing here waits for an answer. A failed egress is rare
  * (configs are commanded, not streamed) and loud: the ground will otherwise
  * see CAM_HK.RenderRateCmd frozen against CamState.RenderRateS and chase the
@@ -751,7 +752,7 @@ static void BSK_Link_FitMaskNames(uint32 Mask, char *Out, size_t Size)
 }
 
 /**
- * Compare the three views of this vehicle's fit (OB).
+ * Compare the three views of this vehicle's fit.
  *
  * The world's manifest CLAIMS a fit; this binary was BUILT from a registry
  * digest; the bus STREAMS whatever actually decoded. The two ways they can
@@ -768,7 +769,7 @@ static void BSK_Link_FitMaskNames(uint32 Mask, char *Out, size_t Size)
  *     streams (SILENT), or a stream the manifest denies (DENIED). Both are
  *     facts about this vehicle, not lies about the schema, so the mission flies
  *     and the event names the rows - absence stays declared, never zero-filled
- *     (KN2), and an undeclared stream stays an alarm rather than telemetry.
+ *     and an undeclared stream stays an alarm rather than telemetry.
  *
  * Events fire on TRANSITIONS only: the manifest arrives every tick, and a
  * verdict that repeated itself at 1 Hz would drown the console it reports to.
@@ -869,7 +870,7 @@ static void BSK_Link_EvaluateFit(void)
 }
 
 /**
- * Decode and judge one BSK_LINK/FitManifest (OB).
+ * Decode and judge one BSK_LINK/FitManifest.
  *
  * Only the two handshake fields are read; SimTimeS and Frame exist so the
  * frame reads like every other frame on the wire, and so a stale counter in
@@ -918,7 +919,7 @@ static bool BSK_Link_DecodeFitFrame(const void *Payload, size_t Size)
     return true;
 }
 
-/* CAM v2b store outlet: the sim's IMG chunks become /cf/img files.
+/* Store outlet: the sim's IMG chunks become /cf/img files.
  *
  * The framing is orrery's own and deliberately OUTSIDE the EDS model (the
  * STEP_ACK precedent for non-ground frames): a packed 24 B header - cam id,
@@ -1163,7 +1164,7 @@ static void BSK_Link_DrainOneFrame(void)
     {
         if (BSK_LinkAppData.FitAbort)
         {
-            /* OB: a mission that cannot say WHICH parts it is flying does not
+            /* A mission that cannot say WHICH parts it is flying does not
              * fly. Refusing the tick stalls the lockstep gate, which names the
              * stall in its own log; silently decoding a fit known to be
              * mislabelled would be the worse failure. */
@@ -1186,7 +1187,7 @@ static void BSK_Link_DrainOneFrame(void)
          * because only decoded link bytes are copied into the payload. */
         BSK_Link_PublishSensorFrame();
 
-        /* D8: the timecode this frame carries is now the mission clock. */
+        /* The timecode this frame carries is now the mission clock. */
         BSK_Link_SyncMissionTime();
 
         /* EVS on the first frame and then once per N, so a 1 Hz feed does not
@@ -1203,14 +1204,14 @@ static void BSK_Link_DrainOneFrame(void)
     }
     else if (strcmp(TopicText, BSK_LINK_IMG_TOPIC) == 0)
     {
-        /* CAM v2b store outlet: bytes become files. Fire-and-forget by
+        /* Store outlet: bytes become files. Fire-and-forget by
          * design - counted and reported, never acked; the record of a
          * damaged transfer is the .part file itself. */
         BSK_Link_IngestImageChunk(zmq_msg_data(&Body), zmq_msg_size(&Body));
     }
     else
     {
-        /* Observability frames are registry rows (REG): one generic consumer
+        /* Observability frames are registry rows: one generic consumer
          * per topic in orrery_frames.h, each on its own scratch space and its
          * own MsgId, never part of the barrier. Failure is counted, not
          * fatal - knowledge missing changes the screen, not the physics. */
@@ -1257,7 +1258,7 @@ static int32 BSK_Link_AppInit(void)
 
     memset(&BSK_LinkAppData, 0, sizeof(BSK_LinkAppData));
 
-    /* D9 fleet blocks: before any socket or EVS uses the endpoints. */
+    /* Fleet blocks: before any socket or EVS uses the endpoints. */
     BSK_Link_ResolveEndpoint(BSK_LinkSensorEndpoint, "ORRERY_ZMQ_SENSOR_ENDPOINT");
     BSK_Link_ResolveEndpoint(BSK_LinkCmdEndpoint, "ORRERY_ZMQ_CMD_ENDPOINT");
 
@@ -1283,7 +1284,7 @@ static int32 BSK_Link_AppInit(void)
                  CFE_SB_ValueToMsgId(BSK_LINK_SENSOR_FRAME_TLM_MID), sizeof(BSK_LinkAppData.SensorFrameTlm));
     CFE_MSG_Init(CFE_MSG_PTR(BSK_LinkAppData.CamStorageTlm.TelemetryHeader),
                  CFE_SB_ValueToMsgId(BSK_LINK_CAM_STORAGE_TLM_MID), sizeof(BSK_LinkAppData.CamStorageTlm));
-    /* CAM v2b: the store's home, and the idle seat of a fd that is only
+    /* The store's home, and the idle seat of a fd that is only
      * ever real mid-capture. mkdir is best-effort by law (EEXIST is fine);
      * if the directory genuinely cannot exist, the first chunk's EVS line
      * says so loudly instead of the first frame dying quietly. */
@@ -1312,7 +1313,7 @@ static int32 BSK_Link_AppInit(void)
         CFE_EVS_SendEvent(BSK_LINK_SUBSCRIBE_ERR_EID, CFE_EVS_EventType_ERROR,
                           "step ack subscribe failed, status=%08x; lockstep gate DEAD", (unsigned int)Status);
     }
-    /* Camera config egress (CAM v2a). A failed subscribe costs a bird its
+    /* Camera config egress. A failed subscribe costs a bird its
      * eye's command surface, never its control loop: loud, not fatal. */
     Status = CFE_SB_Subscribe(CFE_SB_ValueToMsgId(BSK_LINK_CAM_CONFIG_TLM_MID), BSK_LinkAppData.CmdPipe);
     if (Status != CFE_SUCCESS)
@@ -1379,7 +1380,7 @@ static int32 BSK_Link_AppInit(void)
         BSK_LinkSensorTypeId = EDSLIB_ID_INVALID;
     }
 
-    /* Boot handshake (OB): resolve the FitManifest schema like every other
+    /* Boot handshake: resolve the FitManifest schema like every other
      * inbound frame. A defs build without the container is reported once and
      * simply leaves the link without a verdict - which the operator learns
      * from the missing FIT event, not from a silent pass. */
@@ -1408,7 +1409,7 @@ static int32 BSK_Link_AppInit(void)
                           "EDS database has no %s; fit handshake disabled", BSK_LINK_FIT_TYPE_NAME);
     }
 
-    /* World frames (REG): resolve every generated table row against the
+    /* World frames: resolve every generated table row against the
      * linked schema, and disable - by name - any row the schema cannot
      * answer for. This is also the runtime registry check: the REAL size of
      * the container must equal the registry's declared size, or the table

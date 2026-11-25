@@ -20,9 +20,9 @@
 #   3. the build itself, and its provenance stamp (`build.sh` ends by stamping a
 #      content hash of its inputs; every launcher then demands that stamp).
 #
-# WHY A FILE AND NOT A LINE IN gates.sh. A gate is executed as
+# WHY A FILE AND NOT A LINE IN verify.sh. A check is executed as
 # `timeout … bash -c "$cmd"`, so it runs in a child shell. Two attempts to make
-# the build gate a shell function failed there - rc=127 ("command not found",
+# the build check a shell function failed there - rc=127 ("command not found",
 # the function was invisible), then rc=125 (`docker: invalid spec: :/work`,
 # because the function came with $REPO, not $REPO's value). A script is the same
 # command a human types, and a script cannot be invisible to anything.

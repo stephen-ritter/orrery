@@ -23,11 +23,11 @@ CAM_AppData_t CAM_AppData;
 
 static void CAM_SendHk(void)
 {
-    /* The four-number report (decision 3): the commanded pair this app
+    /* The four-number report: the commanded pair this app
      * earned, RECORDED from the sim's own CamState, STORED from bsk_link's
-     * ledger - and TRANSFERRED still the honest zero, because v2c has not
-     * landed and a counter that moves before its phase is a lie, not a
-     * feature. Truncation to the 32-bit HK fields is safe by arithmetic:
+     * ledger, and TRANSFERRED counted by CF's own end-of-transaction
+     * telemetry - a counter moves when its mechanism exists, never before.
+     * Truncation to the 32-bit HK fields is safe by arithmetic:
      * one frame per render interval cannot reach 4 billion this century. */
     CAM_AppData.HkTlm.Payload.FramesRecorded = (uint32)CAM_AppData.FramesRecorded;
     CAM_AppData.HkTlm.Payload.FramesStored   = (uint32)CAM_AppData.FilesStored;
@@ -44,7 +44,7 @@ static void CAM_SendHk(void)
  * The stamp is the newest sensor frame's sim time and frame number: "this
  * config was commanded while the vehicle believed it was at t=..." The sim
  * applies at the next frame boundary, so the stamp is attribution, not a
- * deadline - v2a owns no delivery guarantee, and honesty about that is the
+ * deadline - the command surface owns no delivery guarantee, and honesty about that is the
  * whole reason CamState exists as a separate witness.
  */
 static void CAM_ForwardConfig(void)
@@ -108,7 +108,7 @@ static void CAM_HandleSetConfig(const CFE_SB_Buffer_t *BufPtr)
     /* Three refusals, each its own failure mode:
      * - shutter beyond on/off is a schema disagreement, not a value;
      * - camera id 0 names no eye ([[camera]] ids start at 1);
-     * - rate <= 0 or non-finite is B1's divide-by-zero one layer before the
+     * - rate <= 0 or non-finite is a divide-by-zero one layer before the
      *   hardware could take it. The sim door refuses again on the same law:
      *   both sides of the airgap guard the modulo, because the cost of one
      *   side being stale is a dead vehicle. */
@@ -321,8 +321,8 @@ static int32 CAM_AppInit(void)
         {CAM_CMD_MID, "commands"},
         {CAM_SET_CONFIG_MID, "config upload"},
         {CAM_SEND_HK_MID, "housekeeping request"},
-        {BSK_LINK_CAM_STATE_TLM_MID, "cam state (recorded witness, v2b)"},
-        {BSK_LINK_CAM_STORAGE_TLM_MID, "image ledger (stored witness, v2b)"},
+        {BSK_LINK_CAM_STATE_TLM_MID, "cam state (recorded witness)"},
+        {BSK_LINK_CAM_STORAGE_TLM_MID, "image ledger (stored witness)"},
         {CF_EOT_TLM_MID, "file transactions (transferred witness)"},
     };
 

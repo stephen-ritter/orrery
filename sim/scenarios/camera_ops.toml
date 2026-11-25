@@ -18,7 +18,7 @@
 #   pins what runs there via vizard.lock.
 #
 # The camera is a knowledge channel: it feeds no torque, and its presence
-# must not move the trajectory digest - the digest-invariance gate flies
+# must not move the trajectory digest - the digest-invariance check flies
 # this file with and without the trailing sections and demands the same
 # known-good digest. Vizard down is a LOUD stall, not a silent zero: the
 # camera task blocks its tick waiting for a frame, and the lockstep gate
@@ -30,7 +30,7 @@ duration = 120.0
 
 [simulation.dt]
 dynamics = 0.1
-# fsw is the FSW tick: the world gate, sensor frames, beacon and every
+# fsw is the FSW tick: the world check, sensor frames, beacon and every
 # anchored digest ride this rate. It must stay an integer multiple of
 # dynamics, and retuning it re-anchors every baseline - full ceremony.
 fsw = 1.0
@@ -151,7 +151,7 @@ type = "magnetometer"
 name = "mag"
 noise_sigma = 1.0e-8
 
-# KN2 (D13): the vehicle's own GNSS opinion - the manifest picks the part,
+# The vehicle's own GNSS opinion - the manifest picks the part,
 # the plant builds a SimpleNav receiver from it. Delete this block and the
 # NavState stream (0x08CF) goes silent: absence declared, not zero-filled.
 [[spacecraft.sensors]]
@@ -164,7 +164,7 @@ sample_time = 1.0
 # --- the rendered eye (CAM) ----------------------------------------------------
 # bskforge builds the camera module and the Vizard interface; the yard adds
 # the limb/horizon estimators on top (the onboard knowledge model is the
-# harness's job - D7) and streams only the ESTIMATE onto the link as an
+# harness's job) and streams only the ESTIMATE onto the link as an
 # OPNAV frame. save_images stays off: pixels that need archiving stop being
 # a knowledge channel.
 

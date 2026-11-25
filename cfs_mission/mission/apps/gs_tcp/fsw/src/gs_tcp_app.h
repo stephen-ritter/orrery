@@ -56,7 +56,7 @@ typedef struct
 {
     CFE_SB_PipeId_t TlmPipe;
 
-    /* Fleet-resolved ports (D9): compiled defaults unless the host env
+    /* Fleet-resolved ports: compiled defaults unless the host env
      * names another block; every print and bind uses THESE, not the
      * defines, so the log always tells the truth about this instance. */
     uint16   TlmPort;     /* from ORRERY_TLM_PORT or default */

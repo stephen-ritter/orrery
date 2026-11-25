@@ -1,4 +1,4 @@
-"""Fleet addressing (D9, refined by D10): port blocks and derived identity.
+"""Fleet addressing: port blocks and derived identity.
 
 One scenario file is one world; every ``[[spacecraft]]`` block in it is one
 vehicle, and NOTHING about a vehicle is hand-declared:
@@ -17,8 +17,8 @@ two ground ports - the operator's mental model: four ports per vehicle,
 two ground + two link, plus the two observability channels that never
 cross to cFS.
 
-The D9 manifest layer (fleet/birds/, the ``[bird]`` tag, hand-written
-targets) is retired per D10: the scenario file IS the fleet, and
+The manifest layer (fleet/birds/, the ``[bird]`` tag, hand-written
+targets) is retired: the scenario file IS the fleet, and
 ``scenario_vehicles()`` below is the derivation that replaced it.
 """
 
@@ -91,7 +91,7 @@ def ports(instance: int) -> Ports:
         link_cmd=link + 1,
         truth=link + 10,
         echo=link + 11,
-        # P5: the TRUTH gateway's ground-side TCP (tlm-only, D2-shaped).
+        # The TRUTH gateway's ground-side TCP (tlm-only, link-shaped).
         # Its own block so a truth link can never shadow a flight port,
         # and the +20 ground stride keeps vehicle N's two ground pairs apart.
         truth_tcp=TRUTH_GROUND_BASE + GROUND_STRIDE * instance,
@@ -110,7 +110,7 @@ def truth_target(cosmos_target: str) -> str:
 
 
 def sat_target(spacecraft_name: str) -> str:
-    """The COSMOS flight target for a spacecraft name (D10 derivation).
+    """The COSMOS flight target for a spacecraft name (name derivation).
 
     ``"chief" -> "SAT_CHIEF"``, ``"deputy" -> "SAT_DEPUTY"``. bskforge
     already rejects duplicate spacecraft names inside a scenario, so this
@@ -122,7 +122,7 @@ def sat_target(spacecraft_name: str) -> str:
 
 @dataclass(frozen=True)
 class Vehicle:
-    """One ``[[spacecraft]]`` block, addressed: everything derived (D10)."""
+    """One ``[[spacecraft]]`` block, addressed: everything derived."""
 
     name: str
     instance: int  # block index, 0-based - the port slot
@@ -149,7 +149,7 @@ def scenario_spacecraft(path: str | Path) -> list[str]:
 
 
 def scenario_vehicles(path: str | Path, port_base: int = 0) -> list[Vehicle]:
-    """The full derived fleet of one scenario file (D10).
+    """The full derived fleet of one scenario file.
 
     Block order is the frequency plan: block 0 gets the legacy block. A
     reordered file reassigns ports on purpose - the plugin pin test fails
@@ -180,7 +180,7 @@ def flight_interface(vehicle: Vehicle) -> str:
 
 
 def truth_interface(vehicle: Vehicle) -> str:
-    """The COSMOS interface name serving a vehicle's truth gateway (P5)."""
+    """The COSMOS interface name serving a vehicle's truth gateway."""
     return f"{vehicle.truth_target}_INT"
 
 
@@ -194,7 +194,7 @@ def add_link_args(parser: argparse.ArgumentParser) -> None:
         "--instance",
         type=int,
         default=0,
-        help="fleet port block (D9): beacon 5050+2N, link farm 5580+20N",
+        help="fleet port block: beacon 5050+2N, link farm 5580+20N",
     )
     parser.add_argument(
         "--sensor-endpoint", default=None, help="default: this instance's sensor port"

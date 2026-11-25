@@ -1,6 +1,6 @@
-"""Multi-vehicle lockstep tests (D10 / R2): one world step, every ack first.
+"""Multi-vehicle lockstep tests: one world step, every ack first.
 
-These are the ONLY tests that exercise the fleet gate without containers:
+These are the ONLY tests that exercise the fleet check without containers:
 fake ackers (ZMQ SUB+PUSH threads speaking real EDS frames) answer one or
 both channels and prove the three fleet contracts:
 
@@ -83,7 +83,7 @@ class _Acker:
 
     With ``torque`` set it behaves like fcs in ENABLE mode: a TorqueCommand for
     the frame rides the same PUSH socket BEFORE the StepAck (the ordering the
-    real app documents and the gate relies on).
+    real app documents and the check relies on).
     """
 
     def __init__(
@@ -147,7 +147,7 @@ def _channel(name: str, sink: list[np.ndarray]) -> RigChannel:
 
 
 def test_channel_publishes_only_registered_topics() -> None:
-    """Observer topics must be landed registry rows (REG).
+    """Observer topics must be landed registry rows.
 
     A provider on an unregistered topic would reach bsk_link as its
     "unexpected topic" event mid-flight; better to refuse the wiring before

@@ -48,7 +48,7 @@ Two rules hold that table together:
 1. **The hardware has to be a named type in bskforge's schema.** A fleet file names
    hardware; it does not build it. Hardware that no schema type names is invisible
    to the registry row, to the fit manifest the boot handshake compares, to the
-   coverage ledger, and to the acceptance gate — its readings would be a wire
+   coverage ledger, and to the acceptance check — its readings would be a wire
    nothing grades. So a device bskforge cannot model yet is upstream work first,
    with its own tests, and a registry row here afterwards. Every fleet in this
    repository is read through bskforge's audited profile — `sim/fleet_policy.py`
@@ -65,9 +65,9 @@ Two rules hold that table together:
    the world did must stay independently checkable.
 4. **Acceptance carries no numbers of its own.** A row stores zero sigmas. It
    names the *field* in the vehicle's device block that carries the sigma, and the
-   acceptance gate reads the value out of the fleet file that built the device.
+   acceptance check reads the value out of the fleet file that built the device.
    Change the sigma and the bound moves with it, and a fitted device with a
-   missing or zero sigma stops the gate by name — a bound of nothing grades a
+   missing or zero sigma stops the check by name — a bound of nothing grades a
    tautology.
 
 ## Before you write anything
@@ -86,7 +86,7 @@ print(sorted(v.model_fields['type'].default for v in get_args(get_args(SensorCon
 ```
 
 **The question: how would you know the part is lying?** That answer becomes the
-row's exhibit — the comparison the acceptance gate runs against the truth wire. If
+row's exhibit — the comparison the acceptance check runs against the truth wire. If
 you cannot answer it, register the part as *unlanded* and stop there; landing a
 part nobody can judge buys you a wire and no evidence.
 
@@ -126,7 +126,7 @@ range_sigma = "range_noise"        # a FIELD NAME in the vehicle's device block,
 
 [part.exhibit]
 kind = "truth_pair"
-compare = "scalar"                 # must be a comparison the acceptance gate can execute
+compare = "scalar"                 # must be a comparison the acceptance check can execute
 flight_packet = "BSK_LINK_ALTITUDE_STATE_TLM"
 truth_packet = "TRUTH_STATE_TLM"
 floor = 0.5                        # under floor x sigma the wire is an oracle, not a sensor
@@ -215,19 +215,19 @@ the world never shuffles its own publishes, because the trajectory digest hashes
 the stream.
 
 Absence is free here, and is the point: the `if` means a vehicle without the
-device streams nothing, says so in the gate's own text, and reports a clean boot
+device streams nothing, says so in the check's own text, and reports a clean boot
 with that part's bit clear. Nothing is zero-filled anywhere on this path. Note
 what the property asks: whether the plant wired us a message outlet for the
 device, not whether somebody remembered to set a flag — the second kind of fact
 goes stale on the day it matters.
 
-### 6. Teach the acceptance gate, if it cannot judge you yet
+### 6. Teach the acceptance check, if it cannot judge you yet
 
-`compare` names a comparison the gate knows how to execute. A landed row whose
-`compare` the gate cannot honestly run **stops the run and names the row** — the
+`compare` names a comparison the check knows how to execute. A landed row whose
+`compare` the check cannot honestly run **stops the run and names the row** — the
 exhibit is a capability, so a new one is implemented in `sim/truth_exhibits.py`
 alongside the guard that decides what is executable, in the same round the part
-lands. Landing before the comparison exists turns the offline gate red on purpose.
+lands. Landing before the comparison exists turns the offline check red on purpose.
 
 ### 7. Build, then give the ground its copy
 
@@ -249,7 +249,7 @@ no-op and will cost you an afternoon.
 
 Set `landed = true`. Then classify it in the ledger: the part *type* has an entry
 in `registry/coverage.toml` whose `status` becomes `"landed"` — and if bskforge's
-schema has a type that no ledger row classifies, the coverage gate is already
+schema has a type that no ledger row classifies, the coverage check is already
 red, because completeness is checked against upstream rather than against a copy
 of upstream. Regenerate the generated half of `docs/coverage.md`:
 
@@ -258,11 +258,11 @@ uv run python -m sim.coverage --write
 ```
 
 Both directions are cross-checked, so landing a row without the ledger entry — or
-announcing a part in the ledger whose row never landed — fails the offline gate by
+announcing a part in the ledger whose row never landed — fails the offline check by
 name. Then:
 
 ```bash
-bash scripts/gates.sh                  # the whole ladder: mirrors, build, and the live fleet
+bash scripts/verify.sh                  # the whole ladder: mirrors, build, and the live fleet
 ```
 
 Individual commands, when you want one of them:
@@ -275,7 +275,7 @@ bash scripts/fly_fleet.sh                        # one world, two vehicles, both
 ```
 
 A new wire is allowed to change **nothing inside the trajectory**: the pinned
-digests in `tests/baselines/` must stay bit-identical, and the gates compare them
+digests in `tests/baselines/` must stay bit-identical, and the checks compare them
 bit-exactly rather than within a tolerance. If a baseline does move, that is a
 decision — re-anchor deliberately, in the open, and say so in the commit. The
 exception is an actuator: closing a loop is *supposed* to move the trajectory, and
@@ -295,7 +295,7 @@ the digest moving on purpose is the evidence that it closed.
 | `evs_info` / `evs_info_id` | the consumer's own voice on the event bus | the event-id audit |
 | `consumer` / `subscribers` | which flight-software app reads the frame | audited against the app's source |
 | `[part.declared]` | field *names* whose values are the acceptance bounds | read out of the fleet file at run time |
-| `[part.exhibit]` | the promise the part arrives with: what is compared, against what, within what | the acceptance gate refuses what it cannot execute |
+| `[part.exhibit]` | the promise the part arrives with: what is compared, against what, within what | the acceptance check refuses what it cannot execute |
 
 ## What the part arrives with, for free
 

@@ -1,7 +1,7 @@
 """eds2cosmos: generate COSMOS cmd/tlm definitions and the gs_tcp MsgId table.
 
-Input  : the EDS XML of the pinned cFS checkout (D3: EDS is the single source
-         of truth) plus the mission define files (topic IDs).
+Input  : the EDS XML of the pinned cFS checkout (the EDS is the single
+         source of truth) plus the mission define files (topic IDs).
 Output : OpenC3 ``.txt`` command/telemetry definitions for the SAT_CHIEF target
          and a C header (MsgId subscription table) for the generic ``gs_tcp``
          gateway app. Regenerate after any cFS bump; never hand-edit output.
@@ -167,7 +167,7 @@ def _emit_packet_lines(pkt: Packet, target: str = TARGET) -> list[str]:
 def emit_cosmos(packets: list[Packet], target: str = TARGET) -> tuple[str, str]:
     """Return (cmd_defs_text, tlm_defs_text); target is the COSMOS target name.
 
-    Every vehicle's defs are generated the same way (D9: heterogeneity is an
+    Every vehicle's defs are generated the same way (heterogeneity is an
     input, not a fork): only the target column and file names move.
     """
     header = (
@@ -185,7 +185,7 @@ def emit_cosmos(packets: list[Packet], target: str = TARGET) -> tuple[str, str]:
 # (CFE_EDS_ENABLED=false) message. Excluded from BOTH the ground defs and the
 # beacon subscription: a wrong def misidentifies live traffic, and a
 # subscription without a def is an UNKNOWN-packet storm on the ground.
-# sim/wire_audit.py is the gate that keeps this list honest in both
+# sim/wire_audit.py is the check that keeps this list honest in both
 # directions; drop an entry when the XML (or cFS) is fixed upstream.
 MODEL_DRIFT_EXCLUSIONS = {
     "CF_HK_TLM": "CF EDS XML does not match the default (non-EDS) CF_HkPacket "
@@ -193,7 +193,7 @@ MODEL_DRIFT_EXCLUSIONS = {
 }
 
 # Packets that are legitimate on the bus but must never reach the ground feed
-# (D5 amendment, P3f): the lockstep barrier ack is link protocol - fcs answers
+# by design: the lockstep barrier ack is link protocol - fcs answers
 # every processed sensor frame, which is exactly the chatter an operator must
 # not see. Excluded from the defs as well, on purpose: if it ever leaked onto
 # the beacon, COSMOS stamps it UNKNOWN, so the absence of a def is the
@@ -258,7 +258,7 @@ def emit_c_cmd_table(packets: list[Packet], cfs_sha: str) -> str:
     from the same EDS model that emits the COSMOS cmd defs, so a command the
     operator can send is by construction a command the spacecraft can judge:
     unknown MsgId/Fc, wrong payload length, and queue overflow are flight
-    rejections with counters (P6), never silently executed garbage.
+    rejections with counters, never silently executed garbage.
 
     One row per (MsgId, function code): FC-dispatched packets contribute a
     row per declared subtype; plain and payload-bearing packets carry FC 0
@@ -337,10 +337,10 @@ def build_eds(cfs: Path, mission_defs: Path) -> Eds:
 
 
 # ---------------------------------------------------------------------------
-# P5 truth stream: BSK_LINK/TruthState is a bare EDS container - no TopicId
+# The truth stream: BSK_LINK/TruthState is a bare EDS container - no TopicId
 # by design (the tripwire test guarantees no TRUTH packet can exist in cFS),
 # so it never appears in packets(). The truth target's one def is generated
-# from it directly, behind a tiny GROUND-owned header. D6's no-forging rule
+# from it directly, behind a tiny GROUND-owned header. The no-forging rule
 # guards the FLIGHT hop; this frame never crosses the satellite boundary, so
 # the ground may define its own protocol - and it must, because COSMOS needs
 # an id item to identify a headerless stream.
@@ -363,7 +363,7 @@ def emit_cosmos_truth(items: list[Item], target: str) -> str:
         f"content {content_digest(items)} - DO NOT EDIT",
         "",
         f'TELEMETRY {target} TRUTH_STATE_TLM BIG_ENDIAN "ideal navigators truth at one '
-        'sim instant - ground-only stream (P5 provenance boundary: never on cFS)"',
+        'sim instant - ground-only stream (provenance boundary: never on cFS)"',
         f"  APPEND_ID_ITEM PACKET_ID 8 UINT {TRUTH_PACKET_ID} "
         '"ground truth stream packet id (ground-owned framing, not CCSDS)"',
         '  APPEND_ITEM HEADER_RESERVED 8 UINT "zero on the wire"',

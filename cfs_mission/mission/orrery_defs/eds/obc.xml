@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    orrery OBC health & status (hk_app, P4b-3) - hand-authored per D3.
+    orrery OBC health & status (hk_app) - hand-authored on the fcs.xml idiom.
 
     The spacecraft's own housekeeping: what the OBC can see on its own bus,
-    sampled by the OBC, stamped with mission time (D8). Everything here is
+    sampled by the OBC, stamped with mission time. Everything here is
     knowledge the satellite has of ITSELF - link frame counts it ingested,
     actuator feedback it decoded, the mode its controller last reported on
-    the bus - never navigator truth (that lives on the truth stream, P5).
+    the bus - never navigator truth (that lives on its own stream).
 
     Design rule: hk_app touches no other app's memory and sends no requests.
     It counts what passes its pipe and mirrors the freshest bus reports, so

@@ -1,15 +1,15 @@
-"""KN2: the GNSS receiver is plant hardware, declared in the manifest.
+"""The GNSS receiver is plant hardware, declared in the manifest.
 
-The scenario-layer error model (``sim/gps.py``, KN) retired the way the
-Python gyro model retired at P4a: a ``type = "gpsReceiver"`` line now
+The scenario-layer error model (``sim/gps.py``) retired the way the
+Python gyro model retired: a ``type = "gpsReceiver"`` line now
 builds a native ``SimpleNav`` in the world model, and the harness reads
 the device's output message. These tests pin the three promises that
 graduation made:
 
-1. the fleet manifests fit receivers, and p5 reads its bounds from them;
+1. the fleet manifests fit receivers, and coverage reads its bounds from them;
 2. the NAVSTATE bytes ARE the plant message - differ at declared scale,
    inside Basilisk's 3-sigma Gauss-Markov clamp, never recomputed here;
-3. rename-proof luck (D10-R1): the receiver's noise seed lives in the
+3. rename-proof luck: the receiver's noise seed lives in the
    schema default, so two identically-declared vehicles draw identical
    noise and renaming one re-draws nothing.
 
@@ -80,7 +80,7 @@ def test_fleet_manifests_fit_receivers() -> None:
         "chief": {"gnss": (15.0, 0.01), "attitude": (1.0e-4,), "opnav": None},
         "deputy": {"gnss": (15.0, 0.01), "attitude": (1.0e-4,), "opnav": None},
     }
-    # and the sigmas p5 judges by are the schema's own defaults, restated
+    # and the sigmas the check judges by are the schema's own defaults, restated
     # nowhere: a loaded config agrees with the raw-file read.
     config = load_scenario(TWIN_TOML)
     gps = next(s for s in config.spacecraft[0].sensors if s.type == "gpsReceiver")
@@ -88,7 +88,7 @@ def test_fleet_manifests_fit_receivers() -> None:
 
 
 def test_plant_receiver_is_the_nav_source_when_fitted(tmp_path: Path) -> None:
-    """With the line in the TOML, the fix IS the SimpleNav message (KN2)."""
+    """With the line in the TOML, the fix IS the SimpleNav message."""
     scenario = fz.ForgeScenario(_write(tmp_path, "rx.toml", _receiver_toml("sc1")))
     assert scenario.body.has_plant_nav
     scenario.run_to(3.0)  # three scans, no control boundary crossed
@@ -117,7 +117,7 @@ def test_vehicle_without_receiver_streams_no_nav(tmp_path: Path) -> None:
 
 
 def test_rename_cannot_redraw_the_receivers_luck(tmp_path: Path) -> None:
-    """Identical declarations, different names: identical noise (D10-R1).
+    """Identical declarations, different names: identical noise.
 
     The seed lives in the schema default, not the ModelTag - so two vehicles
     that declared the same receiver draw the same realization, and renaming

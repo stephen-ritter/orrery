@@ -27,14 +27,14 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
         "<4dQ",
         {"SimTimeS": 2.25, "TorqueSumB": (0.001, -0.002, 0.003), "Frame": 7},
     ),
-    # The lockstep barrier ack (D5 amendment): 8 pad bytes between Mode and the
+    # The lockstep barrier ack: 8 pad bytes between Mode and the
     # counter are the EDS PaddingEntry's zero bytes, explicitly in the format -
     # the model packs sequentially, and this test is where that stays honest.
     "StepAck": (
         "<dQb3xI",
         {"SimTimeS": 4.5, "Frame": 9, "Mode": 1, "TorquesIssued": 7},
     ),
-    # The P4b observability companion: wheel feedback + instruments, all LE
+    # The onboard observability companion: wheel feedback + instruments, all LE
     # doubles around the frame counter. 128 B is also the C twin's contract
     # (orrery_bus_msg.h) and the defs' item count (4 header + 16 payload).
     "OnboardState": (
@@ -48,7 +48,7 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
             "MagB": (-2.6e-5, 5e-6, 1.1e-5),
         },
     ),
-    # KN: the GNSS opinion. 64 B is the C twin's contract (orrery_bus_msg.h)
+    # The GNSS opinion. 64 B is the C twin's contract (orrery_bus_msg.h)
     # and the defs' item count (4 header + 8 payload).
     "NavState": (
         "<dQ6d",
@@ -59,7 +59,7 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
             "VBnN": (-0.3, 7.1, 0.2),
         },
     ),
-    # REG exit part: the star tracker's own opinion, quaternion only. 48 B is
+    # The star tracker's own opinion, quaternion only. 48 B is
     # what the registry row declares and what the generic consumer checks at
     # boot; scalar-first is a convention pinned against the device elsewhere.
     "AttitudeState": (
@@ -70,7 +70,7 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
             "StqBn": (0.9998, 0.01, -0.02, 0.03),
         },
     ),
-    # OB handshake: not a part and not telemetry - a declared fit in eight
+    # Fit handshake: not a part and not telemetry - a declared fit in eight
     # bytes plus the registry digest the world was started with. The hash here
     # is a dummy on purpose: this test pins the LAYOUT, identity is compared at
     # boot between the baked-in digest and the world's own.
@@ -78,7 +78,7 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
         "<dQII",
         {"SimTimeS": 8.5, "Frame": 17, "DeclaredBits": 0x5, "RegistryHash": 0xDEADBEEF},
     ),
-    # CAM v2a/v2b: the device's confirmed view is packed by the sim through
+    # The camera's confirmed view is packed by the sim through
     # this same DB and read by a hand-written C twin (cam app subscribes it),
     # so the layout needs a pin on this side too - 56 B is parts.toml's row.
     "CamState": (
@@ -93,7 +93,7 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
             "FramesRecorded": 1,
         },
     ),
-    # CAM v2b ledger: written by bsk_link's C struct, read on the ground via
+    # The storage ledger: written by bsk_link's C struct, read on the ground via
     # the generated defs. 32 B, the orrery_bus_msg.h assert's other half.
     "CamStorage": (
         "<dQQQ",

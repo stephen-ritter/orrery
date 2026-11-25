@@ -98,7 +98,7 @@ def test_command_def_syntax_v6(packets: list[Packet]) -> None:
 def test_wire_endianness_matches_native_target(packets: list[Packet]) -> None:
     """Headers are network-order; payload is target-native (x86 = little).
 
-    Regression guard for the P2 wire capture: an HK NOOP event decoded as
+    Regression guard for the first wire capture: an HK NOOP event decoded as
     big-endian EVS EventID read 1024 instead of 4.
     """
     hk = _pkt(packets, "HK_HK_TLM")
@@ -241,7 +241,7 @@ def test_cmd_table_is_the_sps_dictionary(packets: list[Packet]) -> None:
     the commands the ground can send, with sizes from the same model that
     emits the COSMOS cmd defs.
 
-    P6's acceptance rests on this table being the truth: an unknown schedule
+    Scheduled execution rests on this table being the truth: an unknown schedule
     is REFUSED at the uplink (EVS + HK counter), and an accepted one must
     fire as a message its target app accepts at dispatch - which is only
     guaranteed if the stored payload length equals the wire size the EDS
@@ -283,7 +283,7 @@ def test_schedule_envelope_wire(packets: list[Packet]) -> None:
 
 
 def test_custom_app_packets(packets: list[Packet]) -> None:
-    """P3c custom apps (bsk_link frames, fcs) carry the pinned MsgIds.
+    """The custom apps (bsk_link frames, fcs) carry the pinned MsgIds.
 
     These numbers are simultaneously: EDS XML topics (ground defs here),
     orrery_defs/inc/orrery_topicids.h (flight C, test below), and the
@@ -308,7 +308,7 @@ def test_truth_never_a_bus_packet(packets: list[Packet]) -> None:
     """TruthState has no TopicId ON PURPOSE: truth must not exist inside cFS.
 
     If someone assigns it one, the satellite would start "knowing" simulator
-    truth and the P5 two-target separation dies. This assertion is the tripwire.
+    truth and the two-target separation dies. This assertion is the tripwire.
     """
     assert not any("TRUTH" in p.name for p in packets)
 
@@ -332,7 +332,7 @@ def test_set_gain_carries_its_payload(packets: list[Packet]) -> None:
 
 
 def test_wheel_limit_command_is_a_real_payload_packet(packets: list[Packet]) -> None:
-    """P4b-2 threshold upload: same own-packet pattern as SET_GAIN, one f64."""
+    """Threshold upload: same own-packet pattern as SET_GAIN, one f64."""
     limit = _pkt(packets, "FCS_SET_WHEEL_LIMIT")
     assert any(item.name.endswith(".WheelLimit") for item in limit.items)
     assert limit.total_bytes() == 16  # 8 B command header + 8 B threshold
@@ -367,7 +367,7 @@ def test_bus_struct_header_matches_model(packets: list[Packet]) -> None:
         total = _pkt(packets, name).total_bytes()
         # 16 B, not 14: the cFS telemetry header is CCSDS primary (6) + cFS
         # time header with its alignment tail, modelled and on the wire
-        # identically (P2b wire audit). CFE_MSG_TelemetryHeader_t agrees, which
+        # identically (wire audit). CFE_MSG_TelemetryHeader_t agrees, which
         # is exactly why both sides pin these numbers.
         assert total == payload + 16, (
             f"{name}: defs {total} != C header {payload} + 16 B tlm header"
@@ -404,7 +404,7 @@ def test_topicids_header_mirrors_xml() -> None:
 
 
 def test_time_cmd_mid_derives_from_topicids() -> None:
-    """D8 time sync rides the TIME service command port: MID == base + topic 5.
+    """Time sync rides the TIME service command port: MID == base + topic 5.
 
     bsk_link slaves mission MET to the link timecode with a SET_MET over
     ORRERY_TIME_CMD_MID; there is no EDS/defs packet for it (a cFE service
@@ -482,7 +482,7 @@ def test_target_is_an_input_not_a_fork(eds: Eds) -> None:
 
 
 def test_truth_defs_generated_from_the_bare_container(eds: Eds) -> None:
-    """Truth defs come from the bare container, not a cFS packet (P5).
+    """Truth defs come from the bare container, not a cFS packet.
 
     TRUTH_STATE_TLM is generated from BSK_LINK/TruthState itself - the
     headerless container that (by the tripwire above) can never appear in

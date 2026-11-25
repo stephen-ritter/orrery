@@ -1,4 +1,4 @@
-# orrery detumble plant, built by bskforge (ROADMAP W3, decision D7).
+# orrery detumble plant, built by bskforge.
 #
 # Pure plant on purpose: NO [spacecraft.fsw] section. The control law is
 # flight software - it lives in cFS fcs_app and reaches this body through the

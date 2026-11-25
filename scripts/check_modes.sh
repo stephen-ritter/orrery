@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# P4b-2 modes run: the mode supervisor trips, refuses, and recovers, live.
+# Modes run: the mode supervisor trips, refuses, and recovers, live.
 #
 # Same bones as fly_world.sh (mission up, plant in lockstep, ground client
 # drives, trap cleans up) but the default plant is the chief TOML - the
 # supervisor feeds on ONBOARD frames, which only that plant publishes - and
 # the client is sim/modes_probe.py: ENABLE -> SET_WHEEL_LIMIT 10 -> SAFE
-# (bus silent, echo zero, gate alive) -> ENABLE refused -> limit 600 + ENABLE
+# (bus silent, echo zero, check alive) -> ENABLE refused -> limit 600 + ENABLE
 # -> law-exact torque again. A dead lockstep gate still exits the scenario
 # with rc=2: SAFE stops the LAW, never the ACKS, and that is what this proves
 # as much as the mode machine itself.
@@ -22,8 +22,8 @@ SIM_MODULE="${SIM_MODULE:-sim.forge_scenario}"
 SIM_ARGS="${SIM_ARGS:---scenario sim/scenarios/chief.toml}"
 LOG="${LOG:-/tmp/opencode/modes_probe_scenario.log}"
 
-# D10: this harness flies ONE vehicle on the legacy port block (modes are
-# proven on the flight loop itself); the D9 BIRD=<slug> manifest mode died
+# This harness flies ONE vehicle on the legacy port block (modes are
+# proven on the flight loop itself); the BIRD=<slug> manifest mode died
 # with the manifest layer - fleet work is scripts/fly_fleet.sh.
 INSTANCE=0
 BEACON=$((5050 + 2 * INSTANCE))
@@ -59,7 +59,7 @@ while [ "$SECONDS" -lt "$BOOT_TIMEOUT" ]; do
         break
     fi
     if grep -qE "(GS_TCP|FCS|BSK_LINK).*(fail|DEAD)|Could not load file|ES Load Module Error" <<<"$LOGS"; then
-        echo "P4b MODES FAILED (app init error)"
+        echo "MODES FAILED (app init error)"
         grep -E "GS_TCP|FCS|BSK_LINK|LoadModule|Could not load|EVS Port1.*66/1/ES" <<<"$LOGS" | tail -12
         exit 1
     fi
@@ -68,7 +68,7 @@ done
 
 LOGS="$("$RUNTIME" logs "$CONTAINER" 2>&1 || true)"
 if ! grep -q "gs_tcp downlink :$BEACON uplink :$UPLINK" <<<"$LOGS" || ! grep -q "FCS App Initialized" <<<"$LOGS"; then
-    echo "P4b MODES FAILED (boot markers not seen within ${BOOT_TIMEOUT}s)"
+    echo "MODES FAILED (boot markers not seen within ${BOOT_TIMEOUT}s)"
     grep -E "GS_TCP|FCS|BSK_LINK|Could not load" <<<"$LOGS" | tail -12
     exit 1
 fi
@@ -84,10 +84,10 @@ uv run python -m sim.modes_probe --instance "$INSTANCE" || rc=$?
 
 sim_rc=0
 # A modes run mutates the plant on purpose, so no digest artifact is waited
-# for: give a dead gate two seconds to surface as the scenario's own rc=2,
-# then stop it. The gate MUST stay alive through SAFE - that is half the
+# for: give a dead check two seconds to surface as the scenario's own rc=2,
+# then stop it. The check MUST stay alive through SAFE - that is half the
 # proof - and rc=2 on any path says it was not. A scenario WE stopped is not
-# a failure; only its own exit codes (dead gate, crash) count.
+# a failure; only its own exit codes (dead check, crash) count.
 sleep 2
 sim_alive=0
 if kill -0 "$SIM_PID" 2>/dev/null; then
@@ -107,8 +107,8 @@ echo "--- mission console tail (the supervisor's own words) ---"
 "$RUNTIME" logs "$CONTAINER" 2>&1 | grep -E "FCS " | tail -8
 
 if [ "$rc" -eq 0 ]; then
-    echo "P4b MODES RUN OK"
+    echo "MODES RUN OK"
 else
-    echo "P4b MODES RUN FAILED"
+    echo "MODES RUN FAILED"
 fi
 exit "$rc"

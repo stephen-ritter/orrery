@@ -79,8 +79,8 @@ SCH_LAB_ScheduleTable_t SCH_TBL_Structure =
         {CFE_SB_MSGID_WRAP_VALUE(MM_SEND_HK_MID),          74, 0}, /* every 7.4 seconds */
         {CFE_SB_MSGID_WRAP_VALUE(HK_SEND_HK_MID),          76, 0}, /* every 7.6 seconds */
         {CFE_SB_MSGID_WRAP_VALUE(FCS_SEND_HK_MID),         78, 0}, /* every 7.8 seconds */
-        {CFE_SB_MSGID_WRAP_VALUE(OBC_HK_SEND_HK_MID),      10, 0}, /* OBC HK every 1.0 second (P4b-3) */
-        {CFE_SB_MSGID_WRAP_VALUE(SPS_SEND_HK_MID),         80, 0}, /* sps queue state every 8.0 s (P6) */
+        {CFE_SB_MSGID_WRAP_VALUE(OBC_HK_SEND_HK_MID),      10, 0}, /* OBC HK every 1.0 second */
+        {CFE_SB_MSGID_WRAP_VALUE(SPS_SEND_HK_MID),         80, 0}, /* sps queue state every 8.0 s */
 #ifdef CFS_SBN_ENABLED
         {CFE_SB_MSGID_WRAP_VALUE(SBN_CMD_MID),             46, SBN_HK_CC}, /* every 4.6 seconds (matching the SB) */
         {CFE_SB_MSGID_WRAP_VALUE(SBN_CMD_MID),             2, SBN_SCH_WAKEUP_CC}, /* every 0.2 seconds */

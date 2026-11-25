@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# P4C ops check - RECONSTRUCTED 2026-11-22 (the original died in the
+# Ops replay check - RECONSTRUCTED 2026-11-22 (the original died in the
 # untracked-files wipe of that morning; nothing tracked was lost, which is
 # exactly why this file and its baselines are now git-added).
 #
-# The scheduled flight (fly_scheduled.sh: the D8 onboard queue answers the
-# same uplink the P3 gate used) must:
-#   1. REPEAT itself - schedule the future deterministically (P6 promise);
+# The scheduled flight (fly_scheduled.sh: the onboard queue answers the
+# same uplink the closed-loop check used) must:
+#   1. REPEAT itself - schedule the future deterministically (the schedule promise);
 #   2. DISAGREE with the plain anchored flight - a satellite that executes
 #      stored schedules is a different world from one that reacts, and its
 #      trajectory digest must show it ("separate worlds").
@@ -50,4 +50,4 @@ fi
 [ -f "$anchored" ] &&
     echo "[scheduled] differs from anchored $(cut -c1-8 "$anchored")... - separate worlds, as a queue must be"
 
-echo "P4C OPS CHECK PASSED"
+echo "OPS CHECK PASSED"

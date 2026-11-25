@@ -1,4 +1,4 @@
-"""P2 acceptance: drive the live mission through COSMOS CE's JSON-RPC API.
+"""COSMOS round-trip acceptance: drive the live mission via COSMOS CE JSON-RPC.
 
 Proves the generated defs are good enough for the real ground system with
 zero hand-written packet definitions:
@@ -141,7 +141,7 @@ def main() -> int:
 
     print(f"CommandCounter via COSMOS: {before} -> {after}")
     ok = after > before
-    print("P2 COSMOS ROUND TRIP OK" if ok else "P2 COSMOS ROUND TRIP FAILED")
+    print("COSMOS ROUND TRIP OK" if ok else "COSMOS ROUND TRIP FAILED")
     return 0 if ok else 1
 
 

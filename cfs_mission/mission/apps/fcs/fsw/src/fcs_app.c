@@ -93,7 +93,7 @@ static bool FCS_WheelsAtLimit(void)
 /* -------------------------------------------------------------------------- */
 
 /**
- * The lockstep barrier ack (D5 amendment): every processed sensor frame gets
+ * The lockstep barrier ack: every processed sensor frame gets
  * one, whatever the mode. The sim blocks its next Basilisk step until the ack
  * carrying the frame number it just published arrives on the link, so the ack
  * is where "the satellite saw frame N" stops being an assumption.
@@ -119,7 +119,7 @@ static void FCS_StepAck(const BskSensorFrame_Payload_t *Sensor)
     {
         /* Say it once: the sim is about to hang at its gate, and this event
          * is the difference between "why did the scenario abort?" and a
-         * five-minute read of the roadmap. */
+         * hunt through logs and source. */
         CFE_EVS_SendEvent(FCS_STEP_ACK_ERR_EID, CFE_EVS_EventType_ERROR, "step ack publish rejected: 0x%08X",
                           (unsigned int)Status);
         FCS_AppData.StepAckFailCount++;
@@ -144,7 +144,7 @@ static void FCS_ControlStep(const BskSensorFrame_Payload_t *Sensor)
     BskTorqueCmdTlm_t Torque;
     CFE_Status_t      Status;
 
-    /* Barrier idempotency (D5 amendment): the sim retransmits sensor{N} while
+    /* Barrier idempotency: the sim retransmits sensor{N} while
      * it waits, because a fresh ZMQ PUB/SUB pair eats the first published
      * frame - and a lockstep sim that loses frame 1 must not deadlock, it
      * must shout until the shout lands. An already-processed frame number is
@@ -178,7 +178,7 @@ static void FCS_ControlStep(const BskSensorFrame_Payload_t *Sensor)
     FCS_AppData.SensorFramesReceived++;
     FCS_AppData.LastSimTimeS = Sensor->SimTimeS;
 
-    /* Supervisor first (P4b-2): the frame that proves a wheel is at its
+    /* Supervisor first: the frame that proves a wheel is at its
      * limit must not also receive torque from a law that pushed it there.
      * Tripping stops the law, not the ack below - the sim's gate and the
      * control authority are deliberately independent. */

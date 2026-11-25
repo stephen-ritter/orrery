@@ -27,11 +27,11 @@
 #define BSK_LINK_ZMQ_CMD_ENDPOINT "tcp://127.0.0.1:5581"
 
 /** ZMQ topic of the sensor feed (first multipart frame; see sim/detumble_scenario.py).
- *  The sensor frame is the CONTROL path (D5 barrier witness), so it stays
+ *  The sensor frame is the CONTROL path, the barrier's witness, so it stays
  *  hand-wired here; every OBSERVABILITY frame (ONBOARD, NAVSTATE, ...) is a
  *  registry row in orrery_frames.h and needs no define in this file. */
 #define BSK_LINK_SENSOR_TOPIC "SENSOR"
-/** Boot handshake (OB): the world's declared part fit, not telemetry.
+/** Boot handshake: the world's declared part fit, not telemetry.
  *  Its container has no TopicId on purpose - no MsgId, no ground definition,
  *  no beacon line. A handshake that reached the ground would tempt someone to
  *  grade the ground's opinion of the fit instead of the spacecraft's. */
@@ -40,16 +40,16 @@
 /** ZMQ topic of the commanded torque (egress; the sim decodes it with the same DB) */
 #define BSK_LINK_CMD_TOPIC "CMD"
 
-/** ZMQ topic of the lockstep barrier ack (egress; D5 amendment). fcs answers
+/** ZMQ topic of the lockstep barrier ack (egress). fcs answers
  *  every processed frame; the sim holds its next Basilisk step for this. */
 #define BSK_LINK_ACK_TOPIC "ACK"
 
-/** ZMQ topic of the camera config (egress; CAM v2a). Fire-and-forget like
+/** ZMQ topic of the camera config (egress). Fire-and-forget like
  *  CMD, unlike ACK it never gates: a lost config is ground-diagnosed by the
  *  CAM_HK-vs-CamState divergence pair, not by a barrier the physics waits on. */
 #define BSK_LINK_CAM_TOPIC "CAM"
 
-/* CAM v2b store outlet: image bytes ride the sensor feed as their own topic
+/* Store outlet: image bytes ride the sensor feed as their own topic
  * (fire-and-forget like every other sim frame), sliced so one frame never
  * has to hold a whole PNG. */
 #define BSK_LINK_IMG_TOPIC      "IMG"
@@ -75,9 +75,9 @@
 /** \} */
 
 /**
- * Onboard state (P4b) and GNSS fix (KN) used to declare their field walks
- * here; the REG refactor moved every observability identity into the
- * generated registry table (orrery_frames.h). The payload structs they
+ * Onboard state and GNSS fix used to declare their field walks
+ * here; the generated registry table (orrery_frames.h) now carries every
+ * observability identity. The payload structs they
  * decode INTO remain the bus contract in orrery_bus_msg.h - fcs and obc_hk
  * still cast the bus image to them - but the generic consumer produces
  * that image from raw container bytes, so no field name lives in C per
@@ -106,7 +106,7 @@
 /** Max link frames consumed per main-loop pass (keeps the SB pipe responsive) */
 #define BSK_LINK_DRAIN_BUDGET 16
 
-/** Ticks to wait before judging claimed-but-silent rows (OB). The world
+/** Ticks to wait before judging claimed-but-silent rows. The world
  *  publishes every declared part every tick, so five is generous; judging
  *  earlier would call a device missing before its first frame could land,
  *  and a verdict that flickers is a verdict nobody reads. */
@@ -119,7 +119,7 @@
 /* -------------------------------------------------------------------------- */
 
 /**
- * Generic world-frame message (REG): header + raw container bytes.
+ * Generic world-frame message: header + raw container bytes.
  *
  * One slot per registry row, sized for the largest observability payload.
  * The image is byte-identical to the typed messages this app emitted per
@@ -133,11 +133,11 @@ typedef struct
 } BSK_Link_WorldFrameTlm_t;
 
 /**
- * Fit verdict (OB): one of three agreements, or the one disagreement that
+ * Fit verdict: one of three agreements, or the one disagreement that
  * stops the mission.
  *
  * DEGRADED and DENIED are reported and flown on: a channel that is off is a
- * channel that is off, and the FSW never invents the missing data (KN2's
+ * channel that is off, and the FSW never invents the missing data (the
  * absence rule). STALE is different in kind - the bytes may decode into the
  * wrong fields entirely - and no amount of flying on knowledge that may be
  * mislabelled is worth the ambiguity, so the link refuses the barrier.
@@ -167,10 +167,10 @@ typedef struct
     uint32 AckRecvCount;       /* step acks taken off the bus                    */
     uint32 AckFwdCount;        /* step acks written to the sim (opens its gate)  */
     uint32 AckDropCount;       /* ack egress failed: the sim will hang and abort */
-    uint32 CamRecvCount;       /* cam configs taken off the bus (CAM v2a)        */
+    uint32 CamRecvCount;       /* cam configs taken off the bus                  */
     uint32 CamFwdCount;        /* cam configs written to the sim                 */
     uint32 CamDropCount;       /* wrong length or egress send failed             */
-    /* CAM v2b store outlet: reassembly of the sim's IMG chunk stream into
+    /* Store outlet: reassembly of the sim's IMG chunk stream into
      * /cf/img files. The fd belongs to the ONE open capture; ordering is
      * TCP's, so anything out of sequence is damage to count, not to chase. */
     osal_id_t StoreFd;         /* OSAL id of the open .part, UNDEFINED idle    */
@@ -184,12 +184,12 @@ typedef struct
     uint32 StorePublishFail;   /* CamStorage TLM rejected (reported once)        */
     uint64 FilesStored;        /* complete files under /cf/img since boot        */
     uint64 BytesStored;        /* payload bytes across those files               */
-    BskCamStorageTlm_t CamStorageTlm; /* the ledger as the bus sees it (v2b)     */
+    BskCamStorageTlm_t CamStorageTlm; /* the ledger as the bus sees it           */
     uint32 TimeSyncCount;      /* SET_MET sent: mission clock slaved to the sim  */
     uint32 WorldFrameCounts[BSK_LINK_FRAME_ROWS];      /* per registry row      */
     uint32 WorldFramePublishFail[BSK_LINK_FRAME_ROWS]; /* rejected, reported once */
 
-    /* Boot handshake (OB): three views of the same question - what the
+    /* Boot handshake: three views of the same question - what the
      * scenario's TOML CLAIMS, what this binary was BUILT with
      * (BSK_LINK_FIT_REGISTRY_HASH and the generated table), and what the bus
      * actually STREAMS. The declared pair arrives from the world; the built
@@ -206,7 +206,7 @@ typedef struct
     uint32 FitRefusedTicks;  /* barrier ticks refused because of that abort    */
 
     /* Last decoded frame, for events, the sensor-frame MsgId on the bus, and
-     * (P4) housekeeping. */
+     * housekeeping. */
     double LastSimTimeS;
     double OmegaBnB[BSK_LINK_OMEGA_AXES];
     uint64 LastFrame;
@@ -215,7 +215,8 @@ typedef struct
      * initialized once (like the stock apps) so sequence counts flow. The
      * observability frames are one generic slot per registry row: the payload
      * is the raw EDS container image, byte-identical to the typed messages
-     * this app emitted before the REG refactor (plain LE payload, no padding),
+     * this app emitted before the registry table (plain LE payload, no
+     * padding),
      * so every bus consumer keeps casting the same struct. */
     BskSensorFrameTlm_t SensorFrameTlm;
     BSK_Link_WorldFrameTlm_t WorldFrameTlm[BSK_LINK_FRAME_ROWS];

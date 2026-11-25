@@ -1,13 +1,13 @@
 /*
- * obc_hk: orrery OBC health and status (P4b-3).
+ * obc_hk: orrery OBC health and status.
  *
  * The satellite's report on ITSELF, built entirely from what passes its
  * pipe: link frames it watched on the bus, actuator feedback it decoded
  * off the onboard-state stream, the mode its controller last published.
  * No other app's memory, no request/response dependencies - a silent fcs
  * shows up as a frozen mirror, which is a symptom, not a second bug.
- * Navigator truth lives on other ports and never enters this app (P5's
- * boundary is physical: hk_app could not read truth if it wanted to).
+ * Navigator truth lives on other ports and never enters this app: the
+ * boundary is physical - hk_app could not read truth if it wanted to.
  *
  * Commands (uplink :5051):
  *   OBC_HK_CMD     FC 0 NOOP

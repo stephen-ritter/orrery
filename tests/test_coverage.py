@@ -1,4 +1,4 @@
-"""The coverage ledger (D13): every asset upstream exposes, classified by us.
+"""The coverage ledger: every asset upstream exposes, classified by us.
 
 "Have we supported X?" stopped being an archaeology dig the day it became a
 file. These tests are the reason the file can be trusted: completeness is checked
@@ -122,7 +122,7 @@ def test_every_gap_names_its_first_missing_hop_and_its_owner(name: str) -> None:
     """
     entry = _types(COVERAGE)[name]
     assert entry.first_hop and entry.first_hop in FIRST_HOPS, f"{name}: no first missing hop"
-    assert entry.phase, f"{name}: a gap with no owner phase"
+    assert entry.owner, f"{name}: a gap with no owner"
     assert len(entry.why) > 40, f"{name}: a reason short enough to be a shrug"
 
 
@@ -131,7 +131,7 @@ def test_the_document_is_the_ledger_rendered() -> None:
 
     Equality with the renderer is the only way the summary sentence can be
     trusted; a hand-tuned number inside the region is the exact failure mode the
-    REG mirror tests were written against.
+    mirror tests were written against.
     """
     text = DOC.read_text(encoding="utf-8")
     assert text == render_doc(text, COVERAGE)

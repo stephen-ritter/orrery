@@ -1,16 +1,16 @@
-"""Coverage ledger loader and renderer (D13).
+"""Coverage ledger loader and renderer.
 
 `registry/coverage.toml` is the authoritative statement of which parts bskforge
 exposes and what this project does with each; `docs/coverage.md` is this module's
 output. Pure ``tomllib`` like ``sim/parts.py`` - importing bskforge's *schema*
 happens only inside the union helpers, so the loader works before Basilisk is
-importable and the test gate can decide when to pay for it.
+importable and the test check can decide when to pay for it.
 
 The point of rendering rather than writing prose: a hand-maintained "we support
 N of M" line is folklore. Here the count is computed from the rows, and
 ``tests/test_coverage.py`` refuses any edit to the document that is not the
 output of this function - the same discipline that made the generated identity
-headers trustworthy in REG.
+headers trustworthy.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ FIRST_HOPS = frozenset(
         "compare-mode",
         "command-path",
         "fsw-command",
-        "gate",
+        "check",
         "decision",
     }
 )
@@ -57,10 +57,10 @@ FIRST_HOPS = frozenset(
 # code with no label fails tests/test_docs_vocabulary.py rather than printing a
 # puzzle in the page.
 OWNER_LABELS = {
-    "P7": "the per-configuration digest round",
-    "P9": "the control-authority round",
-    "CAM": "the imaging round",
-    "P8b": "the constellation round",
+    "digest": "the per-configuration digest round",
+    "authority": "the control-authority round",
+    "imaging": "the imaging round",
+    "constellation": "the constellation round",
 }
 
 KINDS = frozenset({"sensor", "effector", "disturbance"})
@@ -75,7 +75,7 @@ _TYPE_KEYS = frozenset(
         "command_path",
         "first_hop",
         "scenarios",
-        "phase",
+        "owner",
         "why",
     }
 )
@@ -94,7 +94,7 @@ class TypeEntry:
     command_path: str = ""
     first_hop: str = ""
     scenarios: tuple[str, ...] = ()
-    phase: str = ""
+    owner: str = ""
     why: str = ""
 
     @property
@@ -186,7 +186,7 @@ def load_coverage(path: str | Path = COVERAGE) -> Coverage:
             command_path=str(raw.get("command_path", "")),
             first_hop=str(raw.get("first_hop", "")),
             scenarios=tuple(str(s) for s in raw.get("scenarios", ())),
-            phase=str(raw.get("phase", "")),
+            owner=str(raw.get("owner", "")),
             why=str(raw.get("why", "")),
         )
         if entry.kind not in KINDS:
@@ -270,19 +270,19 @@ def _discriminator_names(config: Any) -> set[str]:  # noqa: ANN401 - pydantic mo
 # --- rendering --------------------------------------------------------------
 
 
-def owner_label(phase: str) -> str:
+def owner_label(owner: str) -> str:
     """Who will close this gap, in words a reader can act on.
 
     A code with no label is an error, not a fallback: the ledger is data and the
     page is prose, and the translation is the whole reason the page is generated.
     """
-    if not phase:
+    if not owner:
         return ""
     try:
-        return OWNER_LABELS[phase]
+        return OWNER_LABELS[owner]
     except KeyError:
         raise KeyError(
-            f"coverage: owner {phase!r} has no reader-facing label "
+            f"coverage: owner {owner!r} has no reader-facing label "
             "- add one to sim/coverage.py OWNER_LABELS"
         ) from None
 
@@ -296,7 +296,7 @@ def render_doc(text: str, cov: Coverage) -> str:
     """Replace the GENERATED region of ``docs/coverage.md`` with the ledger.
 
     Callers compare the result against the file they read: an edit inside the
-    region that does not come from this function fails the gate, which is the
+    region that does not come from this function fails the check, which is the
     only way the summary numbers can be trusted.
     """
     if BEGIN not in text or END not in text:
@@ -313,7 +313,7 @@ def render_doc(text: str, cov: Coverage) -> str:
         f"**{areas_used} of {len(cov.areas)} scenario sections are used**. "
         "Everything upstream builds; every gap below is ours. The counts are "
         "computed from `registry/coverage.toml`, and a hand-edit inside this "
-        "region fails the coverage gate.",
+        "region fails the coverage check.",
         "",
         "## Sensors",
         "",
@@ -355,7 +355,7 @@ def render_doc(text: str, cov: Coverage) -> str:
 
     lines += ["", "## The reasons, in full", ""]
     for entry in (*cov.sensors, *cov.effectors, *cov.disturbances):
-        owner = f" · owner: **{owner_label(entry.phase)}**" if entry.phase else ""
+        owner = f" · owner: **{owner_label(entry.owner)}**" if entry.owner else ""
         lines.append(f"- **`{entry.name}`** — {entry.status}{owner}. {_clean(entry.why)}")
     lines += [
         "",
@@ -376,14 +376,14 @@ def render_doc(text: str, cov: Coverage) -> str:
         "  upstream, or a new scenario section, fails our build until it appears here.",
         "  The ledger is checked against bskforge's live schema unions, never a copy.",
         "- **`landed` is bidirectional.** A row that lands without a classification, and",
-        "  a classification whose row has gone, both fail the offline gates.",
+        "  a classification whose row has gone, both fail the offline checks.",
         "- **`banned` has teeth.** Every fleet here is read through bskforge's audited",
         "  profile (`sim/fleet_policy.py` asks for it), so a file that wires hardware in",
         "  by hand is refused at load, before validation; the policy tests prove the",
         "  refusal fires, that no unaudited door exists, and that our fleets pass.",
         "- **Every gap costs something specific.** Each unlanded part names its first",
         '  missing hop from a fixed vocabulary and carries a reason; "eventually" is',
-        "  not a classification, and the offline gates say so.",
+        "  not a classification, and the offline checks say so.",
         "- **Upstream is not the constraint.** bskforge ships a builder for every one of",
         f'  the {total} types listed here, so not one gap above is "Basilisk cannot".',
         "  That is why this ledger lives beside the parts registry: the parts exist,",
@@ -403,7 +403,7 @@ def _type_rows(entries: list[TypeEntry], *, wire_column: bool) -> list[str]:
         rows.append(
             f"| `{entry.name}` | {entry.status} | {_cell(middle)} | "
             f"{f'`{entry.first_hop}`' if entry.first_hop else '—'} | "
-            f"{owner_label(entry.phase) or '—'} |"
+            f"{owner_label(entry.owner) or '—'} |"
         )
     return rows
 
@@ -416,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
 
     A generated page whose generator has no command is a page that gets edited by
     hand the first time it is stale. `tests/test_coverage.py` pins the page to this
-    renderer either way, so the gate stays honest about which half is authoritative.
+    renderer either way, so the check stays honest about which half is authoritative.
     """
     parser = argparse.ArgumentParser(
         description="render registry/coverage.toml into docs/coverage.md"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# P5 truth wrap: a scenario's fleet, truth on its own ports, the boundary
+# Truth wrap: a scenario's fleet, truth on its own ports, the boundary
 # measured.
 #
 # Prereq: scripts/cosmos_stack.sh has loaded gem >= 0.1.2 (plugin carries
@@ -7,9 +7,9 @@
 # (fleet.sh starts each vehicle's truth gateway on its derived port), runs
 # sim/truth_exhibits.py through JSON-RPC (fresh truth streams, truth-vs-
 # knowledge gap at bias/noise scale, the GNSS opinion vs truth orbit pair
-# [KN, 0x08CF], truth watching the commanded detumble, truth targets
+# [0x08CF], truth watching the commanded detumble, truth targets
 # uncommandable), then proves the port-level half of the boundary: bytes
-# written TO the truth port are refused and logged by the gateway (the D2
+# written TO the truth port are refused and logged by the gateway (the link
 # beacon-refusal idiom, mirrored on the truth side).
 set -euo pipefail
 
@@ -77,8 +77,8 @@ echo "UNKNOWN packet lines (all interfaces): $unknown"
 [ "$unknown" -gt 0 ] && rc=1
 
 if [ "$rc" -eq 0 ]; then
-    echo "P5 TRUTH RUN OK"
+    echo "TRUTH RUN OK"
 else
-    echo "P5 TRUTH RUN FAILED"
+    echo "TRUTH RUN FAILED"
 fi
 exit "$rc"

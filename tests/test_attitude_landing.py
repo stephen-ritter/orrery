@@ -1,4 +1,4 @@
-"""The REG exit demo, pinned offline (D13): a registered part costs one line.
+"""Part landing, pinned offline: a registered part costs one line.
 
 A scenario block that declares a star tracker feeds an ATTSTATE observer -
 topic from registry/parts.toml, codec generic, rig untouched. And the
@@ -66,7 +66,7 @@ def test_one_toml_line_adds_the_registered_part(tmp_path: Path) -> None:
     THE exit criterion, as an assertion: nothing outside registry/parts.toml
     and this scenario file knew the part existed. The observer topic arrives
     keyed from the registry row; the rig, the codec and the spacecraft
-    consumer are the shared machinery REG built.
+    consumer are the shared machinery.
     """
     bare = fz.ForgeScenario(_write(tmp_path, "bare.toml", ""))
     assert not bare.body.has_plant_attitude
@@ -76,7 +76,7 @@ def test_one_toml_line_adds_the_registered_part(tmp_path: Path) -> None:
     assert fitted.body.has_plant_attitude
     observers = fitted._rig.channels[0].observers
     # the manifest fitted one device; TWO registered frames know it: the
-    # P4b bundle (legacy multi-part frame) and the registry's own opinion
+    # The onboard bundle (legacy multi-part frame) and the registry's own opinion
     # frame - publish order fixed as ONBOARD then ATTSTATE, insertion order.
     assert list(observers) == ["ONBOARD", "ATTSTATE"]
 
@@ -87,7 +87,7 @@ def test_an_undeclared_sigma_stops_the_truth_gate(tmp_path: Path) -> None:
     bskforge's ``white_noise`` is optional and accepts 0.0, so a manifest can
     legally fit a noiseless star tracker. Both values destroy the exhibit:
     its two verdicts are multiples of that sigma, so DIFFER would pass
-    vacuously and AGREE would have no bound. The gate names the vehicle, the
+    vacuously and AGREE would have no bound. The check names the vehicle, the
     part and the field instead of grading a tautology - while a device that
     was never fitted stays plain ``None``: absence is a fact, this is a lie.
     """
@@ -108,11 +108,11 @@ def test_an_undeclared_sigma_stops_the_truth_gate(tmp_path: Path) -> None:
 def test_attitude_frame_is_the_device_opinion(tmp_path: Path) -> None:
     """48 B of plain LE; the quaternion is the device's, scalar-first, opinion-scaled.
 
-    The wire bytes are pinned with struct (the D6 contract: EdsLib packing ==
+    The wire bytes are pinned with struct (the contract: EdsLib packing ==
     C struct == plain LE). The convention claim is pinned against the
     DEVICE: reading the quaternion scalar-first against the navigator's MRP
     leaves noise, reading it scalar-last shows the attitude itself - so the
-    p5 angle-gap comparison can never silently compare two different
+    coverage angle-gap comparison can never silently compare two different
     rotations. And the gap is NOT zero: this is a 1e-4 rad instrument, not
     truth wearing a costume.
     """

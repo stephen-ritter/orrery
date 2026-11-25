@@ -1,6 +1,6 @@
 project(CFE_OBC_HK C)
 
-# The orrery OBC housekeeping app (P4b-3). Passive observer: message
+# The orrery OBC housekeeping app. Passive observer: message
 # structs come from orrery_defs/inc/orrery_bus_msg.h (whose
 # _Static_assert is the contract with obc.xml); no external deps.
 add_cfe_app(obc_hk

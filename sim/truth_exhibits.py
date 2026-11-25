@@ -1,4 +1,4 @@
-"""P5 acceptance: truth on its own ports, and the boundary MEASURED.
+"""Truth-boundary acceptance: truth on its own ports, the boundary MEASURED.
 
 Two vehicles (scripts/check_truth_exhibits.sh flies the fleet); per vehicle: a flight
 target on the classic pair and a TRUTH target on the gateway port. Proven
@@ -12,14 +12,14 @@ through JSON-RPC:
    strictly paired epochs) yet AGREE (same world, <3e-3 while coasting) -
    bias/noise scale, the provenance rule as a measurement;
 3b. the same rule on every LANDED part whose registry row promises a
-   ``truth_pair`` exhibit (KN/KN2, registry-driven since R4): flight
+   ``truth_pair`` exhibit (registry-driven): flight
    opinion and navigator truth must DIFFER at device scale and AGREE as
    one world - and the scale is DECLARED: the sigmas named by the row's
    ``declared`` map are read from the vehicle's own device block (0.2
    sigma floor, the Gauss-Markov 3-sigma clamp as ceiling), so acceptance
    judges every vehicle by the manifest that built it, not by folklore; a
    vehicle that declares no device is expected to stream no frame at all.
-   A landed row whose exhibit this gate cannot honestly execute stops the
+   A landed row whose exhibit this check cannot honestly execute stops the
    run loudly - a part never registers quietly ahead of its proof;
 4. truth watches physics answer the FLIGHT side: FCS_CMD EnableCmd uplinks
    on the flight target only, and the TRUTH stream shows |ω| fall below
@@ -28,7 +28,7 @@ through JSON-RPC:
 5. the truth target cannot be commanded at all: the cmd API fails on a
    TRUTH target because truth has no command defs - absence as tripwire.
 
-Freshness is change-verified throughout (the P2 caching lesson).
+Freshness is change-verified throughout (the TLM caching lesson).
 """
 
 from __future__ import annotations
@@ -46,11 +46,11 @@ from sim.fleet import flight_interface, scenario_vehicles, truth_interface
 from sim.fleet_policy import load_fleet
 from sim.parts import Part, load_registry
 
-# The scenario file IS the fleet (D10): rows are derived, never declared.
-# ORRERY_SCENARIO lets a gate point this client at another fleet than the
-# operational one - the REG exit flight needs the SAME client for a vehicle
-# before and after one part is fitted (a gate you must edit to change its
-# input is two gates).
+# The scenario file IS the fleet: rows are derived, never declared.
+# ORRERY_SCENARIO lets a check point this client at another fleet than the
+# operational one - the exit flight needs the SAME client for a vehicle
+# before and after one part is fitted (a check you must edit to change its
+# input is two checks).
 SCENARIO = Path(
     os.environ.get("ORRERY_SCENARIO")
     or Path(__file__).resolve().parents[1] / "sim" / "scenarios" / "twin_ops.toml"
@@ -71,7 +71,7 @@ def fleet_rows(path: Path = SCENARIO) -> list[tuple[str, str, str, str, str]]:
     ]
 
 
-# Landed registry rows whose truth_pair exhibit this gate executes (REG).
+# Landed registry rows whose truth_pair exhibit this check executes.
 # What it can execute HONESTLY today: a one-device opinion part declaring
 # pos/vel sigma field names, a 3-sigma-clamped ceiling (Basilisk's
 # Gauss-Markov bound per component), and strict epochs. A landed row
@@ -106,7 +106,7 @@ def truth_pair_rows() -> list[Part]:
                 executable = False  # e.g. truth-vs-image joins later than CAM v1
         if not executable:
             raise NotImplementedError(
-                f"{part.name}: landed row promises an exhibit this gate cannot "
+                f"{part.name}: landed row promises an exhibit this check cannot "
                 f"honestly execute (kind={ex.kind}, compare={ex.compare}, "
                 f"ceiling={ex.ceiling}, epoch={ex.epoch}) - implement it here, never skip it"
             )
@@ -124,8 +124,8 @@ def _sigma(block: object, field: str, vehicle: str, part: str) -> float:
     TOML and both destroy the exhibit: its two verdicts are multiples of this
     sigma, so with no declared noise the DIFFER verdict passes vacuously - an
     ideal device IS an oracle - and the AGREE verdict has no bound at all.
-    A gate cannot grade an unjudgable manifest by pretending otherwise, so it
-    names the vehicle, the part and the field instead (KN2's rule for a device
+    A check cannot grade an unjudgable manifest by pretending otherwise, so it
+    names the vehicle, the part and the field instead (the rule: a device
     that was never fitted stays ``None``: absence is a fact, this is a lie).
     """
     value = getattr(block, field)
@@ -141,7 +141,7 @@ def _sigma(block: object, field: str, vehicle: str, part: str) -> float:
 def declared_sigmas(
     path: Path = SCENARIO,
 ) -> dict[str, dict[str, tuple[float, ...] | None]]:
-    """Per-vehicle, per-part sigmas AS DECLARED (KN2 discipline, D13).
+    """Per-vehicle, per-part sigmas AS DECLARED.
 
     The same bskforge loader that builds the plant reads the manifest here:
     each row's ``declared`` map names the schema fields of its device block
@@ -150,8 +150,8 @@ def declared_sigmas(
     ``None`` means the device was never fitted: absence is declared, not
     zero-filled.
 
-    A manifest pointed at by ``ORRERY_SCENARIO`` is judged by this gate
-    without the gate's owner having edited it (the camera exit flight needs
+    A manifest pointed at by ``ORRERY_SCENARIO`` is judged by this check
+    without the check's owner having edited it (the camera exit flight needs
     exactly that), so it is read through the audited loader too: acceptance
     refuses to grade a world whose fleet file smuggled in wiring, even though
     the plant that would build it already refuses to.
@@ -188,7 +188,7 @@ SIGMAS = declared_sigmas()
 # The registry word "strict": raw velocity pairs may not cross any epoch
 # gap. One frame of orbital acceleration is ~8 m/s - three orders of
 # magnitude over this fleet's velocity sigma - so a skew beyond this window
-# means the samples are simply not comparable (measured, and the reason KN
+# means the samples are simply not comparable (measured, and the reason the pair
 # only passed while two caches happened to share a millisecond). Position
 # still gets the first-order v*dt ride, whose residual is a*dt^2/2 -
 # millimetres at one second.
@@ -362,9 +362,9 @@ def run_truth_pair(
     row: Part,
     sigmas: tuple[float, ...] | None,
 ) -> None:
-    """Execute one registry row's truth_pair exhibit (the REG acceptance loop).
+    """Execute one registry row's truth_pair exhibit.
 
-    Structurally the hand-written KN2 block it replaces, with every name and
+    Structurally the hand-written block it replaces, with every name and
     bound read from the row: flight and truth packet, the position/velocity
     field pairs, the sigmas already resolved against the vehicle's manifest,
     the oracle floor, and the Gauss-Markov clamp. Fitting a registered part
@@ -515,7 +515,7 @@ def check_vehicle(
     assert r_norm > 1e5, f"{name}: truth |r| not orbit-scale: {r_norm}"
 
     # the boundary, measured: differ (two wires) yet agree (one world).
-    # R4 hygiene, the KN2 lesson applied to the rate pair too: strictly
+    # Hygiene, the absence rule applied to the rate pair too: strictly
     # shared epochs AND a vector difference. knowledge = truth + bias +
     # noise, so |Δω| at one epoch IS the sensor-error scale - while a
     # difference of NORMS over unpaired caches could geometrically cancel
@@ -546,9 +546,9 @@ def check_vehicle(
         f"differ by {gap:.2e} rad/s - biased+noisy, same world"
     )
 
-    # REG: every landed part that promised a truth_pair exhibit gets it
+    # Every landed part that promised a truth_pair exhibit gets it
     # right here, bounded by the sigmas this vehicle's own manifest declared.
-    # The KN2 rule, generalized: DIFFER at device scale (the flight wire is
+    # The rule, generalized: DIFFER at device scale (the flight wire is
     # no oracle), AGREE as one world (not two universes), on strictly shared
     # epochs. Rows arrive from registry/parts.toml - fitting the exit demo's
     # star tracker will run this very loop with no edit to this file.
@@ -599,7 +599,7 @@ def main() -> int:
     for name, flight, flight_iface, truth, truth_iface in FLEET_ROWS:
         check_vehicle(token, name, flight, flight_iface, truth, truth_iface, SIGMAS[name])
 
-    print("P5 TRUTH CHECK OK")
+    print("TRUTH CHECK OK")
     return 0
 
 
@@ -607,8 +607,8 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except AssertionError as exc:
-        print(f"P5 TRUTH CHECK FAILED: {exc}")
+        print(f"TRUTH CHECK FAILED: {exc}")
         sys.exit(1)
     except TimeoutError as exc:
-        print(f"P5 TRUTH CHECK FAILED: {exc}")
+        print(f"TRUTH CHECK FAILED: {exc}")
         sys.exit(1)

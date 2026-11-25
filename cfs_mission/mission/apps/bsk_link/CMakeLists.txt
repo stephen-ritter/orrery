@@ -1,6 +1,6 @@
 project(CFE_BSK_LINK C)
 
-# --- the mission EDS schema (ROADMAP D6) ------------------------------------
+# --- the mission EDS schema -------------------------------------------------
 #
 # This app decodes the Basilisk link with the mission's own EDS XML, compiled into a
 # runtime database by edslink/.  Both artifacts are prebuilt (sedstool needs Lua and a

@@ -1,26 +1,26 @@
-"""Detumble scenario: a tumbling rigid body that damps its own rate (ROADMAP P3a).
+"""Detumble scenario: a tumbling rigid body that damps its own rate .
 
 Runs Basilisk's rigid-body dynamics with an initial tumble and closes the attitude
 rate loop through the mission's own link schema: every control tick the scenario
 takes a ``BSK_LINK/SensorFrame`` of what the *onboard gyro* knows (biased and noisy,
 never truth), and applies a torque - standalone, a proportional rate-damping law
 runs here; with ``--zmq`` the law lives in ``fcs``, and this file only measures,
-publishes, gates and actuates what flight software commanded. Exit criterion: the
+publishes, checks and actuates what flight software commanded. Exit criterion: the
 rate norm collapses from its initial tumble and settles on the gyro noise floor.
 
-The barrier, the sockets and the stepping discipline (D5 amendment) live in
-``sim/lockstep.py`` - one gate implementation that every orrery plant rides,
+The barrier, the sockets and the stepping discipline live in
+``sim/lockstep.py`` - one check implementation that every orrery plant rides,
 hand-written here or bskforge-built in ``sim/forge_scenario.py``::
 
     --zmq   SENSOR  PUB  :5580   BSK_LINK/SensorFrame    (onboard knowledge, the tick)
             CMD     PULL :5581   BSK_LINK/TorqueCommand  (fcs torque, per frame)
-            ACK     PULL :5581   BSK_LINK/StepAck        (lockstep barrier, D5 amendment)
+            ACK     PULL :5581   BSK_LINK/StepAck        (lockstep barrier)
             CMD_ECHO PUB :5591   BSK_LINK/TorqueCommand  (the torque actually applied)
-            TRUTH   PUB  :5590   BSK_LINK/TruthState     (P5 ground only, never cFS)
+            TRUTH   PUB  :5590   BSK_LINK/TruthState     (ground only, never cFS)
 
 Truth goes out on its own channel and never on the sensor feed: what the satellite
 knows and what the simulator knows stay separate, which is what the two COSMOS targets
-in P5 exist to show.
+exist to show.
 
     uv run python -m sim.detumble_scenario --duration 120 --zmq
 
@@ -212,17 +212,17 @@ class DetumbleScenario:
 
     @property
     def stale_torques(self) -> int:
-        """Tripwire: answers from frames the gate already passed."""
+        """Tripwire: answers from frames the check already passed."""
         return self._rig.stale_torques
 
     @property
     def sensor_retransmits(self) -> int:
-        """Handshake shouts the gate had to repeat while waiting."""
+        """Handshake shouts the check had to repeat while waiting."""
         return self._rig.sensor_retransmits
 
     @property
     def foreign_frames(self) -> int:
-        """Tripwire: answers from frames ahead of the gate."""
+        """Tripwire: answers from frames ahead of the check."""
         return self._rig.foreign_frames
 
     @property
@@ -272,12 +272,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--zmq",
         action="store_true",
-        help="lockstep link: publish EDS frames, own the torque to fcs, gate on step acks",
+        help="lockstep link: publish EDS frames, own the torque to fcs, check on step acks",
     )
     ap.add_argument(
         "--pace",
         action="store_true",
-        help="align sim seconds to wall seconds (human watch mode; the gate stays in force)",
+        help="align sim seconds to wall seconds (human watch mode; the check stays in force)",
     )
     ap.add_argument(
         "--ack-timeout", type=float, default=ACK_TIMEOUT_S, help="lockstep gate timeout [s]"
@@ -334,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
                 "(stale/foreign/bad must be 0 in a healthy lockstep run)"
             )
     # Machine-readable acceptance line: printed even with --quiet, because
-    # "two seeded runs, identical digest" IS the P3e determinism gate.
+    # "two seeded runs, identical digest" IS the P3e determinism check.
     print(f"trajectory sha256 {trajectory_sha256(scenario.rate_history)}")
     print("DETUMBLE OK" if ratio < CONVERGENCE_RATIO else "DETUMBLE FAILED", flush=True)
     return 0 if ratio < CONVERGENCE_RATIO else 1

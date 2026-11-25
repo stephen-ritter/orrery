@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# CAM v2b acceptance: image bytes across the airgap, byte for byte, twice flown.
+# CAM record acceptance: image bytes across the airgap, byte for byte, twice flown.
 #
-#   record   camera_v2b.toml (record_rate = 2): nobody commands anything;
+#   record   camera_record.toml (record_rate = 2): nobody commands anything;
 #            the store outlet must fill unprompted - Basilisk PNGs in a sim
 #            temp dir, IMG chunks across ZMQ, reassembled files under
 #            /cf/img, ledgers on CamStorage / CamState / CAM_HK agreeing.
@@ -22,9 +22,9 @@ RUNTIME="${RUNTIME:-docker}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-120}"
 SIM_DURATION="${SIM_DURATION:-60}"
 PROBE_DURATION="${PROBE_DURATION:-56}"
-RECORD_SCENARIO="$REPO/sim/scenarios/camera_v2b.toml"
+RECORD_SCENARIO="$REPO/sim/scenarios/camera_record.toml"
 CONTROL_SCENARIO="$REPO/sim/scenarios/camera_ops.toml"
-WORK="${WORK:-/tmp/opencode/cam_v2b}"
+WORK="${WORK:-/tmp/opencode/cam_record}"
 mkdir -p "$WORK"
 HOST_IMG="$REPO/cfs_mission/mission/build/exe/cpu1/cf/img"
 
@@ -123,10 +123,10 @@ fly_cycle() {
 }
 
 # --- record leg: the outlet must fill with nobody touching it ----------------
-fly_cycle record "$RECORD_SCENARIO" || { echo "CAM V2B ACCEPTANCE FAILED (record leg)"; exit 1; }
+fly_cycle record "$RECORD_SCENARIO" || { echo "CAM RECORD CHECK FAILED (record leg)"; exit 1; }
 RECORD_DIGEST="$CYCLE_DIGEST"; RECORD_LOG="$CYCLE_LOG"; RECORD_STORE_DIR="$CYCLE_STORE_DIR"
-[ "$CYCLE_RC" -eq 0 ] || { echo "CAM V2B ACCEPTANCE FAILED (record probe)"; exit 1; }
-[ -n "$RECORD_STORE_DIR" ] || { echo "CAM V2B FAILED: sim never announced its store dir"; exit 1; }
+[ "$CYCLE_RC" -eq 0 ] || { echo "CAM RECORD CHECK FAILED (record probe)"; exit 1; }
+[ -n "$RECORD_STORE_DIR" ] || { echo "CAM RECORD FAILED: sim never announced its store dir"; exit 1; }
 
 echo "=== byte-for-byte: /cf/img vs the sim's own PNG writer ==="
 [ -d "$HOST_IMG" ] || { echo "no /cf/img on the host: nothing crossed the airgap"; exit 1; }
@@ -170,16 +170,16 @@ assert hk, "the probe never saw a CAM_HK"
 recorded, stored, transferred = (int(x) for x in hk[-1])
 assert recorded > 0, "CamState never reported a store-outlet send"
 assert stored == files, f"CAM_HK stored={stored} but the ledger completed {files}"
-assert transferred == 0, "FramesTransferred moved before v2c: a lie, not a feature"
+assert transferred == 0, "FramesTransferred moved without a transfer: a lie, not a feature"
 assert "cam stored" in console, "no EVS testimony for a single completed file"
 assert "BSK_LINK 24" not in console, "the store raised an error event: damage was counted"
 print(f"ledger law OK: files={files} bytes={nbytes} promises={recorded}/{stored}/{transferred}")
 PY
 
 # --- control leg: no outlet, zero promises, identical physics ----------------
-fly_cycle control "$CONTROL_SCENARIO" || { echo "CAM V2B ACCEPTANCE FAILED (control leg)"; exit 1; }
+fly_cycle control "$CONTROL_SCENARIO" || { echo "CAM RECORD CHECK FAILED (control leg)"; exit 1; }
 CONTROL_DIGEST="$CYCLE_DIGEST"; CONTROL_LOG="$CYCLE_LOG"
-[ "$CYCLE_RC" -eq 0 ] || { echo "CAM V2B ACCEPTANCE FAILED (control probe)"; exit 1; }
+[ "$CYCLE_RC" -eq 0 ] || { echo "CAM RECORD CHECK FAILED (control probe)"; exit 1; }
 
 echo "=== control leg: absence, verified ==="
 LEFT="$(find "$HOST_IMG" -name '*.png' 2>/dev/null | wc -l | tr -d ' ')"
@@ -194,13 +194,13 @@ grep -qE "camstate .*recorded=0$" "$WORK/probe_control.log" || {
 }
 
 if [ "$RECORD_DIGEST" != "$CONTROL_DIGEST" ]; then
-    echo "CAM V2B FAILED: digests disagree - image traffic touched physics"
+    echo "CAM RECORD FAILED: digests disagree - image traffic touched physics"
     echo "  record  $RECORD_DIGEST"
     echo "  control $CONTROL_DIGEST"
     exit 1
 fi
 
-echo "CAM V2B ACCEPTANCE OK"
+echo "CAM RECORD CHECK OK"
 echo "  digest pair byte-identical: ${RECORD_DIGEST:0:16}..."
 echo "  files crossed: $RECORD_FILES, every one byte-identical to a sim source, ledger exact"
 echo "  receipts: $WORK"

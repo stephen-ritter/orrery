@@ -1,13 +1,13 @@
-"""Truth gateway (P5): one per vehicle, the ground-side door for Basilisk truth.
+"""Truth gateway: one per vehicle, the ground-side door for Basilisk truth.
 
-Subscribes the sim's ZMQ TRUTH channel (``:5590+20N``, instance-aware per
-D9) and serves it as a length-framed TCP stream on the vehicle's truth port
+Subscribes the sim's ZMQ TRUTH channel (``:5590+20N``, instance-aware) and
+serves it as a length-framed TCP stream on the vehicle's truth port
 (``5150+2N``) for COSMOS's truth interface to dial. The payload is
 **opaque**: the gateway stamps the ground-owned 4-byte header and forwards
 the EDS-encoded 112 B container without decoding it - the generated defs
 stay the single source of layout truth, exactly like the beacon path.
 
-The boundary is the D2 idiom, mirrored: truth is TELEMETRY-ONLY by
+The boundary is the link idiom, mirrored: truth is TELEMETRY-ONLY by
 construction. Inbound bytes on the truth port are counted, refused, and
 loudly logged - the same way ``gs_tcp`` treats commands on the beacon.
 There is no truth uplink because truth has no actuators.
@@ -139,7 +139,7 @@ class TruthGateway:
                 self._drop(fd)
 
     def run(self) -> None:
-        """Pump until SIGTERM. Frames flow gateway-ward only; nothing gates.
+        """Pump until SIGTERM. Frames flow gateway-ward only; nothing checks.
 
         The ZMQ side is DRAINED nonblocking every iteration, not polled by
         fd: ``select.poll`` on a pyzmq fd demonstrably misses readiness
@@ -179,7 +179,7 @@ class TruthGateway:
 def main(argv: list[str] | None = None) -> int:
     """Entry point: fleet.sh starts one gateway per vehicle with --instance."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--instance", type=int, default=0, help="fleet port block (D9) to serve")
+    ap.add_argument("--instance", type=int, default=0, help="fleet port block to serve")
     ap.add_argument("--name", default="", help="vehicle name for log lines")
     args = ap.parse_args(argv)
 

@@ -2,7 +2,7 @@
 
 Full-loop, mission-in-the-loop, LOCKSTEP. Requires the running mission
 (gs_tcp :5050/:5051) and a ``detumble_scenario --zmq --pace``: the sim owns
-the clock, every sensor frame gates on its StepAck, and the sim re-writes the
+the clock, every sensor frame checks on its StepAck, and the sim re-writes the
 effector command EVERY tick - the torque fcs commanded for that frame, or
 zero when the loop had nothing to say. Inertness therefore has two proofs:
 the bus carries no torque while disabled, and the sim's echo channel
@@ -28,7 +28,7 @@ Offsets and MsgIds are read from the EDS model - the same build that emits the
 COSMOS defs and the gs_tcp table - so this script cannot quietly disagree with
 either about the wire.
 
-Fleet runs (D10) add ``--start-frame``: the stage sequence advances on
+Fleet runs add ``--start-frame``: the stage sequence advances on
 telemetry COUNTS, so the sim frames its commands land on repeat only if the
 run is anchored to an absolute frame. A fleet's later vehicles start when the
 previous vehicle's client finished - wall-clock jitter the paced world turns
@@ -135,7 +135,7 @@ class FrameLog:
         self.evs_msg_off = self.evs.byte_offset(".Message")
         self.sensor_omega: dict[int, tuple[float, float, float]] = {}
         self.sensor_count = 0
-        self.max_frame = 0  # newest sim frame seen on the beacon (D10 anchor)
+        self.max_frame = 0  # newest sim frame seen on the beacon
         self.torque_by_frame: dict[int, tuple[float, float, float]] = {}
         self.last_hk: HkSnapshot | None = None
         self.evs_events: list[tuple[str, int, str]] = []
@@ -182,14 +182,14 @@ class FrameLog:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the P3c closed-loop acceptance; returns process exit code."""
+    """Run the closed-loop acceptance; returns process exit code."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--instance", type=int, default=0, help="fleet port block (D9) to address")
+    ap.add_argument("--instance", type=int, default=0, help="fleet port block to address")
     ap.add_argument(
         "--start-frame",
         type=int,
         default=0,
-        help="hold ENABLE until the beacon shows this ABSOLUTE sim frame (D10: a "
+        help="hold ENABLE until the beacon shows this ABSOLUTE sim frame (a "
         "sequential fleet client otherwise anchors its whole count-driven stage "
         "sequence on its own launch time, which inherits the previous vehicle's "
         "test duration jitter - an absolute frame makes the trajectory repeat)",
@@ -198,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         "--gain-frame",
         type=int,
         default=0,
-        help="hold SET_GAIN until the beacon shows this ABSOLUTE sim frame (P6 "
+        help="hold SET_GAIN until the beacon shows this ABSOLUTE sim frame (the "
         "lesson: unanchored, the send rides the 7.8 s FCS_HK poll PHASE - a "
         "container-boot artifact that moved the SET_GAIN frame when the mission "
         "grew an app, re-rolling a frozen digest with the physics untouched; "
@@ -355,10 +355,10 @@ def main(argv: list[str] | None = None) -> int:
                         )
                 # ADVANCE TO RETUNE when SET_GAIN can be anchored. Every
                 # exact-bytes law check above ran on every arriving sample -
-                # what must NOT gate the send is the arrival of an FCS_HK
+                # what must NOT check the send is the arrival of an FCS_HK
                 # sample: its 7.8 s poll PHASE is a container-boot artifact,
                 # and gating on it let a mission rebuild silently move the
-                # SET_GAIN frame and re-roll a frozen digest (P6-era lesson,
+                # SET_GAIN frame and re-roll a frozen digest (a measured lesson,
                 # retirement of 25fc027b). Anchored: send on exactly this
                 # beacon frame, loud failure if the window was missed.
                 anchored = bool(args.gain_frame)
@@ -440,7 +440,7 @@ def main(argv: list[str] | None = None) -> int:
         if sent_gain_at is not None:
             reason += f" (SET_GAIN sent {time.monotonic() - sent_gain_at:.0f}s ago)"
         print(f"events seen: {[f'{a}/{e}' for a, e, _ in log.evs_events][-8:]}")
-    print("P3 CLOSED LOOP OK" if ok else f"P3 CLOSED LOOP FAILED: {reason}")
+    print("CLOSED LOOP OK" if ok else f"CLOSED LOOP FAILED: {reason}")
     return 0 if ok else 1
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# P6 round trip: a time-tagged command executed by the flight, frame-exact.
+# Scheduled round trip: a time-tagged command executed by the flight, frame-exact.
 #
 # Same rig as fly_world.sh (paced lockstep, chief operations plant), with
 # the closed-loop acceptance replaced by sim/scheduled_flight.py: the ground
@@ -7,7 +7,7 @@
 # SET_GAIN at T=70, a late entry, three refusals), then watches the beacon
 # prove the queue fired on the first frame >= T and nothing moved before it.
 # The digest is therefore a function of the sim timeline alone - run this
-# script twice and the trajectory sha256 must be identical, which is the P6
+# script twice and the trajectory sha256 must be identical, which is the schedule's
 # determinism exit ("schedules make the future reproducible, not racy").
 #
 # Run it TWICE and compare digests:
@@ -40,7 +40,7 @@ stale="$("$RUNTIME" ps -q --filter ancestor=orrery-cfs:dev || true)"
 # A stopping container keeps its bound ports for docker's stop grace - the
 # mission's listeners retry, the host sim's bind does not. This sweep also
 # takes down an operational fleet (same image, same legacy port block: that
-# is the shared-port trade D9 accepted; restore with scripts/fleet.sh up).
+# is an accepted shared-port trade; restore with scripts/fleet.sh up).
 # Wait for the ports to actually free before anything binds.
 wait_port_free() {
     local port="$1" _
@@ -79,7 +79,7 @@ while [ "$SECONDS" -lt "$BOOT_TIMEOUT" ]; do
         break
     fi
     if grep -qE "(GS_TCP|FCS|BSK_LINK|SPS).*(fail|DEAD)|Could not load file|ES Load Module Error" <<<"$LOGS"; then
-        echo "P6 SCHEDULED ROUND TRIP FAILED (app init error)"
+        echo "SCHEDULED ROUND TRIP FAILED (app init error)"
         grep -E "GS_TCP|FCS|BSK_LINK|SPS|LoadModule|Could not load|EVS Port1.*66/1/ES" <<<"$LOGS" | tail -12
         exit 1
     fi
@@ -89,7 +89,7 @@ done
 LOGS="$("$RUNTIME" logs "$CONTAINER" 2>&1 || true)"
 if ! grep -q "gs_tcp downlink :$BEACON uplink :$UPLINK" <<<"$LOGS" \
     || ! grep -q "SPS App Initialized" <<<"$LOGS"; then
-    echo "P6 SCHEDULED ROUND TRIP FAILED (boot markers not seen within ${BOOT_TIMEOUT}s)"
+    echo "SCHEDULED ROUND TRIP FAILED (boot markers not seen within ${BOOT_TIMEOUT}s)"
     grep -E "GS_TCP|FCS|BSK_LINK|SPS|Could not load" <<<"$LOGS" | tail -12
     exit 1
 fi
@@ -107,7 +107,7 @@ echo "--- scheduled-execution ground client ---"
 rc=0
 uv run python -m sim.scheduled_flight --instance "$INSTANCE" || rc=$?
 
-# On a PASS let the scenario FINISH: the trajectory sha256 is the P6
+# On a PASS let the scenario FINISH: the trajectory sha256 is the schedule's
 # determinism artifact, and a killed run has none.
 sim_rc=0
 if kill -0 "$SIM_PID" 2>/dev/null; then
@@ -133,8 +133,8 @@ echo "--- mission console tail (SPS/FCS lifecycle) ---"
 
 if [ "$rc" -eq 0 ]; then
     grep -E "trajectory" "$LOG" | tail -1
-    echo "P6 SCHEDULED ROUND TRIP OK"
+    echo "SCHEDULED ROUND TRIP OK"
 else
-    echo "P6 SCHEDULED ROUND TRIP FAILED"
+    echo "SCHEDULED ROUND TRIP FAILED"
 fi
 exit "$rc"

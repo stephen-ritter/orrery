@@ -8,7 +8,7 @@
  * drift silently: tests/test_eds2cosmos.py parses the XML and this header and
  * fails the build on any mismatch.
  *
- * Registered PART topics (REG) are no longer hand-written lines here: the
+ * Registered PART topics are no longer hand-written lines here: the
  * generated mirror below renders them from registry/parts.toml, so landing a
  * part never edits this file. App topics stay - apps are not parts.
  */
@@ -32,15 +32,15 @@
 #define CFE_MISSION_OBC_HK_CMD_TOPICID 204
 #define CFE_MISSION_OBC_HK_SEND_HK_TOPICID 205
 
-/* Time-tagged command execution (P6, sps app): the queue is fed on
+/* Time-tagged command execution (sps app): the queue is fed on
  * SCHEDULE_CMD and evaluated on the sensor-frame strobe, so execution is
- * frame-quantized like a real major-frame schedule (D8). */
+ * frame-quantized like a real major-frame schedule. */
 #define CFE_MISSION_SPS_HK_TLM_TOPICID 206
 #define CFE_MISSION_SPS_CMD_TOPICID 206
 #define CFE_MISSION_SPS_SCHEDULE_CMD_TOPICID 207
 #define CFE_MISSION_SPS_SEND_HK_TOPICID 208
 
-/* Camera payload (CAM v2a, cam app). SET_CONFIG rides its own topic on the
+/* Camera payload (cam app). SET_CONFIG rides its own topic on the
  * SetGainPkt law (payload-bearing commands lose arguments in the FC-subtype
  * pattern); the CAMSTATE telemetry topic is the registry row, not a line
  * here - apps are hand-written, parts are generated. */
@@ -58,7 +58,7 @@
 
 /* cFS TIME service command port, block-relative (cfe-topicids.xml:
  * TIME_CMD = TELECOMMAND_BASE_TOPICID + 5). The link slaves mission MET to
- * the sim timecode over this port (D8). */
+ * the sim timecode over this port. */
 #define ORRERY_TIME_CMD_TOPICID 5
 
 #endif /* ORRERY_TOPICIDS_H */

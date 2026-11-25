@@ -1,7 +1,7 @@
 """Parse cFS EDS (CCSDS SOIS SEDS) XML into a flat model of packets.
 
 The mission's EDS XML trees (cFE modules, apps, mission defines) are the
-single source of truth for message layouts (D3); this module resolves the
+single source of truth for message layouts; this module resolves the
 ``${NS/NAME}`` constants, follows ``baseType`` chains, and flattens
 container types into bit-level fields ready for code emission.
 """
@@ -257,7 +257,7 @@ class Eds:
     def load_xml(self, path: Path, mission: bool = False) -> None:
         """Load one XML file: mission defines and/or data-type packages.
 
-        A ``DesignParameters`` root is defines-only. Since P3c the mission
+        A ``DesignParameters`` root is defines-only. The mission
         directory also holds ``PackageFile`` roots (the custom app packages),
         so being in the mission list does not by itself mean "defines only":
         those parse as packages like any module EDS.

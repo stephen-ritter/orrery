@@ -1,5 +1,5 @@
 /*
- * fcs: orrery flight control system (P3c).
+ * fcs: orrery flight control system.
  *
  * One control law, honestly small: direct rate damping. Every sensor frame
  * bsk_link ingests off the Basilisk link lands on the bus as
@@ -11,13 +11,13 @@
  * Ground owns authority over the loop (commands arrive on the :5051 uplink):
  *   FCS_CMD             FC 0 NOOP, FC 1 ENABLE, FC 2 DISABLE
  *   FCS_SET_GAIN        upload the per-axis gain (payload command, see fcs.xml)
- *   FCS_SET_WHEEL_LIMIT upload the supervisor threshold (P4b-2)
+ *   FCS_SET_WHEEL_LIMIT upload the supervisor threshold
  *   FCS_SEND_HK         housekeeping on the scheduler tick
  * The loop starts DISABLED: sensing a tumble must not silently start burning
  * momentum without the ground telling this spacecraft to fly.
  *
- * Mode supervisor (P4b-2, knowledge-driven): fcs ingests its own actuator and
- * instrument state (BSK_LINK_ONBOARD_STATE_TLM, the P4b-1 frame) and trips
+ * Mode supervisor (knowledge-driven): fcs ingests its own actuator and
+ * instrument state (BSK_LINK_ONBOARD_STATE_TLM) and trips
  * ENABLED -> SAFE when a |wheel speed| reaches the threshold. SAFE stops the
  * law - not the acks: the lockstep gate never leans on the control path - and
  * latches: ENABLE while SAFE is refused while the knowledge still shows the
@@ -26,7 +26,7 @@
  * with no onboard-state feed (the hand-written witness rig) leaves the
  * supervisor unarmed: no knowledge, no trip, no behavior change.
  *
- * Lockstep contract (D5 amendment): fcs answers EVERY processed sensor frame
+ * Lockstep contract: fcs answers EVERY processed sensor frame
  * with BSK_LINK_STEP_ACK_TLM - enabled or disabled, torqued or not - because
  * the ack means "the satellite has seen frame N", which is the sim's gate for
  * taking step N+1. The ack is the sim's clock dependency on flight software,
@@ -54,7 +54,7 @@
 #define FCS_KP_MAX 2000.0
 
 /**
- * Wheel-supervisor defaults (P4b-2), rad/s. The orrery wheel spec is
+ * Wheel-supervisor defaults, rad/s. The orrery wheel spec is
  * 628 rad/s (sim/scenarios/chief.toml); 95% of spec is "the machine is
  * telling you it is running out of headroom", and the trip must fire before
  * the plant's own clamp does. The upper bound only rejects nonsense uploads:
@@ -86,7 +86,7 @@ typedef struct
     uint32 CommandErrorCounter;
     uint32 SensorFramesReceived;    uint32 SensorFramesBadLen;   /* counted, never fatal: link audit covers it */
     uint32 TorqueCommandsIssued;
-    uint32 StepAcksIssued;       /* lockstep barrier acks (every frame, D5)   */
+    uint32 StepAcksIssued;       /* lockstep barrier acks (every frame)       */
     uint32 StepAckFailCount;     /* an ack that never left = the sim will hang */
     uint32 StepAckResends;       /* idempotent re-acks of an already-processed
                                   * frame: the sim's barrier retransmits because
@@ -99,7 +99,7 @@ typedef struct
     double LastSimTimeS;
     double LastTorqueB[FCS_AXES];
 
-    /* Supervisor state (P4b-2): the onboard knowledge snapshot plus the
+    /* Supervisor state: the onboard knowledge snapshot plus the
      * threshold it is judged against. OnboardFrame is the sensor-frame
      * watermark of the newest snapshot: age in frames, not wall clock. */
     double WheelLimit;

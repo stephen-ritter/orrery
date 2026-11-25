@@ -1,6 +1,6 @@
 # Data provenance — the truth/knowledge boundary
 
-This is the written rule the acceptance gate exists to enforce. Where a
+This is the written rule the acceptance check exists to enforce. Where a
 sentence here and a test disagree, the test wins and this file is a bug.
 
 ## The two sources
@@ -27,14 +27,14 @@ flowchart LR
 
 No arrow leaves the truth side toward the flight side, and none can: the
 `TRUTH_*` targets ship no commands, and the beacon refuses inbound bytes.
-The gate ladder proves it — an injection attempt on the truth wire is an
+The check ladder proves it — an injection attempt on the truth wire is an
 acceptance exhibit that asserts *refusal logged*.
 
 ## What rides the flight wire
 
 | Kind | Packet(s) | Provenance | Audit |
 | --- | --- | --- | --- |
-| Rate knowledge (the barrier's witness) | `BSK_LINK_SENSOR_FRAME_TLM` | plant IMU message: bias + seeded random walk | frame-exact law, freshness, gate counters |
+| Rate knowledge (the barrier's witness) | `BSK_LINK_SENSOR_FRAME_TLM` | plant IMU message: bias + seeded random walk | frame-exact law, freshness, check counters |
 | Actuator/environment report (a bundle) | `BSK_LINK_ONBOARD_STATE_TLM`, `OBC_HK_TLM` | the plant's own device messages sampled per tick, mirrored by `obc_hk` | supervisor trips on it; counts vs producers |
 | **Sensor opinions** | `BSK_LINK_NAV_STATE_TLM` (0x08CF), `BSK_LINK_ATTITUDE_STATE_TLM` (0x08D0) | a *modelled instrument* in the world — the plant's `gpsReceiver` / `starTracker` device, seeded, with the sigmas the vehicle's own TOML declared | two-sided, registry-driven: differ at device scale, agree as one world |
 
@@ -44,7 +44,7 @@ and its acceptance bound is read from the manifest line that built the device:
 under `floor·σ` the flight wire is reading an oracle (the cheat), over
 `3·√3·σ` the two wires describe different universes. A vehicle that declares no
 such device announces the channel off — nothing is zero-filled — and a vehicle
-that fits one without declaring its sigma stops the gate, because a bound of
+that fits one without declaring its sigma stops the check, because a bound of
 nothing grades a tautology.
 
 A **fourth kind** crosses the link and never reaches the bus:
@@ -78,7 +78,7 @@ grade the wrong number. The absence is the tripwire, and a test pins it
 4. **Operators compare, never close loops on truth.** Screens put truth and
    knowledge side by side because the *gap* (gyro bias + noise, ~1e-5..1e-3
    rad/s on this vehicle) is the boundary made visible. Any control path that
-   reads truth is a bug by definition — the acceptance gate measures both
+   reads truth is a bug by definition — the acceptance check measures both
    halves: truth and knowledge MUST differ and MUST agree on the same world.
 5. **Sim control (not built) is a third channel, never a truth-port write.**
    If and when ground may edit the world itself (fault injection, what-if

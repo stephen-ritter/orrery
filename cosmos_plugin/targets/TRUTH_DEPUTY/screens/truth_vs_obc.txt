@@ -1,4 +1,4 @@
-deputy truth-vs-knowledge comparison (P5). Hand-written operator UI -
+deputy truth-vs-knowledge comparison. Hand-written operator UI -
 # screens are not wire definitions; the generated-defs rule governs cmd/tlm.
 # Provenance (docs/data_provenance.md): LEFT column = Basilisk truth, via
 # the ground gateway, never through the satellite. RIGHT column = what the
@@ -44,7 +44,7 @@ SCREEN AUTO AUTO 1.0
   END
 
   HORIZONTALBOX
-    TBOX "GNSS fix (0x08CF via cFS, KN)"
+    TBOX "GNSS fix (0x08CF via cFS)"
       LABELVALUE SAT_DEPUTY BSK_LINK_NAV_STATE_TLM SIM_TIME_S "sim time [s]"
       LABELVALUE SAT_DEPUTY BSK_LINK_NAV_STATE_TLM RBN_N_0 "pos x [m]"
       LABELVALUE SAT_DEPUTY BSK_LINK_NAV_STATE_TLM RBN_N_1 "pos y [m]"
@@ -62,6 +62,6 @@ SCREEN AUTO AUTO 1.0
   END
 
   LABELLINE "the gap between the columns IS the boundary: |difference| rides the gyro bias + noise, never zero"
-  LABELLINE "orbit rows (KN): caches hold their own instants - the p5 gate aligns epochs; |Δv| visible here rides receiver bias (~cm/s)"
+  LABELLINE "orbit rows: caches hold their own instants - the check aligns epochs; |Δv| visible here rides receiver bias (~cm/s)"
 
 END

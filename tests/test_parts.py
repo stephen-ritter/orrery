@@ -1,16 +1,16 @@
-"""Parts registry tests (REG, D13): the catalog answers for the circuit.
+"""Parts registry tests: the catalog answers for the circuit.
 
 Two directions of trust:
 
 * the registry may not outrun the CATALOG - every bskforge_type it names
   must exist in bskforge's sensor union (the [custom]-ban law, one level up);
 * landed rows may not LIE - every surface the row claims (topicid XML,
-  mirror headers, EVS header, ZMQ topic, EDS container size, p5 packets,
+  mirror headers, EVS header, ZMQ topic, EDS container size, coverage packets,
   bus subscribers) must agree, so while a surface is still hand-maintained
   the registry audits it, and once generators own it the same tests keep
   the generators honest. The `landed` flag is the phase line: unregistered
   reality never silently passes, and registered-but-unlanded rows
-  (attitude, the REG exit) are skipped until they arrive - then they flip.
+  (attitude) are skipped until they arrive - then they flip.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def test_registry_loads_the_catalog() -> None:
 def test_rig_topics_are_exactly_the_landed_rows() -> None:
     """The sim rig and the spacecraft consumer agree through the registry alone.
 
-    lockstep imports the catalog itself (REG): the sim refuses to wire an
+    lockstep imports the catalog itself: the sim refuses to wire an
     observability provider on a topic no landed row owns, and this pins that
     its notion of LANDED is the same set the spacecraft's generic table
     drives - one file, both sides of the airgap.
@@ -56,10 +56,10 @@ def test_rig_topics_are_exactly_the_landed_rows() -> None:
 
 
 def test_every_landed_part_ships_its_exhibit() -> None:
-    """Every landed row that promises an exhibit runs in the p5 gate.
+    """Every landed row that promises an exhibit runs in the coverage check.
 
-    The gate's row list and its sigma map read the same registry and the
-    same manifest the plants are built from; a landed row the gate would
+    The check's row list and its sigma map read the same registry and the
+    same manifest the plants are built from; a landed row the check would
     silently skip fails HERE, long before a live run has to notice.
     """
     from sim.fleet import scenario_vehicles
@@ -101,13 +101,13 @@ def test_identity_surfaces_are_the_registry_rendered() -> None:
 
 
 def test_bskforge_types_exist_in_the_catalog() -> None:
-    """D13: no phantom parts.
+    """No phantom parts.
 
     A row naming a type bskforge does not have would be wiring dressed as
     a part - the same law that bans [custom].
 
     The catalog is the schema's SENSOR union *and* its EFFECTOR union: a wheel
-    set is a part as much as a star tracker is (the P4b bundle's frame carries
+    set is a part as much as a star tracker is (the onboard bundle's frame carries
     wheel bytes), and a registry that could only name sensors would push
     actuator meaning back into hand-written code. It is also the ROOT's module
     sections (CAM): [[camera]] mounts instrument hardware on a craft exactly
@@ -156,7 +156,7 @@ def test_identity_surfaces_agree(part: Part) -> None:
     )
 
     msgids = (MISSION_DEFS / "inc" / "orrery_msgids.h").read_text()
-    # part MIDs are generated (REG): the compiler reads both files as one
+    # part MIDs are generated: the compiler reads both files as one
     msgids += (MISSION_DEFS / "inc" / "orrery_part_msgids.h").read_text()
     assert f"#define {part.mid_name}_MID" in msgids
     assert f"CFE_MISSION_{part.topic_name}" in msgids, (
@@ -173,8 +173,8 @@ def test_identity_surfaces_agree(part: Part) -> None:
 def test_zmq_topic_lives_on_the_sensor_socket(part: Part) -> None:
     """The wire topic exists on the sim's sensor socket.
 
-    Pre-R4 this meant a hand-written TOPIC_* constant in lockstep.py; since
-    R4 the rig DERIVES its observer-topic set from this registry and refuses
+    This once meant a hand-written TOPIC_* constant in lockstep.py; now
+    the rig DERIVES its observer-topic set from this registry and refuses
     to wire anything else (RigChannel.__post_init__), so the landed row IS
     the declaration - the mirror check imports rather than greps.
     """
@@ -209,17 +209,17 @@ def test_container_exists_and_has_the_declared_size(part: Part) -> None:
 def test_exhibit_packets_are_what_the_ground_reads(part: Part) -> None:
     """The exhibit names packets that provably exist on the ground.
 
-    R4 made p5 generic - it reads whatever the row names - so the mirror
+    Generality made the check read whatever the row names - so the mirror
     moved DOWN to the source of packets: the flight side must be a real
     EDS SB interface (that is what generates the COSMOS def and the beacon
-    slot), and the truth side must be the truth stream p5 samples directly.
+    slot), and the truth side must be the truth stream the check samples directly.
     """
     assert part.exhibit is not None
     interfaces = (EDS_DIR / "bsk_link.xml").read_text()
     iface = part.exhibit.flight_packet.removeprefix("BSK_LINK_")
     assert f'Interface name="{iface}"' in interfaces, (
         f"{part.name}: {part.exhibit.flight_packet} has no EDS interface - "
-        "no COSMOS def, no beacon slot, p5 would sample a packet that cannot exist"
+        "no COSMOS def, no beacon slot, coverage would sample a packet that cannot exist"
     )
     assert part.exhibit.truth_packet == "TRUTH_STATE_TLM"
 

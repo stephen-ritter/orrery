@@ -1,26 +1,26 @@
-"""A bskforge TOML plant ridden by the orrery lockstep rig (ROADMAP W3, D7).
+"""A bskforge TOML plant ridden by the orrery lockstep rig.
 
 The plant is no longer written in Python: ``bskforge`` assembles the Basilisk
 graph from a scenario TOML (``sim/scenarios/*.toml``), and this module wraps
-the build with everything bskforge deliberately does not do - the D5 lockstep
+the build with everything bskforge deliberately does not do - the lockstep
 barrier, the EDS link codecs and the onboard knowledge model. The contract of
-D7 in one sentence: **the forge builds the satellite, orrery flies it**.
+The division in one sentence: **the forge builds the satellite, orrery flies it**.
 
-Two entries, one per plurality (D10): ``ForgeScenario`` flies a one-vehicle
+Two entries, one per plurality: ``ForgeScenario`` flies a one-vehicle
 world (the pre-fleet surface every frozen digest was flown on) and
 ``ForgeFleet`` flies an N-vehicle world - one Basilisk process, one clock,
-one gate per vehicle: the world steps only when EVERY mission container has
+one check per vehicle: the world steps only when EVERY mission container has
 acked the frame. A scenario with ``[[spacecraft]]`` blocks is a fleet; a
 second vehicle is a block, never a second process fighting for the world.
 
 Two pieces of surgery make the forge plant behave exactly like the
-hand-written one (the W3 parity gate demands a bit-identical trajectory):
+hand-written one (the W3 parity check demands a bit-identical trajectory):
 
 * ``restore_effector_order`` - bskforge registers the spacecraft BEFORE its
   effectors (all priority -1), so the spacecraft update pulls the effector's
   buffer one scan stale: the P3f actuation-lag trap, re-armed by a different
   author. It applies to ``extForceTorque`` and to a reaction-wheel array
-  alike (P4a). Basilisk exposes no reordering API, but ``TaskData.AddNewObject``
+  alike. Basilisk exposes no reordering API, but ``TaskData.AddNewObject``
   re-inserts into the live C++ list, so the effector is registered a second
   time at higher priority. The trailing duplicate update is provably a no-op:
   ``ExtForceTorque`` is stateless (its UpdateState only copies
@@ -30,12 +30,12 @@ hand-written one (the W3 parity gate demands a bit-identical trajectory):
   the duplicate registration does not touch. THIS FIX IS PER VEHICLE: a fleet
   that misses it on one body flies one body on stale actuation, and the
   digest of nobody else notices.
-* The FSW section is forbidden (``D7``): a bskforge control law would put the
+* The FSW section is forbidden: a bskforge control law would put the
   "flight software" in the simulator, and the link would command a body that
   is already being commanded from inside.
 
 What the plant *does* with a tick is the TOML's decision, not the harness's
-(P4a): a ``reactionWheels`` effector makes the scenario a wheel commander
+a ``reactionWheels`` effector makes the scenario a wheel commander
 (motor torque = -body torque, Basilisk's allocation convention), otherwise
 the body is torqued through the external port; a fitted ``imuSensor`` makes
 the plant's own sensor message the satellite's rate knowledge (bias from
@@ -101,12 +101,12 @@ from sim.parts import declared_mask, frame_rows, load_registry, registry_digest
 
 DEFAULT_SCENARIO = Path(__file__).parent / "scenarios" / "detumble_forge.toml"
 
-# Registry rows by part name (REG): the world-side provider table looks its
+# Registry rows by part name: the world-side provider table looks its
 # topics up here, so the sim publishes exactly what the catalog lands and a
 # topic string is never written down twice.
 PART_ROWS = {p.name: p for p in load_registry()}
 
-# The fit vocabulary (OB): the rows the firmware carries, in the order that
+# The fit vocabulary: the rows the firmware carries, in the order that
 # defines the mask's bits, plus the digest of their SEMANTICS. Both are baked
 # into the mission binary by codegen/emit_frames.py; a world that started with
 # a different one is stale, and says so at boot instead of mis-decoding.
@@ -125,7 +125,7 @@ OPNAV_PLANET_TARGET = 2
 def plant_observers(
     body: ForgeBody, clock: Callable[[], tuple[float, int]]
 ) -> dict[str, Callable[[], bytes]]:
-    """Wire the registered observer frames this plant can actually feed (REG).
+    """Wire the registered observer frames this plant can actually feed.
 
     The topic a provider rides comes from the registry row; WHETHER the
     provider exists at all comes from the manifest - a plant without the
@@ -133,9 +133,9 @@ def plant_observers(
     is insertion order and fixed right here, once: the digest ledger hashes
     the stream, so the world must never shuffle its own publishes.
 
-    An exit demo (REG/D13): fitting a registered part on a vehicle costs one
+    Fitting a registered part on a vehicle is meant to cost one
     ``if`` line in this function plus its provider method. The rig, the
-    codec, the spacecraft, and the gate learn the part from the registry.
+    codec, the spacecraft, and the check learn the part from the registry.
     """
     observers: dict[str, Callable[[], bytes]] = {}
     if body.has_plant_state:
@@ -151,7 +151,7 @@ def plant_observers(
         # refusal is the point - no silent unlanded traffic, no TODO.
         observers[PART_ROWS["opnav"].zmq_topic] = lambda: body.opnav_state_bytes(*clock())
     if body.has_plant_cam:
-        # Same hardware, second honest view (CAM v2a): what the device IS,
+        # Same hardware, second honest view: what the device IS,
         # beside what the pixels SAY. Same rig-side refusal if the row is
         # not landed - presence is only ever declared through the registry.
         observers[PART_ROWS["camstate"].zmq_topic] = lambda: body.cam_state_bytes(*clock())
@@ -161,7 +161,7 @@ def plant_observers(
 def resolve_fit_knobs(
     declare: list[str], hide: list[str], digest: str | None
 ) -> tuple[dict[str, bool], str | None]:
-    """Validate the OB injection knobs into (override map, digest or None).
+    """Validate the fit-injection knobs into (override map, digest or None).
 
     Every lie this tool can tell is checked here, in one place, before a plant
     is built: a part name no row owns, a part both claimed and concealed, a
@@ -186,9 +186,9 @@ def resolve_fit_knobs(
 
 
 def announce_fit_injections(args: argparse.Namespace, quiet: bool) -> None:
-    """Print every handshake lie this run tells (OB).
+    """Print every handshake lie this run tells.
 
-    The acceptance gates inject a wrong manifest on purpose. A knob that can
+    The acceptance checks inject a wrong manifest on purpose. A knob that can
     make the spacecraft abort or degrade must never operate silently: whoever
     reads the log later must be able to tell a planted lie from a real one.
     """
@@ -210,9 +210,9 @@ def fit_provider(
     override: dict[str, bool] | None = None,
     digest: str | None = None,
 ) -> Callable[[], bytes]:
-    """The boot handshake provider (OB): this vehicle's declared fit, per tick.
+    """The boot handshake provider: this vehicle's declared fit, per tick.
 
-    Published every tick rather than once, for the same reason the gate
+    Published every tick rather than once, for the same reason the check
     re-shouts its first sensor frame: ZeroMQ eats messages published before a
     subscription lands, and a mission that RESTARTS mid-run heals its verdict
     within a tick instead of flying on a stale handshake forever.
@@ -251,11 +251,11 @@ def restore_effector_order(sim: Any, ext_ft: Any) -> None:  # noqa: ANN401 - SWI
 
 
 def _reject_fsw(sc_cfg: Any, scenario_path: str | Path) -> None:  # noqa: ANN401 - bskforge model
-    """D7, per vehicle: the control law is flight software, never the plant."""
+    """Per vehicle: the control law is flight software, never the plant."""
     if sc_cfg.fsw is not None:
         raise ForgeError(
             f"[spacecraft.fsw] in {sc_cfg.name!r} ({scenario_path}): the control "
-            "law lives in cFS fcs_app, not in the simulator (decision D7); "
+            "law lives in cFS fcs_app, not in the simulator; "
             "delete the [spacecraft.fsw] section"
         )
 
@@ -268,7 +268,7 @@ def _resolve_control_period(
     """The world tick comes from the scenario's ``[simulation.dt] fsw``.
 
     One knob, one source of truth: the number that sets the Basilisk fswTask
-    rate is the number the lockstep world gates on. A matching override is
+    rate is the number the lockstep world checks on. A matching override is
     accepted; a disagreeing one is refused, because a rig ticking between
     sensor-frame boundaries is how stale acks are born - and the rig's
     scan-grid guard alone does not catch every misalignment (0.5 s is a
@@ -289,7 +289,7 @@ class ForgeBody:
 
     Everything vehicle-local: the effector-order fix, the knowledge
     subscriptions, the effector writing, the truth readout and the
-    OnboardState packing. A fleet (D10) builds one of these per
+    OnboardState packing. A fleet builds one of these per
     ``[[spacecraft]]`` block in the SAME Basilisk world and hands each to
     its own rig channel.
     """
@@ -311,7 +311,7 @@ class ForgeBody:
         bundle = ctx.bundles[sc_cfg.name]
         self.name = sc_cfg.name
         self.bundle = bundle
-        # The manifest's own claim (OB), kept as data: WHICH hardware this
+        # The manifest's own claim, kept as data: WHICH hardware this
         # vehicle's TOML declares, independent of the providers that publish
         # its frames. The handshake exists to catch the two disagreeing, so it
         # must not be computed from the thing it judges. The rendered eye
@@ -331,7 +331,7 @@ class ForgeBody:
         bundle.ext_ft.cmdTorqueInMsg.subscribeTo(self._torque_msg)
         self._state_sub = bundle.sc.scStateOutMsg.addSubscriber()
 
-        # Actuator: the TOML decides (P4a). A reactionWheels effector takes
+        # Actuator: the TOML decides. A reactionWheels effector takes
         # the motor-torque path; without one, torque enters as body torque
         # through the external port (the frozen W3 witness plant). The wheel
         # array needs the same freshness fix as extFT.
@@ -357,7 +357,7 @@ class ForgeBody:
             out_msg, _ = bundle.sensor_msgs[imu.name]
             self._imu_sub = out_msg.addSubscriber()
 
-        # Onboard state providers (P4b): every sensor the plant fitted, plus
+        # Onboard state providers: every sensor the plant fitted, plus
         # the wheel array, sampled at tick time into OnboardState frames.
         # What the plant lacks stays zero - the frame is the OBC's view, and
         # an empty channel is that view saying "nothing here".
@@ -386,7 +386,7 @@ class ForgeBody:
         self._bias = np.asarray(gyro_bias_rads, dtype=float)
         self._noise_sigma = gyro_noise_sigma_rads
         self._rng = np.random.default_rng(seed)
-        # KN2: the GNSS receiver is plant hardware now (D13). A TOML
+        # The GNSS receiver is plant hardware now. A TOML
         # ``gpsReceiver`` line builds a native SimpleNav in the world model;
         # this reads its output message the way the IMU line above reads the
         # gyro's - the scenario-layer error model retired with sim/gps.py.
@@ -401,13 +401,13 @@ class ForgeBody:
         # CAM: the estimators that turn Vizard's pixels into a planet vector.
         # [[camera]] is plant hardware the forge builds (module, Vizard
         # registration, render-rate task); limbFinding and horizonOpNav are
-        # the onboard knowledge model riding it - the harness's half of D7 -
+        # the onboard knowledge model riding it - the harness's half of
         # so they join here, between the build and InitializeSimulation, on a
         # task created AFTER the forge's camera task: each tick reads the
         # frame the camera just received.
         self._opnav: tuple[Any, ...] | None = None
         self._cam_stats = {"applied": 0, "refused_id": 0, "refused_rate": 0}
-        # CAM v2b store outlet (set by _build_opnav when record_rate > 0):
+        # Store outlet (set by _build_opnav when record_rate > 0):
         # rate, source dir, PNG filenames already chunked onto the wire,
         # and the FramesRecorded tally. The emitter is attached at rig wiring
         # - the outlet streams frames but never owns the socket it rides.
@@ -473,13 +473,13 @@ class ForgeBody:
         # horizon just made.
         recorder = horizon.opNavOutMsg.recorder()
         ctx.sim.AddModelToTask(task, recorder)
-        # CAM v2a: a recorder on the IMAGE port, same task, is the captured
+        # A recorder on the IMAGE port, same task, is the captured
         # witness. Recorder granularity is this task's tick: images that
         # complete between two ticks share one record, so Captured is a
         # floor, and its docstring says so rather than pretending otherwise.
         image_recorder = cam_module.imageOutMsg.recorder()
         ctx.sim.AddModelToTask(task, image_recorder)
-        # CAM v2b store outlet: Basilisk's own PNG writer (camera.cpp
+        # Store outlet: Basilisk's own PNG writer (camera.cpp
         # saveImages, written synchronously inside updateState, file named by
         # the capture time to 6 decimals) becomes the byte source - no memory
         # trickery on imagePointer, and the reassembled file is literally the
@@ -519,9 +519,9 @@ class ForgeBody:
     def has_plant_attitude(self) -> bool:
         """Whether the plant fitted the star tracker that feeds ATTSTATE.
 
-        Same device the P4b bundle already samples: the exit demo fits the
+        Same device the bundle already samples: the star-tracker row
         part to a vehicle whose manifest already had the hardware - the
-        TOML line predates the registry, and REG's law is that presence of
+        TOML line predates the registry, and its law is that presence of
         a REGISTERED part adds a FRAME, not a rewrite.
         """
         return self._st_sub is not None
@@ -565,7 +565,7 @@ class ForgeBody:
 
     @property
     def has_plant_cam(self) -> bool:
-        """Whether this plant mounts a commandable eye (CAM v2a).
+        """Whether this plant mounts a commandable eye.
 
         The same [[camera]] line that feeds OPNAV: one hardware, two honest
         views - the estimator's opinion (opnav row) and the device's own
@@ -574,15 +574,15 @@ class ForgeBody:
         return self._opnav is not None
 
     def cam_state_bytes(self, sim_time_s: float, frame: int) -> bytes:
-        """Pack one ``CamState``: what this body's camera IS (CAM v2a).
+        """Pack one ``CamState``: what this body's camera IS.
 
         The device side of the commanded-vs-confirmed pair: read from the
         module's live fields, which Basilisk re-reads every update
-        (camera.cpp) - the Phase-0 spike flew this conclusion before the
+        (camera.cpp) - an early spike flew this conclusion before the
         schema was written. ``captured`` counts distinct image timeTags at
         estimator-task granularity, boot stream included; two images
         completing between consecutive recorder ticks would share one count,
-        so this is a floor, and v2b's storage ledger is where the exact
+        so this is a floor, and the storage ledger is where the exact
         number lives.
         """
         assert self._opnav is not None, "cam_state_bytes without a rendered eye"
@@ -598,7 +598,7 @@ class ForgeBody:
         # flight).
         captures = sorted({t / 1e9 for t in image_recorder.timeTag if t > 0.0})
         captured = len(captures)
-        # The store outlet rides this same per-tick door (v2b): every Nth
+        # The store outlet rides this same per-tick door: every Nth
         # capture's PNG bytes go out as IMG chunks before the state is packed,
         # so FramesRecorded in THIS frame counts sends made in THIS tick.
         frames_recorded = self._pump_store(camera_id, captures)
@@ -616,7 +616,7 @@ class ForgeBody:
         )
 
     def apply_cam_config(self, cfg: CamConfig) -> None:
-        """The sim-side config door (CAM v2a): validate, write, tally.
+        """The sim-side config door: validate, write, tally.
 
         Second guard on the same law the cam app enforces - zero render
         rate is a divide-by-zero inside vizInterface's request modulo (B1),
@@ -648,7 +648,7 @@ class ForgeBody:
             f"rate={cfg.render_rate_s:g}s (t={cfg.sim_time_s:.1f}s frame={cfg.frame})"
         )
 
-    # -- CAM v2b store outlet -------------------------------------------------
+    # -- the store outlet        -------------------------------------------------
     #
     # The framing is ours, deliberately OUTSIDE the EDS model (the map's
     # instruction, the STEP_ACK precedent for non-ground frames): topic "IMG",
@@ -759,7 +759,7 @@ class ForgeBody:
     def gyro(self) -> np.ndarray:
         """What the satellite measures.
 
-        With a plant IMU (P4a) this is the sensor's own message: truth rate
+        With a plant IMU this is the sensor's own message: truth rate
         plus gyro bias plus random walk, all the plant's - the harness adds
         nothing. Without one, the Python error model stands: truth + fixed
         bias + white noise, same seed and draw order as ``DetumbleScenario``
@@ -782,7 +782,7 @@ class ForgeBody:
         return speeds[: self._num_wheels]
 
     def onboard_state_bytes(self, sim_time_s: float, frame: int) -> bytes:
-        """Pack one ``OnboardState`` from the plant's own outputs (P4b).
+        """Pack one ``OnboardState`` from the plant's own outputs.
 
         Exactly what the OBC would read off its buses at this instant: wheel
         feedback, ST quaternion (scalar-first, CASE wrt inertial), CSS cosines
@@ -791,7 +791,7 @@ class ForgeBody:
         inventing something. The clock and frame number come from the rig:
         one world, one tick numbering, every vehicle's OBC sees the same.
 
-        REG: field names arrive as dict keys and the generic container codec
+        Field names arrive as dict keys and the generic container codec
         sizes the result against the registry row - this method reads
         hardware, it no longer knows wire layout.
         """
@@ -828,12 +828,12 @@ class ForgeBody:
         return float(np.linalg.norm(np.asarray(self.truth().omega_bn_b, dtype=float)))
 
     def nav_state_bytes(self, sim_time_s: float, frame: int) -> bytes:
-        """Pack one ``NavState``: this vehicle's plant receiver fix (KN2).
+        """Pack one ``NavState``: this vehicle's plant receiver fix.
 
         The fix is the plant ``SimpleNav`` device's own message - truth plus
         the Gauss-Markov error process the TOML declared - read from the
         device's output message, never recomputed here. What the ground sees
-        as truth stays on the truth socket: two wires, one universe, and P5
+        as truth stays on the truth socket: two wires, one universe, and
         asserts both halves.
         """
         assert self._gps_sub is not None, "nav_state_bytes without a fitted receiver"
@@ -853,10 +853,10 @@ class ForgeBody:
         )
 
     def declared_fit(self, override: dict[str, bool] | None = None) -> int:
-        """This vehicle's fit as its manifest declares it, as a bitmask (OB).
+        """This vehicle's fit as its manifest declares it, as a bitmask.
 
         A registry row is claimed when the scenario declares ANY of the
-        bskforge types that row covers (the P4b bundle row covers four
+        bskforge types that row covers (the onboard bundle row covers four
         instruments, so one CSS is enough to claim the frame). ``override``
         injects a deliberate lie for acceptance - claim a part that is not
         there, hide one that is - and ``main`` prints every override, because
@@ -883,7 +883,7 @@ class ForgeBody:
         )
 
     def attitude_state_bytes(self, sim_time_s: float, frame: int) -> bytes:
-        """Pack one ``AttitudeState``: this vehicle's star tracker fix (REG exit part).
+        """Pack one ``AttitudeState``: this vehicle's star tracker fix.
 
         The fix is the plant ST device's own ``STSensorMsgPayload`` - the
         quaternion with the white-noise error the TOML declared, read off the
@@ -935,7 +935,7 @@ class ForgeScenario:
             FleetPolicyError: the TOML wires hardware in by hand, which the
                 audited load refuses before anything is built.
             ForgeError: more than one spacecraft (that is a fleet - build a
-                ``ForgeFleet``), a bskforge FSW section (D7), or a
+                ``ForgeFleet``), a bskforge FSW section, or a
                 ``--control-period`` that disagrees with ``[simulation.dt] fsw``.
         """
         config = load_fleet(scenario_path)
@@ -997,7 +997,7 @@ class ForgeScenario:
         if self.body.store_active:
             # The store outlet's voice is the sensor PUB: IMG is fire-and-
             # forget by socket nature (PUB drops, never blocks), which is the
-            # v2 law - images answer to no gate.
+            # v2 law - images answer to no check.
             self.body.attach_store_emitter(
                 lambda payload: sockets["sensor"].send_multipart([ForgeBody.IMG_TOPIC, payload])
             )
@@ -1050,17 +1050,17 @@ class ForgeScenario:
 
     @property
     def stale_torques(self) -> int:
-        """Tripwire: answers from frames the gate already passed."""
+        """Tripwire: answers from frames the check already passed."""
         return self._rig.stale_torques
 
     @property
     def sensor_retransmits(self) -> int:
-        """Handshake shouts the gate had to repeat while waiting."""
+        """Handshake shouts the check had to repeat while waiting."""
         return self._rig.sensor_retransmits
 
     @property
     def foreign_frames(self) -> int:
-        """Tripwire: answers from frames ahead of the gate."""
+        """Tripwire: answers from frames ahead of the check."""
         return self._rig.foreign_frames
 
     @property
@@ -1097,12 +1097,12 @@ class ForgeScenario:
 
 
 class ForgeFleet:
-    """One bskforge world, N vehicles, N gates on one clock (decision D10).
+    """One bskforge world, N vehicles, N checks on one clock.
 
     Every ``[[spacecraft]]`` block becomes a :class:`ForgeBody` with its own
     rig channel and its own socket set, addressed by its block index through
     ``sim.fleet.ports`` - the file IS the fleet and nothing is declared
-    twice. One tick: measure every body, publish every frame, gate every
+    twice. One tick: measure every body, publish every frame, check every
     container, apply every torque, then step the world once. A container
     that stops acking raises ``LockStalled`` naming its vehicle: one dead
     mission stalls the world loudly, it never advances on stale knowledge.
@@ -1129,7 +1129,7 @@ class ForgeFleet:
         Raises:
             FleetPolicyError: the fleet file wires hardware in by hand, which
                 the audited load refuses before anything is built.
-            ForgeError: an empty fleet, a bskforge FSW section (D7, any
+            ForgeError: an empty fleet, a bskforge FSW section (any
                 vehicle), a ``--control-period`` that disagrees with
                 ``[simulation.dt] fsw``, or a derived-identity disagreement
                 (belt & braces: raw-TOML order vs the validated config).
@@ -1218,7 +1218,7 @@ class ForgeFleet:
         self._rig.close()
 
     def run_to(self, sim_time_s: float) -> None:
-        """Advance the shared world, one gate-everyone tick per control period."""
+        """Advance the shared world, one check-everyone tick per control period."""
         self._rig.run_to(sim_time_s)
 
     @property
@@ -1238,22 +1238,22 @@ class ForgeFleet:
 
     @property
     def stale_torques(self) -> int:
-        """Tripwire summed over gates (per-channel detail lives in channels)."""
+        """Tripwire summed over checks (per-channel detail lives in channels)."""
         return self._rig.stale_torques
 
     @property
     def sensor_retransmits(self) -> int:
-        """Handshake shouts summed over gates."""
+        """Handshake shouts summed over checks."""
         return self._rig.sensor_retransmits
 
     @property
     def foreign_frames(self) -> int:
-        """Tripwire summed over gates."""
+        """Tripwire summed over checks."""
         return self._rig.foreign_frames
 
     @property
     def bad_frames(self) -> int:
-        """Tripwire summed over gates."""
+        """Tripwire summed over checks."""
         return self._rig.bad_frames
 
     def rate_history(self, vehicle: str) -> list[tuple[float, float]]:
@@ -1301,32 +1301,32 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--zmq",
         action="store_true",
-        help="lockstep link: publish EDS frames, own the torque to fcs, gate on step acks",
+        help="lockstep link: publish EDS frames, own the torque to fcs, check on step acks",
     )
     ap.add_argument(
         "--pace",
         action="store_true",
-        help="align sim seconds to wall seconds (human watch mode; the gate stays in force)",
+        help="align sim seconds to wall seconds (human watch mode; the check stays in force)",
     )
-    ap.add_argument("--ack-timeout", type=float, default=ACK_TIMEOUT_S, help="gate timeout [s]")
+    ap.add_argument("--ack-timeout", type=float, default=ACK_TIMEOUT_S, help="check timeout [s]")
     ap.add_argument(
         "--fit-declare",
         action="append",
         default=[],
         metavar="PART",
-        help="claim a part this vehicle does NOT declare (acceptance injection; OB)",
+        help="claim a part this vehicle does NOT declare (acceptance injection)",
     )
     ap.add_argument(
         "--fit-hide",
         action="append",
         default=[],
         metavar="PART",
-        help="conceal a part this vehicle DOES declare (acceptance injection; OB)",
+        help="conceal a part this vehicle DOES declare (acceptance injection)",
     )
     ap.add_argument(
         "--fit-digest",
         metavar="HEX8",
-        help="claim this registry digest instead of the world's own (stale-firmware injection; OB)",
+        help="claim this registry digest instead of the world's own (stale-firmware injection)",
     )
     add_link_args(ap)
     ap.add_argument("--quiet", action="store_true")
@@ -1488,7 +1488,7 @@ def _main_single(args: argparse.Namespace) -> int:
                 "(stale/foreign/bad must be 0 in a healthy lockstep run)"
             )
     # Same machine-readable acceptance line as the hand-written scenario:
-    # parity and determinism gates both read it, and they demand equality.
+    # parity and determinism checks both read it, and they demand equality.
     print(f"trajectory sha256 {trajectory_sha256(scenario.rate_history)}")
     print("DETUMBLE OK" if ratio < CONVERGENCE_RATIO else "DETUMBLE FAILED", flush=True)
     return 0 if ratio < CONVERGENCE_RATIO else 1

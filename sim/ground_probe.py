@@ -196,7 +196,7 @@ def main() -> int:
     )
     print(f"counter {counter_before} -> {counter_after}; noop event packet received: {noop_event}")
     print(f"beacon-port command refused with EVS complaint: {stray_complaint}")
-    print("P2 GROUND ROUND TRIP OK" if ok else "P2 GROUND ROUND TRIP FAILED")
+    print("GROUND ROUND TRIP OK" if ok else "GROUND ROUND TRIP FAILED")
     return 0 if ok else 1
 
 

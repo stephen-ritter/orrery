@@ -1,4 +1,4 @@
-# chief operations plant (ROADMAP P4a, decision D7): the full vehicle minus
+# chief operations plant: the full vehicle minus
 # thrusters, as a bskforge TOML. Pure plant on purpose - NO [spacecraft.fsw]:
 # the flight software lives in cFS and commands through the lockstep link.
 #
@@ -15,7 +15,7 @@ duration = 120.0
 
 [simulation.dt]
 dynamics = 0.1
-# fsw is the FSW tick: the world gate, sensor frames, beacon and every
+# fsw is the FSW tick: the world check, sensor frames, beacon and every
 # anchored digest ride this rate. It must stay an integer multiple of
 # dynamics, and retuning it re-anchors every baseline - full ceremony.
 fsw = 1.0
@@ -49,7 +49,7 @@ type = "rv"
 position = [7.0e6, 0.0, 0.0]
 # SI - metres per second. Circular at r=7000 km is sqrt(mu/r)=7546 m/s;
 # this line once said 7.5461 (km/s), which the schema cannot refuse and
-# gravity happily obeyed: the fleet free-fell until p5's velocity rule
+# gravity happily obeyed: the fleet free-fell until the coverage rule
 # caught it. tests/test_fleet.py keeps that from returning.
 velocity = [0.0, 7546.1, 0.0]
 
@@ -134,7 +134,7 @@ type = "magnetometer"
 name = "mag"
 noise_sigma = 1.0e-8
 
-# KN2 (D13): the vehicle's own GNSS opinion - the manifest picks the part,
+# The vehicle's own GNSS opinion - the manifest picks the part,
 # the plant builds a SimpleNav receiver from it. Delete this block and the
 # NavState stream (0x08CF) goes silent: absence declared, not zero-filled.
 [[spacecraft.sensors]]

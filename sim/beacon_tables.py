@@ -1,14 +1,14 @@
-"""P4 wrap acceptance: the REGENERATED defs work in live COSMOS.
+"""Regenerated-defs acceptance: the new defs work in live COSMOS.
 
 Runs against a live mission + paced lockstep sim (scripts/check_beacon_tables.sh)
 and proves through the JSON-RPC API - never a raw socket - that gem 0.1.4's
-generated defs decode and command everything P4 put on the wire:
+generated defs decode and command everything the mission put on the wire:
 
 1. target SAT_CHIEF installed with the new commands usable (a missing def
    would fail the cmd API; get_commands RPC itself is broken in this CE),
-2. OBC_HK_TLM (0x08CD, P4b-3) streams fresh at 1 Hz and its LITTLE_ENDIAN
+2. OBC_HK_TLM (0x08CD) streams fresh at 1 Hz and its LITTLE_ENDIAN
    float64/array items decode to physical values (|B| uT-scale, sun seen),
-3. BSK_LINK_ONBOARD_STATE_TLM (0x08CC, P4b-1) streams fresh, arrays decoded,
+3. BSK_LINK_ONBOARD_STATE_TLM (0x08CC) streams fresh, arrays decoded,
    magnetometer agrees with the OBC's own mirror,
 4. NOOP via COSMOS lands: OBC_HK_TLM.CommandCounter increments (uplink path
    through the new packet def),
@@ -16,7 +16,7 @@ generated defs decode and command everything P4 put on the wire:
    reports the new limit (a parameterised payload through generated defs).
 
 Freshness is SEQUENCE-verified throughout (the TLM server caches values
-across mission restarts - the P2 lesson).
+across mission restarts - the caching lesson).
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ def main() -> int:
     # ONBOARD_FRAMES_SEEN=0 in a FRESH packet is a true report that says
     # "not yet": boot waits here end the moment gs_tcp + FCS init print, and
     # a boot-warm mission is publishing HK before the world's first sensor
-    # frame has been decoded and republished onboard. The fact this gate
+    # frame has been decoded and republished onboard. The fact this check
     # claims is the world's frames ARRIVING, so keep demanding fresh packets
     # until the counter moves - and let the timeout answer "never".
     onboard = int(str(hk["ONBOARD_FRAMES_SEEN"]))
@@ -97,7 +97,7 @@ def main() -> int:
     assert int(str(hk["FCS_MODE"])) == 0, "fcs mirror should read DISABLED (nobody enabled it)"
     print(f"OBC_HK_TLM fresh: onboard={onboard} frames, |B|={field_t * 1e6:.2f} uT, sun={sun:.2f}")
 
-    # 3) the P4b-1 knowledge frame decodes, and agrees with the OBC mirror
+    # 3) the knowledge frame decodes, and agrees with the OBC mirror
     ob = wait_fresh(token, "BSK_LINK_ONBOARD_STATE_TLM", 90.0, "onboard state")
     b_fields = [num(ob, f"MAG_B_{axis}") for axis in range(3)]
     b_norm = sum(v * v for v in b_fields) ** 0.5
@@ -138,7 +138,7 @@ def main() -> int:
     assert abs(limit - 610.0) < 1e-9, f"FCS_HK_TLM WHEEL_LIMIT reads {limit}, not 610"
     print(f"FCS_HK_TLM reports WHEEL_LIMIT {limit:.1f} rad/s - uplink through the generated def")
 
-    print("P4 COSMOS WRAP OK")
+    print("COSMOS WRAP OK")
     return 0
 
 
@@ -146,8 +146,8 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except AssertionError as exc:
-        print(f"P4 COSMOS WRAP FAILED: {exc}")
+        print(f"COSMOS WRAP FAILED: {exc}")
         sys.exit(1)
     except TimeoutError as exc:
-        print(f"P4 COSMOS WRAP FAILED: {exc}")
+        print(f"COSMOS WRAP FAILED: {exc}")
         sys.exit(1)

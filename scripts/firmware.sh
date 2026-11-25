@@ -8,10 +8,10 @@
 #   scripts/firmware.sh hash    print the provenance hash
 #   scripts/firmware.sh inputs  print what the hash is taken over
 #
-# WHY. scripts/fleet.sh and the gate drivers start
+# WHY. scripts/fleet.sh and the check drivers start
 # cfs_mission/mission/build/exe/cpu1/container-start - a binary that sits on
 # disk whether or not it matches the sources that produced it. The registry
-# digest baked into the firmware (OB) catches the one mismatch that is a
+# digest baked into the firmware catches the one mismatch that is a
 # REGISTRY change; a trajectory digest may or may not move for anything else.
 # Neither says the plain sentence "you edited C and rebuilt nothing", and the
 # cost of not saying it is an afternoon spent debugging flight software that is
@@ -24,7 +24,7 @@
 # ignored, and dies the way ignored guards die. Inputs are the tracked files
 # under cfs_mission/ that the compiler reads - including the generated part
 # headers, so a registry edit that was rendered counts as an input, and one that
-# was NOT rendered is caught twice over, by the offline mirrors and by OB at boot
+# was NOT rendered is caught twice over, by the offline mirrors and by the fit handshake at boot
 # - plus the cFS pin in cfs_mission/cfs.lock: the core is fetched, not vendored,
 # so the pin is the fact that has to be recorded, and moving it is a deliberate
 # act that must re-fleet the yard. Prose is not an input, and the lock file

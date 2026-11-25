@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# P4 wrap: the REGENERATED defs (current gem) in live COSMOS CE.
+# Regenerated-defs wrap: the REGENERATED defs (current gem) in live COSMOS CE.
 #
 # Prereq: scripts/cosmos_stack.sh has loaded its GEM_VERSION (it rebuilds the
 # gem from cosmos_plugin/ and `cli load`s it). This header deliberately names no
@@ -61,7 +61,7 @@ while [ "$SECONDS" -lt 120 ]; do
         break
     fi
     if grep -qE "Could not load file|ES Load Module Error" <<<"$LOGS"; then
-        echo "P4 COSMOS WRAP FAILED (module load error)"
+        echo "COSMOS WRAP FAILED (module load error)"
         grep -E "Could not load|undefined symbol" <<<"$LOGS" | tail -4
         exit 1
     fi
@@ -69,7 +69,7 @@ while [ "$SECONDS" -lt 120 ]; do
 done
 LOGS="$(docker logs "$CONTAINER" 2>&1 || true)"
 if ! grep -q "OBC HK App Initialized" <<<"$LOGS"; then
-    echo "P4 COSMOS WRAP FAILED (boot markers not seen within 120s)"
+    echo "COSMOS WRAP FAILED (boot markers not seen within 120s)"
     grep -E "GS_TCP|FCS |OBC_HK|Could not load" <<<"$LOGS" | tail -8
     exit 1
 fi
@@ -114,8 +114,8 @@ echo "UNKNOWN packet lines: $unknown"
 [ "$unknown" -gt 0 ] && rc=1
 
 if [ "$rc" -eq 0 ]; then
-    echo "P4 COSMOS WRAP RUN OK"
+    echo "COSMOS WRAP RUN OK"
 else
-    echo "P4 COSMOS WRAP RUN FAILED"
+    echo "COSMOS WRAP RUN FAILED"
 fi
 exit "$rc"

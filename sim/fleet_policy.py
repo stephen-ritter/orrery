@@ -13,10 +13,10 @@ precisely so the library keeps the hatch for everyone else); what this module ad
 is the half only we can say, because it is about *our* layers: a smuggled device
 gets no registry row, is never declared in the fit manifest, cannot be classified
 in the coverage ledger, earns no generated identity, and has no exhibit the truth
-gate could judge it by. The digest ledger would then pin a trajectory partly
+check could judge it by. The digest ledger would then pin a trajectory partly
 produced by Python no schema ever saw.
 
-A gate that only forbids gets routed around by someone with a good reason, and
+A check that only forbids gets routed around by someone with a good reason, and
 usually they have one: the device belongs in bskforge's schema. So the refusal
 carries the route, not just the prohibition.
 """
@@ -40,13 +40,13 @@ _COST = (
     "type is not a part, it is wiring, and nothing downstream can see it. No "
     "registry row names it; the fit manifest never declares it, so the boot "
     "handshake cannot report a channel it was never told about; the coverage "
-    "ledger cannot classify it; no ground defs carry it; and the truth gate has "
+    "ledger cannot classify it; no ground defs carry it; and the truth check has "
     "no exhibit that could judge its numbers."
 )
 
 _ROUTE = (
     "Route it the way gpsReceiver came: grow the type in the bskforge repo "
-    "(schema entry and builder, with its own tests and ROADMAP entry), then land "
+    "(schema entry and builder, with its own tests), then land "
     "a row here - registry/parts.toml, the container's byte contract, a provider, "
     "an exhibit (docs/adding_a_sensor.md has the commands in order). A "
     "demonstration of the capability belongs upstream as an example; the fleet is "

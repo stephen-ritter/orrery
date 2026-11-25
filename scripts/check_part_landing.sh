@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# REG exit flight (D13): one manifest line lands a registered part, live.
+# Part-landing flight: one manifest line lands a registered part, live.
 #
-#   scripts/reg_exit_demo.sh          (~10 min; COSMOS stack must be up)
+#   scripts/check_part_landing.sh          (~10 min; COSMOS stack must be up)
 #
-# The ROADMAP's REG exit criterion, flown rather than asserted offline:
+# The registry's promise, flown rather than asserted offline:
 # "adding an already-registered part to a vehicle is one TOML line and a
 # regen, zero C edits, and acceptance exhibits arrive for it automatically".
 #
@@ -15,9 +15,9 @@
 # Both fly the same fleet routing (the vehicle keeps the name `chief`, so it
 # keeps instance 0 - the legacy port set wire_audit listens on and the targets
 # COSMOS already routes). For each manifest the script captures the beacon
-# through sim/wire_audit and runs the UNMODIFIED p5 client
+# through sim/wire_audit and runs the UNMODIFIED coverage client
 # (ORRERY_SCENARIO=<manifest> sim.truth_exhibits). Bare must show the part
-# absent on both sides; fitted must show 0x08D0 streaming and p5's attitude
+# absent on both sides; fitted must show 0x08D0 streaming and the coverage client's attitude
 # exhibit judging it. Nothing else is touched: the script finishes by proving
 # `git status` is clean, then restores the operational perpetual fleet.
 #
@@ -82,12 +82,12 @@ PY
 cp "$BARE" "$FITTED"
 cat >>"$FITTED" <<'TOML'
 
-# ---- THE PART (written by scripts/reg_exit_demo.sh, nothing else) ----------
+# ---- THE PART (written by scripts/check_part_landing.sh, nothing else) ----------
 [[spacecraft.sensors]]
 type = "starTracker"  # <- the part line: registry/parts.toml keys row 'attitude' on it
 name = "st"
 sigma_SB = [0.0, 0.0, 0.0]
-white_noise = 1.0e-4  # the sigma p5's two verdicts are read from
+white_noise = 1.0e-4  # the sigma the two coverage verdicts are read from
 TOML
 
 echo "=== THE ENTIRE DIFF BETWEEN THE TWO MANIFESTS ==="
@@ -118,13 +118,13 @@ phase() {
     fi
     grep -E "0x08C[ACDEF]|0x08D0|WIRE AUDIT" "$log" | tail -8 | sed 's/^/    /'
 
-    echo "--- the unmodified truth gate, pointed at this manifest ---"
+    echo "--- the unmodified truth check, pointed at this manifest ---"
     if ! ORRERY_SCENARIO="$scen" uv run python -m sim.truth_exhibits >>"$log" 2>&1; then
-        echo "[$tag] FAIL: the truth gate did not pass (see $log)" >&2
+        echo "[$tag] FAIL: the truth check did not pass (see $log)" >&2
         tail -12 "$log" >&2
         exit 1
     fi
-    grep -E "attitude|starTracker declared|gpsReceiver declared|truth R vs|P5 TRUTH CHECK" \
+    grep -E "attitude|starTracker declared|gpsReceiver declared|truth R vs|TRUTH CHECK" \
         "$log" | sed 's/^/    /'
 
     # verdicts, per phase: the part is either honestly absent or honestly aboard
@@ -134,17 +134,17 @@ phase() {
             exit 1
         fi
         if ! grep -q "no starTracker declared" "$log"; then
-            echo "[$tag] FAIL: p5 did not declare the missing part (absence must be spoken)" >&2
+            echo "[$tag] FAIL: the coverage client did not declare the missing part (absence must be spoken)" >&2
             exit 1
         fi
-        echo "[$tag] OK: frame silent on the beacon, absence declared by the gate"
+        echo "[$tag] OK: frame silent on the beacon, absence declared by the check"
     else
         if ! grep -qE "0x08D0 BSK_LINK_ATTITUDE_STATE_TLM +[0-9]+ B +ok" "$log"; then
             echo "[$tag] FAIL: 0x08D0 did not stream byte-exactly against its def" >&2
             exit 1
         fi
         if ! grep -q "attitude truth-vs-ATTITUDE" "$log"; then
-            echo "[$tag] FAIL: p5 streamed the packet but never judged the part" >&2
+            echo "[$tag] FAIL: the beacon streamed the packet but coverage never judged the part" >&2
             exit 1
         fi
         echo "[$tag] OK: 0x08D0 byte-exact on the beacon, exhibit judged by declared sigma"
@@ -172,4 +172,4 @@ if [ "${RESTORE_FLEET:-1}" = "1" ]; then
     echo "--- restoring the operational fleet ($OPERATIONAL, perpetual) ---"
     DURATION=inf bash scripts/fleet.sh up "$OPERATIONAL" | tail -1
 fi
-echo "REG EXIT FLIGHT OK"
+echo "PART LANDING FLIGHT OK"

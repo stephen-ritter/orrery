@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    orrery flight control (fcs_app) - hand-authored per D3: the EDS XML here
+    orrery flight control (fcs_app) - hand-authored: the EDS XML here
     is the single definition source for ground defs (codegen/eds2cosmos), the
     EdsLib link DB, and - via cfe-topicids.xml topics - the runtime MsgIds
     mirrored in orrery_defs/inc/orrery_msgids.h. tests/test_eds2cosmos.py
     pins the XML topics against that header so the two sources cannot drift.
 
-    Control law (P3c): direct rate damping, torque = -Kp * omega_measured,
+    Control law: direct rate damping, torque = -Kp * omega_measured,
     computed by fcs on every BSK_LINK_SENSOR_FRAME_TLM and published as
     BSK_LINK_TORQUE_COMMAND_TLM for bsk_link to forward to the sim. Ground
     commands arriving on the :5051 uplink own the authority: ENABLE / DISABLE /
     SET_GAIN / SET_WHEEL_LIMIT / NOOP. Payload bytes are target-native
-    little-endian (D6).
+    little-endian.
 
-    Mode supervisor (P4b-2): fcs also ingests BSK_LINK_ONBOARD_STATE_TLM -
+    Mode supervisor: fcs also ingests BSK_LINK_ONBOARD_STATE_TLM -
     knowledge of its OWN actuators and instruments - and trips ENABLED -> SAFE
     when any |wheel speed| reaches the SET_WHEEL_LIMIT threshold: torque stops,
     acks continue (the lockstep gate never depends on the law), and recovery
@@ -69,7 +69,7 @@
         </EntryList>
       </ContainerDataType>
 
-      <!-- Wheel-supervisor threshold (P4b-2). Its own interface for the same
+      <!-- Wheel-supervisor threshold. Its own interface for the same
            reason as SetGainPkt: an argument-bearing command needs its own
            packet, not the FC-subtype pattern. The supervisor in fcs trips
            ENABLED -> SAFE when any |wheel speed| on the onboard state frame

@@ -1,4 +1,4 @@
-"""Truth gateway framing tests (P5): the ground header is a contract.
+"""Truth gateway framing tests: the ground header is a contract.
 
 No sockets here - the gateway's wire shape is what COSMOS's length protocol
 and the generated defs were both written against, so it is pinned directly:

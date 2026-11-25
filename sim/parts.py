@@ -1,13 +1,13 @@
-"""Parts registry loader (REG, D13): the sensor circuit as data.
+"""Parts registry loader: the sensor circuit as data.
 
-Pure ``tomllib`` like ``sim/fleet.py`` - codegen, gates, and CI read the
+Pure ``tomllib`` like ``sim/fleet.py`` - codegen, checks, and CI read the
 registry without importing Basilisk. The registry is authoritative for the
 WIRE MEANING of a part (topic, MsgId, container, consumer, exhibit); the
 bskforge schema stays authoritative for the PHYSICS type, and
 ``registered_bskforge_types`` is the seam: a row may only name a type the
 catalog actually has.
 
-The registry drives generators in stages (REG increments); until a surface
+The registry drives generators in stages of adoption; until a surface
 is generated, ``tests/test_parts.py`` pins that the row AGREES with the
 hand-maintained source - a registry that lies fails CI like a wrong struct.
 """
@@ -24,7 +24,7 @@ from typing import Any
 REPO = Path(__file__).resolve().parent.parent
 REGISTRY = REPO / "registry" / "parts.toml"
 
-# A fit mask is a uint32 on the wire and in the generated header (OB): enough
+# A fit mask is a uint32 on the wire and in the generated header: enough
 # for a decade of parts here, and a registry that outgrows it fails the loader
 # rather than silently aliasing two parts onto one bit.
 FIT_BIT_CAPACITY = 32
@@ -32,7 +32,7 @@ FIT_BIT_CAPACITY = 32
 
 @dataclass(frozen=True)
 class Exhibit:
-    """The acceptance promise a part arrives with (p5's two-sided rule)."""
+    """The acceptance promise a part arrives with (the coverage rule's two sides)."""
 
     kind: str  # "truth_pair" today; camera's truth-vs-image joins at CAM
     flight_packet: str
@@ -107,7 +107,7 @@ def _row_to_part(row: dict[str, Any]) -> Part:
 def load_registry(path: str | Path = REGISTRY) -> list[Part]:
     """Every row, in file order, validated only for internal consistency.
 
-    (Cross-checks against the real surfaces live in the test gate.)
+    (Cross-checks against the real surfaces live in the test check.)
     """
     with Path(path).open("rb") as fh:
         doc = tomllib.load(fh)
@@ -131,12 +131,12 @@ def registered_bskforge_types() -> set[str]:
     """Every physics type the registry claims.
 
     Checked against bskforge's schema union by the test gate (catalog
-    before factory, D13).
+    before factory).
     """
     return {t for part in load_registry() for t in part.bskforge_types}
 
 
-# --- the fit vocabulary (OB, D13) -------------------------------------------
+# --- the fit vocabulary        -------------------------------------------
 #
 # The boot handshake needs one agreed way to say WHICH parts a vehicle has,
 # small enough to cross the airgap in eight bytes and stable enough that a
@@ -152,7 +152,7 @@ def frame_rows(parts: list[Part]) -> list[Part]:
     """The rows that exist in firmware: landed, consumed by ``bsk_link``.
 
     Registry order, unsorted: the bit index of a part IS its index here, the
-    generated C table is rendered in the same order, and the test gate pins
+    generated C table is rendered in the same order, and the test check pins
     that both sides agree - so the same number means the same part in Python,
     in the header, and in the operator's event log.
     """
@@ -182,10 +182,10 @@ def declared_mask(
     override: dict[str, bool] | None = None,
     rows: list[Part] | None = None,
 ) -> int:
-    """What a vehicle's manifest CLAIMS, as a fit mask (OB).
+    """What a vehicle's manifest CLAIMS, as a fit mask.
 
     A row is claimed when the scenario declares ANY of the bskforge types that
-    row covers (the P4b bundle row covers four instruments, so one CSS is
+    row covers (the onboard bundle row covers four instruments, so one CSS is
     enough to claim the frame). ``override`` injects a deliberate lie for
     acceptance - claim a part that is not there, hide one that is - and the
     driver prints every override, because no run may whisper one.

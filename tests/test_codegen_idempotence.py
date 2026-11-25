@@ -1,6 +1,6 @@
 """Generation is a function of its inputs, so regeneration changes nothing.
 
-The claim is worth stating out loud, because its absence cost an acceptance gate:
+The claim is worth stating out loud, because its absence cost an acceptance check:
 the emitters used to stamp the wall-clock second into every generated file. So
 "did the wire schema move?" could not be read off a diff, regenerating an
 unchanged fleet dirtied six tracked files, and a test that compared two emissions

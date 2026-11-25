@@ -7,7 +7,7 @@
 #   scripts/get_vizard.sh <zip>        verify THIS zip instead (the canonical
 #                                      server updates in place; a hand-fetched
 #                                      copy with the same bytes is a supported
-#                                      path through the same gate)
+#                                      path through the same check)
 #
 # Either way the sha256 must equal vizard.lock's, or nothing unpacks: the
 # renderer that draws the yard's frames is the one the yard measured, not one

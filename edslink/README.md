@@ -1,7 +1,7 @@
 # edslink — the mission's EDS, compiled to a runtime schema
 
 The Basilisk side speaks the mission's own message definitions instead of a second
-hand-written schema (ROADMAP D6). NASA's EdsLib toolchain turns the EDS XML that
+hand-written schema. NASA's EdsLib toolchain turns the EDS XML that
 `cfs_mission/cFS/tools/eds` already ships into (a) a runtime database and (b) a
 CPython binding, so the simulator encodes and decodes exactly the packets the flight
 software and COSMOS describe.
@@ -68,7 +68,7 @@ Calling a leaf returns a callable: `frame["Frame"]()` is an `int`, not the objec
 | --- | --- | --- | --- |
 | `BSK_LINK/SensorFrame` | 40 B | Basilisk -> cFS | sim time, body rate (rad/s), frame counter — onboard knowledge only |
 | `BSK_LINK/TorqueCommand` | 40 B | cFS -> Basilisk | sim time, body torque (N m), frame counter |
-| `BSK_LINK/TruthState` | 112 B | Basilisk -> ground | ideal nav state; never routed through cFS (P5 `BSK_TRUTH`) |
+| `BSK_LINK/TruthState` | 112 B | Basilisk -> ground | ideal nav state; never routed through cFS (`BSK_TRUTH`) |
 
 NASA's own harness for this pattern lives at
 `cfs_mission/cFS/tools/eds/cfecfs/testrunner/src/core/controller_sync.py` — including
@@ -86,7 +86,7 @@ whatever the XML says. Declared little-endian is therefore the only way to get
 
 for the frames that cross the link. Measured, not assumed: with the upstream
 `bigEndian` default, EdsLib byte-swaps every multi-byte payload item against live
-packets from the running mission. Full write-up in `ROADMAP.md` (D6).
+packets from the running mission.
 
 ## What this database is *not*
 

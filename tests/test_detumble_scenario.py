@@ -1,4 +1,4 @@
-"""P3a: the detumble scenario closes its rate loop through the mission's EDS schema.
+"""The detumble scenario closes its rate loop through the mission's EDS schema.
 
 Three things are pinned here, in order of how easily they break:
 
@@ -62,7 +62,7 @@ def _drain(sock: zmq.Socket, limit: int = 10_000) -> list[bytes]:
 
 
 def test_rate_loop_damps_the_tumble_using_only_onboard_knowledge() -> None:
-    """Exit criterion for P3a: |omega| collapses from the initial tumble."""
+    """The acceptance bound: |omega| collapses from the initial tumble."""
     scenario = dz.DetumbleScenario(control_period_s=1.0)
     start = scenario.rate_norm()
     assert start == pytest.approx(np.linalg.norm(dz.INITIAL_RATE_RADS), rel=1e-9)
@@ -153,11 +153,11 @@ def test_published_frames_are_eds_link_frames(tmp_path: object, link_ports: dict
 
 
 def test_lockstep_gate_aborts_loudly_without_acks(link_ports: dict[str, str]) -> None:
-    """No flight software -> no StepAck -> the sim STOPS (D5: never coast).
+    """No flight software -> no StepAck -> the sim STOPS (never coast).
 
-    This is the failure mode the gate exists for: a dead mission container.
+    This is the failure mode the check exists for: a dead mission container.
     The run must die inside the ack timeout, not fly on with stale knowledge.
-    The wait doubles as a SHOUT: while the gate is shut the sensor frame is
+    The wait doubles as a SHOUT: while the check is shut the sensor frame is
     retransmitted every ``ack_retry_s`` - that retransmission is what saves
     frame 1 from ZMQ's eaten-first-frame handshake, so it gets pinned here.
     """
@@ -177,7 +177,7 @@ def test_lockstep_gate_aborts_loudly_without_acks(link_ports: dict[str, str]) ->
     with pytest.raises(dz.LockStalled, match="no StepAck for frame 1"):
         scenario.run_to(5.0)
     assert time.monotonic() - started < 3.0, "the timeout, not the duration, bounds the wait"
-    assert scenario.sensor_retransmits >= 2, "a waiting gate retransmits its sensor frame"
+    assert scenario.sensor_retransmits >= 2, "a waiting check retransmits its sensor frame"
     assert len(_drain(sub)) == 1 + scenario.sensor_retransmits
     sub.close(linger=0)
     scenario.close()
@@ -186,9 +186,9 @@ def test_lockstep_gate_aborts_loudly_without_acks(link_ports: dict[str, str]) ->
 def test_fake_fsw_closes_the_gate_frame_exact(link_ports: dict[str, str]) -> None:
     """The whole barrier contract, answered by a pre-pushed fake `fcs`.
 
-    ZeroMQ PUSH queues survive until the gate drains them, so the "flight
+    ZeroMQ PUSH queues survive until the check drains them, so the "flight
     software" here is a script of multipart answers - in real runs bsk_link
-    pushes them mid-gate, per ZMQ's per-pair ordering. Pins, frame by frame:
+    pushes them mid-check, per ZMQ's per-pair ordering. Pins, frame by frame:
     torque{N}+ack{N} -> applied; ack-only (disabled) -> bit-exact zero torque
     applied; stale/future/undecodable answers -> tripwire counters, the run
     keeps its answer for THIS frame; a future ack -> hard abort. ``flush_link``

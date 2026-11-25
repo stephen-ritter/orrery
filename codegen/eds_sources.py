@@ -39,10 +39,10 @@ def core_xml_files(cfs_root: Path = CFS) -> list[Path]:
 def mission_define_files(mission_eds_dir: Path = MISSION_DEFS_EDS) -> list[Path]:
     """Mission EDS packages: config/topic defines plus the custom apps.
 
-    Since P3c the orrery_defs ``eds/`` directory holds the custom app
-    packages too (``bsk_link.xml`` graduated from the link-only directory
-    when its frames went on the Software Bus, ``fcs.xml`` is new). One
-    directory, one list - ground defs and the EdsLib DB stay in lockstep.
+    The orrery_defs ``eds/`` directory holds the custom app packages too
+    (``bsk_link.xml`` joined when its frames went on the Software Bus,
+    ``fcs.xml`` arrived with the control law). One directory, one list -
+    ground defs and the EdsLib DB stay in lockstep.
     """
     return sorted(mission_eds_dir.glob("*.xml"))
 

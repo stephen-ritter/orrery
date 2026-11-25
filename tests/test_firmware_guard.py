@@ -1,6 +1,6 @@
-"""The firmware provenance guard: no gate flies flight software it did not build.
+"""The firmware provenance guard: no check flies flight software it did not build.
 
-`scripts/fleet.sh` and the gate drivers start a binary that sits on disk whether
+`scripts/fleet.sh` and the check drivers start a binary that sits on disk whether
 or not it matches the sources that produced it. `scripts/firmware.sh` gives the
 missing sentence - a content hash of the mission's inputs, stamped by the build
 and demanded by every launcher - and this file is what stops the guard from
@@ -354,7 +354,7 @@ def test_a_mismatched_stamp_is_refused_loudly(tmp_path: Path) -> None:
 
 @needs_core
 def test_a_matching_stamp_launches_and_records_which_firmware(tmp_path: Path) -> None:
-    """Success is not silent: the short hash lands in every gate log."""
+    """Success is not silent: the short hash lands in every check log."""
     env = _fake_yard(tmp_path)
     want = _guard("hash").stdout.strip()
 
@@ -387,7 +387,7 @@ def test_every_container_launcher_demands_provenance() -> None:
     floor only proves the glob found the yard; the invariant is the forgotten
     list, so deleting a launcher never weakens this test.
     """
-    # "./container-start" is the LAUNCH form; gates.sh names the path in prose
+    # "./container-start" is the LAUNCH form; verify.sh names the path in prose
     # only, and prose does not need a guard bolted to it.
     launchers = sorted(p for p in SCRIPTS.glob("*.sh") if "./container-start" in p.read_text())
     assert len(launchers) >= 3, f"the glob found no yard: {launchers}"

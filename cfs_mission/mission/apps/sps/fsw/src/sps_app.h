@@ -1,11 +1,11 @@
 /*
- * sps: time-tagged command execution (P6) - the stored program sequence.
+ * sps: time-tagged command execution - the stored program sequence.
  *
  * The ground uplinks complete command images stamped with a sim execution
  * time (SPS_SCHEDULE, own MsgId); sps validates each against the generated
  * EDS command dictionary (sps_cmd_table.h) AT UPLOAD TIME, queues it, and
  * re-emits the stored command on the bus when its time comes. Evaluation
- * rides the frame strobe, never a wall timer (D8): every sensor frame
+ * rides the frame strobe, never a wall timer: every sensor frame
  * bsk_link ingests arrives with the sim instant it describes, so a schedule
  * compares against the same timecode the physics advanced by - a frozen sim
  * freezes MET, and pending entries wait with it. "Execute at T" means

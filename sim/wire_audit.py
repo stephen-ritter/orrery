@@ -2,7 +2,7 @@
 
 The beacon subscription table and the ground definitions are both generated
 from the same EDS model, so anything on the wire must be identifiable AND
-byte-exact. This is the gate model-vs-runtime drift can never sneak past:
+byte-exact. This is the check model-vs-runtime drift can never sneak past:
 the CFDP HK lesson (CF's EDS XML does not describe the non-EDS runtime
 struct, 94 B modeled vs 184 B on the wire) failed exactly this invariant and
 nobody noticed until COSMOS logged it. Drift excluded the other way (def for

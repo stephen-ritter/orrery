@@ -6,7 +6,7 @@
  * as they hit the bus, and injects complete CCSDS command packets received
  * from the ground straight onto the SB. No per-message code lives here; new
  * messages appear in COSMOS by regenerating the table, not by editing this
- * app. (D2: replaces the TO_LAB-UDP + separate ingest-app pattern.)
+ * app, replacing the TO_LAB-UDP + separate ingest-app pattern.
  *
  * Uplink and downlink are SEPARATE ports, the way a real bird separates its
  * command receiver from its telemetry beacon: :5050 streams packets out and
@@ -319,7 +319,7 @@ static void GS_TCP_ServiceTcp(void)
 /**
  * Bind one of the two listeners. Returns the fd, or -1 after an EVS error.
  */
-/* Fleet addressing (D9): a real unit compiles its ports in and never has an
+/* Fleet addressing: a real unit compiles its ports in and never has an
  * environment; the host override exists so N mission containers can fly on
  * one box. Compiled default unless the env names a sane port - a garbage
  * env must degrade to the default, never to a silent wrong port. */

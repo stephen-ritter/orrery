@@ -59,18 +59,18 @@ def test_the_camera_world_builds_its_estimators() -> None:
     assert body._opnav is not None
     camera_id, module, horizon, _, recorder, image_recorder = body._opnav
     assert camera_id == 1
-    assert module is not None, "the config door (CAM v2a) writes through this handle"
+    assert module is not None, "the config door writes through this handle"
     assert horizon.planetTarget == fz.OPNAV_PLANET_TARGET == 2, (
         "Earth's celestial index is what the scene's limb findings carry;"
         " another index silently navigates by a different body's radius"
     )
     assert recorder is not None, "the knowledge output was never recorded"
-    assert image_recorder is not None, "the captured witness (CAM v2a) was never wired"
+    assert image_recorder is not None, "the captured witness was never wired"
     assert body.sim_time_s == 0.0  # built, never run
 
 
 def test_the_camera_line_claims_the_part_in_the_fit() -> None:
-    """The manifest's [[camera]] joins the fit vocabulary as hardware (OB)."""
+    """The manifest's [[camera]] joins the fit vocabulary as hardware."""
     (camera_body,) = build_bodies(CAMERA_SCENARIO)
     assert "camera" in camera_body.fitted_types
     for body in build_bodies(TWIN_SCENARIO):
@@ -83,7 +83,7 @@ def test_the_opnav_provider_joins_only_the_camera_world() -> None:
     (camera_body,) = build_bodies(CAMERA_SCENARIO)
     observers = fz.plant_observers(camera_body, clock)
     assert "OPNAV" in observers, "the camera plant publishes no knowledge frame"
-    assert "CAMSTATE" in observers, "the camera plant publishes no device-state frame (v2a)"
+    assert "CAMSTATE" in observers, "the camera plant publishes no device-state frame"
     for body in build_bodies(TWIN_SCENARIO):
         twin = fz.plant_observers(body, clock)
         assert "OPNAV" not in twin, "twin_ops has no rendered eye"
@@ -111,7 +111,7 @@ def test_the_frame_packs_and_reports_silence_before_the_first_render() -> None:
 
 
 def test_the_camstate_frame_reports_the_device_as_built() -> None:
-    """CAM v2a: the device frame packs the module's OWN fields, pre-run."""
+    """The device frame packs the module's OWN fields, pre-run."""
     from sim.eds_link import decode_cam_state
 
     (camera_body,) = build_bodies(CAMERA_SCENARIO)
@@ -125,11 +125,11 @@ def test_the_camstate_frame_reports_the_device_as_built() -> None:
     assert frame.shutter == int(module.cameraIsOn), "the frame is the module, not an opinion"
     assert frame.render_rate_s == pytest.approx(module.renderRate / 1e9)
     assert frame.captured == 0, "nothing rendered yet; a default capture would be a lie"
-    assert frame.frames_recorded == 0, "a nav-only camera records nothing (v2b zero)"
+    assert frame.frames_recorded == 0, "a nav-only camera records nothing"
 
 
 def test_the_store_outlet_streams_every_nth_capture_and_only_once(tmp_path: Path) -> None:
-    """CAM v2b: the outlet chunks every Nth capture's PNG, exactly once.
+    """The store outlet chunks every Nth capture's PNG, exactly once.
 
     A scripted eye (fake recorder + real files on disk) flies the outlet's
     whole law without a renderer: every Nth capture by ordinal is sent, the
@@ -205,9 +205,9 @@ def test_the_store_outlet_is_silent_when_the_scenario_said_no() -> None:
 
 
 def test_the_config_door_applies_refuses_and_stays_reversible() -> None:
-    """The sim's door (CAM v2a): write truthfully, refuse the B1 zero, undo.
+    """The sim's door: write truthfully, refuse the zero, undo.
 
-    Every law here was flown in the Phase-0 spike before it was tested:
+    Every law here was flown before it was tested:
     writes take effect at the next update, a refused value must NEVER reach
     the module, and a config is fully reversible mid-flight. The door
     answers nobody - refusals tally, they do not ack - so this test is the
@@ -248,10 +248,10 @@ def test_the_cam_config_frame_round_trips_through_the_schema() -> None:
 
 
 def test_cam_frames_apply_between_ticks_and_never_open_the_barrier() -> None:
-    """CAM v2a law at the gate itself: configs apply, the ack is still awaited.
+    """The law at the barrier itself: configs apply, the ack is still awaited.
 
     The v1 law survives the command surface: camera traffic never becomes a
-    receipt the physics waits on. The gate is driven through its own private
+    receipt the physics waits on. The check is driven through its own private
     door (``_await_barrier``) with a scripted fake FSW - the same pre-pushed
     ZeroMQ trick ``test_fake_fsw_closes_the_gate_frame_exact`` uses, minus a
     plant the law does not need.
@@ -266,7 +266,7 @@ def test_cam_frames_apply_between_ticks_and_never_open_the_barrier() -> None:
     cmd_port = pull.bind_to_random_port("tcp://127.0.0.1")
     push = ctx.socket(zmq.PUSH)
     push.connect(f"tcp://127.0.0.1:{cmd_port}")
-    # PUB like the rig's real sensor feed: a gate waiting without a listener
+    # PUB like the rig's real sensor feed: a check waiting without a listener
     # must never block on its own retransmits (a PUSH with no peer would).
     sensor = ctx.socket(zmq.PUB)
     sensor.bind_to_random_port("tcp://127.0.0.1")
@@ -291,14 +291,14 @@ def test_cam_frames_apply_between_ticks_and_never_open_the_barrier() -> None:
     )
     sensor_bytes = bytes(encode_sensor_frame(1.0, (0.0, 0.0, 0.0), 1))
 
-    # A config alone must NOT open the gate - but it is applied on arrival.
+    # A config alone must NOT open the check - but it is applied on arrival.
     push.send_multipart([b"CAM", bytes(encode_cam_config(1.0, 1, 1, 0, 4.0))])
     with pytest.raises(LockStalled):
         rig._await_barrier(ch, 1, sensor_bytes)
-    assert len(seen) == 1 and ch.cam_configs == 1, "config door opened while the gate stayed shut"
+    assert len(seen) == 1 and ch.cam_configs == 1, "config door opened while the check stayed shut"
     assert ch.bad_frames == 0, "a well-formed CAM frame is not a malformed one"
 
-    # Config + the ack fcs owes: the gate answers, and BOTH frames landed.
+    # Config + the ack fcs owes: the check answers, and BOTH frames landed.
     push.send_multipart([b"CAM", bytes(encode_cam_config(2.0, 2, 1, 1, 2.0))])
     push.send_multipart([b"ACK", bytes(encode_step_ack(2.0, 2, 1, 0))])
     assert rig._await_barrier(ch, 2, sensor_bytes) is None
@@ -315,7 +315,7 @@ def test_the_rig_keeps_no_startup_window_for_the_renderer() -> None:
     Stock Vizard closed its socket half a second after the bind - a window
     no service-started world can beat, because the first scene message
     physically needs a full scan. The yard compensated three ways: a timed
-    SIM_UPDATE retry window in the rig, a port-probe gate before
+    SIM_UPDATE retry window in the rig, a port-probe check before
     InitializeSimulation, and a sentinel handoff so the renderer started
     only when the world waited. The patience build pinned in vizard.lock
     (tools/vizard-patience/) waits for the first message as long as the
@@ -348,11 +348,11 @@ def test_the_rig_is_wired_before_the_player_clock_starts() -> None:
     history and MOVED the twin digests - camera-on/off byte equality
     being the one claim those anchors guard - and greeter v2's bare
     WriteProtobuffer died of an arithmetic exception, not a race: its
-    render-cadence gate is a modulo by a renderRate that only the first
+    render-cadence check is a modulo by a renderRate that only the first
     scan's ReadBSKMessages copies in, and divide-by-zero is a hardware
     fault (gdb: divq by zero inside WriteProtobuffer). No message before
     the loop can be legal; the loop's first tick is the greeting. That
-    law belongs to Basilisk's cadence gate, not to Vizard's startup
+    law belongs to Basilisk's cadence check, not to Vizard's startup
     window, so it outlives the patience patch - and both world paths keep
     wiring the rig before InitializeSimulation, so tick zero of run_to is
     the message the renderer waits for.
@@ -366,7 +366,7 @@ def test_the_rig_is_wired_before_the_player_clock_starts() -> None:
     )
     helper = src.split("class ForgeError", 1)[0]
     assert "WriteProtobuffer" not in helper.split('"""')[-1], (
-        "no snapshot may fire before the first scan: its cadence gate "
+        "no snapshot may fire before the first scan: its cadence check "
         "divides by a renderRate nothing has copied yet"
     )
     for name in ("ForgeScenario", "ForgeFleet"):

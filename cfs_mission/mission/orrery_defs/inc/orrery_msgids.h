@@ -5,7 +5,7 @@
  * global_core_api_base_msgid_values.h: cpu1 cmd 0x1800, tlm 0x0800) plus the
  * topic ID mirrored from the mission EDS XML. Ground definitions generated
  * by codegen/eds2cosmos carry the identical numbers, pinned by golden tests.
- * Registered part MsgIds (REG) are generated from registry/parts.toml into
+ * Registered part MsgIds are generated from registry/parts.toml into
  * orrery_part_msgids.h and included below - landing a part edits no C.
  */
 #ifndef ORRERY_MSGIDS_H
@@ -36,13 +36,13 @@
 /** \brief fcs gain upload with payload (ground only) */
 #define FCS_SET_GAIN_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_FCS_SET_GAIN_TOPICID)
 
-/** \brief fcs wheel supervisor threshold with payload (ground only, P4b-2) */
+/** \brief fcs wheel supervisor threshold with payload (ground only) */
 #define FCS_SET_WHEEL_LIMIT_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_FCS_SET_WHEEL_LIMIT_TOPICID)
 
 /** \brief file downlink request with payload (ground only) */
 #define FCS_CFDP_DOWN_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_FCS_CFDP_DOWN_TOPICID)
 
-/** \brief OBC housekeeping telemetry (hk_app -> beacon, P4b-3) */
+/** \brief OBC housekeeping telemetry (hk_app -> beacon) */
 #define OBC_HK_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_OBC_HK_TLM_TOPICID)
 
 /** \brief OBC hk ground commands: NOOP */
@@ -51,19 +51,19 @@
 /** \brief OBC housekeeping request (scheduler) */
 #define OBC_HK_SEND_HK_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_OBC_HK_SEND_HK_TOPICID)
 
-/** \brief sps ground commands: NOOP / ENABLE / DISABLE / FLUSH (P6) */
+/** \brief sps ground commands: NOOP / ENABLE / DISABLE / FLUSH */
 #define SPS_CMD_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_SPS_CMD_TOPICID)
 
-/** \brief time-tagged command upload with payload (ground only, P6) */
+/** \brief time-tagged command upload with payload (ground only) */
 #define SPS_SCHEDULE_CMD_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_SPS_SCHEDULE_CMD_TOPICID)
 
 /** \brief sps housekeeping request (scheduler) */
 #define SPS_SEND_HK_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_SPS_SEND_HK_TOPICID)
 
-/** \brief sps housekeeping telemetry (sps -> beacon, P6) */
+/** \brief sps housekeeping telemetry (sps -> beacon) */
 #define SPS_HK_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_SPS_HK_TLM_TOPICID)
 
-/* Camera payload (CAM v2a, cam app): the command surface. SET_CONFIG is a
+/* Camera payload (cam app): the command surface. SET_CONFIG is a
  * ground-only upload (its payload never reaches the sim by this MID; the app
  * re-emits the accepted command as BSK_LINK_CAM_CONFIG_TLM, the same relay
  * shape as fcs torque). */
@@ -85,7 +85,7 @@
 #define BSK_LINK_CAM_STORAGE_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_CAM_STORAGE_TLM_TOPICID)
 
 /** \brief cFS TIME service commands (link uses SET_MET to slave MET to the
- * sim timecode, D8) */
+ * sim timecode) */
 #define ORRERY_TIME_CMD_MID (SAMPLE_CPU1_CMD_MID_BASE + ORRERY_TIME_CMD_TOPICID)
 
 #endif /* ORRERY_MSGIDS_H */

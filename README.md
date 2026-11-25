@@ -82,8 +82,8 @@ pair in `compose.yml`: `docs/adding_a_spacecraft.md` walks through it.
 | `docs/adding_a_spacecraft.md` | how to add a vehicle: a scenario block plus a service pair in `compose.yml` |
 | `docs/coverage.md` | what this project supports, refuses, and has not wired yet; generated from `registry/coverage.toml` |
 | `docs/data_provenance.md` | the truth/knowledge boundary: which wire is which, and why truth never reaches the flight software |
-| `scripts/gates.sh` | the acceptance ladder — mirrors, builds and live fleet gates in one command |
-| `sim/` | Basilisk plants + the shared lockstep rig: `lockstep.py` (barrier/clock/link gate — one world step gates on every vehicle's ack), `detumble_scenario.py` (hand-written rigid body), `forge_scenario.py` + `scenarios/*.toml` (bskforge-built plants; `detumble_forge.toml` is the frozen parity witness, `chief.toml` the wheeled + sensed operations plant, `twin_ops.toml` the two-vehicle fleet). Biased + noisy onboard sensors, EDS link frames, separate truth stream |
+| `scripts/verify.sh` | the acceptance ladder — mirrors, builds and live fleet checks in one command |
+| `sim/` | Basilisk plants + the shared lockstep rig: `lockstep.py` (barrier/clock/link gate — one world step checks on every vehicle's ack), `detumble_scenario.py` (hand-written rigid body), `forge_scenario.py` + `scenarios/*.toml` (bskforge-built plants; `detumble_forge.toml` is the frozen parity witness, `chief.toml` the wheeled + sensed operations plant, `twin_ops.toml` the two-vehicle fleet). Biased + noisy onboard sensors, EDS link frames, separate truth stream |
 | `cfs_mission/` | cFS mission layer — our apps and defs, grafted onto the core at configure time. The core itself is fetched, never vendored: `cfs_mission/cfs.lock` pins it (cFS v7.0.1) and `scripts/fetch_cfs.sh` fills in `cfs_mission/cFS/`, which git never sees |
 | `edslink/` | the mission EDS compiled to a runtime schema (EdsLib database + CPython binding): the Python side encodes with it and `bsk_link.so` links it in to decode with |
 | `codegen/` | `eds2cosmos` + `eds_sources` + `emit_frames` — generate COSMOS cmd/tlm, the gs_tcp MsgId table, and every identity surface a registered part claims |
@@ -130,7 +130,7 @@ flowchart LR
 ```
 
 
-Every world tick gates on an ack from every vehicle (lockstep), so the
+Every world tick checks on an ack from every vehicle (lockstep), so the
 diagram is a loop the whole fleet turns together, not a pipeline. The tick's
 rate is the scenario's `[simulation.dt] fsw` — the same number that sets the
 Basilisk fswTask rate, read from the TOML, overridable only by an exactly
@@ -165,11 +165,11 @@ registered part is therefore a manifest edit: the topicids header, the frame
 table, the beacon table, the COSMOS defs, and the truth-vs-flight exhibit all
 arrive by generation, with zero C edits (one superset firmware; presence is
 runtime data). `docs/adding_a_sensor.md` is the procedure, and the honest account
-of what remains hand-authored and why; `scripts/reg_exit_demo.sh` flies the claim.
+of what remains hand-authored and why; `scripts/check_part_landing.sh` flies the claim.
 
 ## What flies today
 
-- **One scenario file, N vehicles.** Each block gets its own container, gate, port
+- **One scenario file, N vehicles.** Each block gets its own container, check, port
   block and COSMOS targets, all derived from the block rather than declared twice.
 - **Real flight software, in closed loop.** `fcs` torque commands reach the plant
   through `bsk_link`; the supervisor trips, refuses and recovers on a live bus;
@@ -186,10 +186,10 @@ of what remains hand-authored and why; `scripts/reg_exit_demo.sh` flies the clai
   actually streams — and names the disagreement; a schema mismatch stops the
   mission rather than decoding bytes under the wrong layout.
 - **Digests, re-checked bit-exactly.** Pinned trajectory baselines in
-  `tests/baselines/` are re-flown by the gate ladder, and the yard refuses to boot
+  `tests/baselines/` are re-flown by the check ladder, and the yard refuses to boot
   firmware its own build did not stamp.
 - **Ground stations** for every vehicle at `http://localhost:2900`, flight and
   truth targets per vehicle, perpetual runs that stop politely.
 
-Everything above is a gate, not a claim: `bash scripts/gates.sh` flies the ladder
+Everything above is a check, not a claim: `bash scripts/verify.sh` flies the ladder
 that proves it, from the offline mirrors through the live fleet.

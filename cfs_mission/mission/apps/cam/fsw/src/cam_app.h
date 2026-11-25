@@ -1,5 +1,5 @@
 /*
- * cam: orrery camera payload command surface (CAM v2a).
+ * cam: orrery camera payload command surface.
  *
  * The smallest honest flight software for a commanded eye: the ground points
  * the camera (shutter, render rate), this app validates, remembers, and
@@ -25,10 +25,10 @@
  *                   real payload or codegen loses them)
  *   CAM_SEND_HK     housekeeping on the scheduler tick
  *
- * Why the validation here is strict (ledger: Phase-0 spike + B1): the sim
+ * Why the validation here is strict: an early spike proved the sim
  * door writes the module's live fields and vizInterface gates image requests
  * on a renderRate modulo - zero divides by zero inside Basilisk, and the
- * Phase-0 flights proved every OTHER value is live, reversible, and digest-
+ * flights proved every OTHER value is live, reversible, and digest-
  * neutral. A knob that can crash the vehicle is not a knob, so a refused
  * command is a feature, reported on EVS and in CommandErrorCounter.
  *
@@ -53,7 +53,7 @@
 
 /**
  * Render-rate bounds for SET_CONFIG uploads, seconds. The lower bound is
- * the B1 lesson (zero is a divide-by-zero in the render modulo, not a
+ * the law (zero is a divide-by-zero in the render modulo, not a
  * config); the upper bound only rejects nonsense - one image per hour is a
  * dead payload, not a payload with opinions.
  */
@@ -84,7 +84,7 @@ typedef struct
     uint32 ConfigFramesForwarded;  /* accepted configs egressed to the sim  */
     uint32 ConfigFwdFailCount;     /* publishes that never reached bsk_link */
 
-    /* CAM v2b pass-through witnesses (read-only): RECORDED is what the sim's
+    /* Pass-through witnesses (read-only): RECORDED is what the sim's
      * store outlet sent (CamState), STORED is what bsk_link reassembled into
      * /cf/img (CamStorage). Neither is this app's own doing - the four-number
      * report exists so their divergence, not its prose, names the defect. */

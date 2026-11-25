@@ -1,7 +1,7 @@
 """The static compose.yml carries the yard's service contract.
 
 The file is hand-editable (adding a vehicle is an accepted user action),
-so these tests pin what must survive any edit: naming the gates sweep on,
+so these tests pin what must survive any edit: naming the checks sweep on,
 the resolver's root-only chain, the sync dependency every engine service
 owes, pinned volumes, host networking, and COSMOS staying out.
 """
@@ -109,7 +109,7 @@ def test_the_camera_renderer_is_gated_starts_and_mounts() -> None:
     starts WITH the yard and nothing else: the patience assembly the lock
     pins (tools/vizard-patience/) waits for the world's first message as
     long as the world needs, so the old sentinel handoff and its freshness
-    gate are retired, and their ABSENCE is the contract - a renderer that
+    check are retired, and their ABSENCE is the contract - a renderer that
     waits for the world can only ever deadlock behind a marker that is an
     EFFECT of streaming. Two measured laws still run the launch: the
     service never touches the port before owning it - the world's REP dials

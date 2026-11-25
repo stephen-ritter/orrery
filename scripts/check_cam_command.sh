@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# CAM v2a acceptance: the command surface, flown twice, digests compared.
+# CAM command-surface acceptance: the commanded eye, flown twice, digests compared.
 #
 # One scenario (camera_ops - the bird with the rendered eye), two flights:
 #
 #   control   ground sends NOTHING; the eye runs as TOML built it.
-#   spam      the v2a cadence (sim/cam_probe.py): close + rerate after the
+#   spam      the command cadence (sim/cam_probe.py): close + rerate after the
 #             boot stream, reopen, two app refusals (the B1 zero, a shutter
 #             of 2), a ghost-eye order the app must accept and only the sim
 #             door refuses, restore - while CAM_HK and CamState are watched
@@ -25,7 +25,7 @@ BOOT_TIMEOUT="${BOOT_TIMEOUT:-120}"
 SIM_DURATION="${SIM_DURATION:-60}"
 PROBE_DURATION="${PROBE_DURATION:-56}"
 SCENARIO="$REPO/sim/scenarios/camera_ops.toml"
-WORK="${WORK:-/tmp/opencode/cam_v2a}"
+WORK="${WORK:-/tmp/opencode/cam_command}"
 mkdir -p "$WORK"
 
 INSTANCE=0
@@ -115,12 +115,12 @@ fly_cycle() {
 }
 
 # --- control leg: nothing commanded, the link merely alive ------------------
-fly_cycle control || { echo "CAM V2A ACCEPTANCE FAILED (control leg)"; exit 1; }
-CONTROL_DIGEST="$CYCLE_DIGEST"; [ "$CYCLE_RC" -eq 0 ] || { echo "CAM V2A ACCEPTANCE FAILED (control probe)"; exit 1; }
+fly_cycle control || { echo "CAM COMMAND CHECK FAILED (control leg)"; exit 1; }
+CONTROL_DIGEST="$CYCLE_DIGEST"; [ "$CYCLE_RC" -eq 0 ] || { echo "CAM COMMAND CHECK FAILED (control probe)"; exit 1; }
 
 # --- spam leg: the cadence, witnessed from both views -----------------------
-fly_cycle spam || { echo "CAM V2A ACCEPTANCE FAILED (spam leg)"; exit 1; }
-SPAM_DIGEST="$CYCLE_DIGEST"; [ "$CYCLE_RC" -eq 0 ] || { echo "CAM V2A ACCEPTANCE FAILED (spam probe)"; exit 1; }
+fly_cycle spam || { echo "CAM COMMAND CHECK FAILED (spam leg)"; exit 1; }
+SPAM_DIGEST="$CYCLE_DIGEST"; [ "$CYCLE_RC" -eq 0 ] || { echo "CAM COMMAND CHECK FAILED (spam probe)"; exit 1; }
 
 # --- the console receipts (EVs are the FSW's own testimony) -----------------
 fail=0
@@ -157,4 +157,4 @@ if [ "$CONTROL_DIGEST" != "$SPAM_DIGEST" ]; then
     echo "  the commanding MOVED the physics: that is the one sin"; fail=1
 fi
 
-if [ "$fail" -eq 0 ]; then echo "CAM V2A ACCEPTANCE OK"; else echo "CAM V2A ACCEPTANCE FAILED"; exit 1; fi
+if [ "$fail" -eq 0 ]; then echo "CAM COMMAND CHECK OK"; else echo "CAM COMMAND CHECK FAILED"; exit 1; fi

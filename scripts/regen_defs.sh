@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerate COSMOS defs for a scenario's fleet (D10/R3).
+# Regenerate COSMOS defs for a scenario's fleet.
 #
 #   scripts/regen_defs.sh [scenario.toml ...]   default: sim/scenarios/twin_ops.toml
 #

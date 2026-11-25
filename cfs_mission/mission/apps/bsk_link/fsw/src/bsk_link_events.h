@@ -17,16 +17,16 @@
 #define BSK_LINK_PUBLISH_ERR_EID     10 /* SB publish rejected (reported once)*/
 #define BSK_LINK_EGRESS_ERR_EID      11 /* torque egress send failed (once)  */
 #define BSK_LINK_ACK_ERR_EID         12 /* step ack egress failed (sim hangs)*/
-#define BSK_LINK_TIME_INF_EID        13 /* MET slaved to link timecode (D8)  */
+#define BSK_LINK_TIME_INF_EID        13 /* MET slaved to link timecode     */
 #define BSK_LINK_ONBOARD_INF_EID     14 /* basilisk onboard state (throttled)*/
-#define BSK_LINK_NAV_INF_EID         15 /* basilisk GNSS fix (throttled, KN) */
-#define BSK_LINK_ATTSTATE_INF_EID    16 /* basilisk ST attitude (throttled, REG) */
-#define BSK_LINK_FIT_INF_EID           17 /* fit verdict (OB, on change only)  */
+#define BSK_LINK_NAV_INF_EID         15 /* basilisk GNSS fix (throttled)      */
+#define BSK_LINK_ATTSTATE_INF_EID    16 /* basilisk ST attitude (throttled)      */
+#define BSK_LINK_FIT_INF_EID           17 /* fit verdict (on change only)     */
 #define BSK_LINK_FIT_ERR_EID           18 /* stale firmware vs manifest: aborts */
 #define BSK_LINK_FIT_REPORT_EID        19 /* rows claimed-or-denied, named      */
 #define BSK_LINK_OPNAV_INF_EID         20 /* basilisk OpNav knowledge (CAM)     */
-#define BSK_LINK_CAM_STATE_INF_EID     21 /* basilisk CamState (CAM v2a row)     */
-#define BSK_LINK_CAM_INF_EID           22 /* cam config forwarded to sim (v2a)   */
+#define BSK_LINK_CAM_STATE_INF_EID     21 /* basilisk CamState row               */
+#define BSK_LINK_CAM_INF_EID           22 /* cam config forwarded to sim         */
 #define BSK_LINK_STORE_INF_EID         23 /* image file completed under /cf/img  */
 #define BSK_LINK_STORE_ERR_EID         24 /* store open/write/rename refused     */
 

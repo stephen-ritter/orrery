@@ -41,3 +41,4 @@ ROADMAP.md
 
 # patience-build scratch: the v2.4.0 clone dotnet compiles Assembly-CSharp from
 .vizard-build/
+logs/

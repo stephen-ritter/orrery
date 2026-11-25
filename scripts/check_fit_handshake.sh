@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# OB boot-handshake flight (D13): the three views of a vehicle's fit, live.
+# Fit boot-handshake flight: the three views of a vehicle's fit, live.
 #
 #   scripts/check_fit_handshake.sh                 all four probes (~6 min)
 #   PROBES=stale scripts/check_fit_handshake.sh    one probe, while iterating
 #
-# The ROADMAP's OB claim is that absence is a fact the spacecraft knows, not a
+# The claim is that absence is a fact the spacecraft knows, not a
 # gap the ground papers over. The claim is only worth what a flight makes it, so
 # this script flies one vehicle through four manifests and reads the verdict the
 # FLIGHT SOFTWARE reaches, from its own console, in each case:
@@ -40,7 +40,7 @@ GIT_AT_TAKEOFF="$(git status --porcelain)"
 echo "--- clearing the yard ---"
 bash scripts/fleet.sh down >/dev/null 2>&1 || true
 
-# The probe vehicle: chief.toml, the superset plant the REG exit flight used
+# The probe vehicle: chief.toml, the superset plant the part-landing flight used
 # (GNSS + wheels + ST + CSS + mag), so all three registered rows are in play.
 PROBE="$WORK/probe_fit.toml"
 cp "$SRC" "$PROBE"
@@ -75,7 +75,7 @@ barrier_alive() {
     fi
 }
 
-# The barrier's own retransmit (D5) races the handshake: the gate re-shouts
+# The barrier's own retransmit races the handshake: the check re-shouts
 # SENSOR every 0.5 s while a tick's FIT arrives once per second, so a mission
 # may decode a tick or two before the first manifest lands and the abort
 # engages. That is the design's order of operations, not a hole - with no
@@ -134,7 +134,7 @@ probe_honest() {
 
 # ---- probe 2: the manifest claims a part the vehicle does not have --------
 # chief.toml HAS a star tracker, so its hardware is removed first (the same
-# block the REG exit flight adds). The claim is then the lie, and the verdict
+# block the part-landing flight adds). The claim is then the lie, and the verdict
 # must name the row while the mission keeps flying on the fit it really has.
 probe_silent() {
     local scen="$WORK/probe_silent.toml"
@@ -180,7 +180,7 @@ probe_stale() {
     cp "$SRC" "$PROBE"
     run_probe stale FIT_DIGEST=deadbeef
     expect_in_console "FIT ABORT: firmware built from registry [0-9a-f]{8}, world runs deadbeef" "FIT ABORT"
-    # The other half of the receipt: with no ack the gate must stall, loudly.
+    # The other half of the receipt: with no ack the check must stall, loudly.
     if ! grep -qiE "lockstep stall" "$WORK/stale_sim.log"; then
         echo "FAIL: an aborting mission left the world waiting without naming the stall" >&2
         tail -5 "$WORK/stale_sim.log" >&2 || true
@@ -219,4 +219,4 @@ if [ "${RESTORE_FLEET:-1}" = "1" ]; then
     echo "--- restoring the operational fleet ($OPERATIONAL, perpetual) ---"
     DURATION=inf bash scripts/fleet.sh up "$OPERATIONAL" | tail -1
 fi
-echo "OB FIT HANDSHAKE FLIGHT OK"
+echo "FIT HANDSHAKE FLIGHT OK"

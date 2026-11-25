@@ -92,7 +92,7 @@ static int32 OBC_HK_AppInit(void)
 
     /* Everything the OBC can hear about its own state, one pipe. The link
      * frames are knowledge the satellite produced, not truth it was handed:
-     * the truth stream never crosses this bus (P5 boundary). */
+     * the truth stream never crosses this bus. */
     struct
     {
         uint32     Mid;

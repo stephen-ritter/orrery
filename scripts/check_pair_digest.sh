@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# P3 truth gate. Flights:
+# Digest-pair check. Flights:
 #
 #   witness      detumble_forge.toml, wall-clock ENABLE      printed, not gated
 #   anchored A   chief.toml, ENABLE + SET_GAIN frame-pinned  known-good pair
@@ -20,7 +20,7 @@
 # prints as placement, not failure; membership in the set is the verdict.
 #
 # The witness is printed-not-gated: the classic wall-clock artifact,
-# declared not-anchored since KN; its file is the warm-session expectation.
+# declared not-anchored; its file is the warm-session expectation.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -83,4 +83,4 @@ if [ "$bad" -eq 1 ]; then
 fi
 echo "[anchor] both digests inside the known-good set $(tr '\n' ' ' <"$file")"
 
-echo "P3 TRUTH GATE PASSED"
+echo "TRUTH PAIR CHECK PASSED"

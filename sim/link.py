@@ -1,6 +1,6 @@
 """ZeroMQ publisher side of the orrery link (the Basilisk role).
 
-Frames are EdsLib-packed ``BSK_LINK`` containers (ROADMAP D6), ZMQ multipart with the
+Frames are EdsLib-packed ``BSK_LINK`` containers, ZMQ multipart with the
 channel name as the first frame and the EDS payload as the second. The channel contract
 lives in ``edslink/README.md``; the schema lives in the mission EDS XML.
 """

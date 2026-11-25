@@ -19,7 +19,7 @@
 # core, and an edit to the core is easy to make by accident and nearly impossible
 # to notice later — the build still works, the binary still boots, and the
 # difference shows up as a mission that does not reproduce on someone else's
-# machine. --verify is the tool that means it, and the gates run it.
+# machine. --verify is the tool that means it, and the checks run it.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

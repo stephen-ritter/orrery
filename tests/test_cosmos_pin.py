@@ -5,7 +5,7 @@ Why a pin for COSMOS when cFS has one: the CE stack deploys from a CHECKOUT -
 two version facts must agree. `OPENC3_TAG=latest`, the upstream default, lets
 them drift apart silently; the deployment this pin was written for ran a
 v6.4-era checkout against 7.5-era images because the checkout was cloned in May
-and the images were pulled in October. A gate that "verifies COSMOS answers"
+and the images were pulled in October. A check that "verifies COSMOS answers"
 cannot see that: v6.4 compose against 7.5 images answers just fine, until the
 day it answers differently.
 

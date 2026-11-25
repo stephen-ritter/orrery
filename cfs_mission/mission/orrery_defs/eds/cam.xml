@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    orrery camera payload (cam_app) - CAM v2a, hand-authored on the fcs.xml
-    idiom (D3): this XML is the single definition source for ground defs
+    orrery camera payload (cam_app) - hand-authored on the fcs.xml
+    idiom: this XML is the single definition source for ground defs
     (codegen/eds2cosmos), the EdsLib link DB, and - via cfe-topicids.xml
     topics - the runtime MsgIds mirrored in orrery_defs/inc/orrery_msgids.h.
 
-    The v2a contract is the command surface only: the ground commands the
-    eye (shutter, render rate), the cam app forwards one CAM_CONFIG frame
-    per accepted command to the sim through bsk_link, and CAM_HK reports
-    the FSW-side counters. No pixels move yet (v2b/v2c own the image
-    path and the CFDP downlink), so Recorded/Stored/Transferred sit at
-    zero by design and their divergence from the sim's own CamState frame
-    is the defect class the HK exists to catch.
+    The contract is the commanded eye: the ground points it (shutter,
+    render rate), the cam app forwards one CAM_CONFIG frame per accepted
+    command to the sim through bsk_link, and CAM_HK reports the FSW-side
+    counters beside the Recorded/Stored/Transferred witnesses - each fed
+    only by the mechanism that earns it, so a frozen or zero counter names
+    the layer that stalled. Divergence between what was commanded and what
+    the sim's CamState frame confirms is the defect class the HK catches.
 
-    Both knobs were flown before they were defined (findings ledger,
-    Phase-0 spike): the shutter and render rate take effect at runtime in
+    Both knobs were flown before they were defined: the shutter and render
+    rate take effect at runtime in
     the sim process (camera.cpp re-reads module fields every update;
     vizInterface gates image requests on isOn and a renderRate modulo),
     each is reversible mid-flight, and every transition left the
     trajectory digest byte-identical. The modulo is also why SET_CONFIG
-    refuses renderRate <= 0 at the app: zero is B1's divide-by-zero, and
+    refuses renderRate <= 0 at the app: zero divides by zero, and
     the sim door refuses again - a knob that can crash the vehicle is not
     a knob.
 -->
@@ -87,9 +87,9 @@
       </ContainerDataType>
 
       <!-- The ledger counters, FSW-side view: what was commanded and
-           forwarded, plus Recorded/Stored/Transferred as v2b/v2c promises -
-           zero until their phase lands, and a nonzero one before it is a
-           lie the beacon catches. The sim's CONFIRMED state (render rate in
+           forwarded, plus Recorded/Stored/Transferred - each counter moves
+           only when its own mechanism reports, so a stale one names the
+           layer that stalled. The sim's CONFIRMED state (render rate in
            use, images captured) rides the BSK_LINK/CamState registry row,
            NOT this packet: the divergence pair lives on the ground screen
            (HK.RenderRateCmd vs CamState.RenderRateS), because the app that
@@ -113,9 +113,9 @@
           <PaddingEntry sizeInBits="32" shortDescription="64-bit alignment padding" />
           <Entry name="LastConfigSimTimeS" type="BSK_LINK/float64" shortDescription="sim time of the last config forwarded [s]" />
           <Entry name="RenderRateCmd" type="BSK_LINK/float64" shortDescription="last commanded image interval [s]" />
-          <Entry name="FramesRecorded" type="BASE_TYPES/uint32" shortDescription="frames written to onboard storage (v2b; 0 until it lands)" />
-          <Entry name="FramesStored" type="BASE_TYPES/uint32" shortDescription="frames acknowledged into storage (v2b; 0 until it lands)" />
-          <Entry name="FramesTransferred" type="BASE_TYPES/uint32" shortDescription="frames CFDP-delivered to the ground (v2c; 0 until it lands)" />
+          <Entry name="FramesRecorded" type="BASE_TYPES/uint32" shortDescription="frames written to onboard storage" />
+          <Entry name="FramesStored" type="BASE_TYPES/uint32" shortDescription="frames acknowledged into storage" />
+          <Entry name="FramesTransferred" type="BASE_TYPES/uint32" shortDescription="frames CFDP-delivered to the ground" />
         </EntryList>
       </ContainerDataType>
 

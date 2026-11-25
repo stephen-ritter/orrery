@@ -1,4 +1,4 @@
-"""The boot handshake (OB, D13): three views of one vehicle's fit.
+"""The boot handshake: three views of one vehicle's fit.
 
 The scenario's TOML CLAIMS a fit, the flight binary was BUILT from a registry
 digest, and the bus STREAMS whatever actually decoded. These tests pin the
@@ -64,7 +64,7 @@ def test_baked_digest_matches_the_catalog_the_world_loads() -> None:
 
     If this test fails, either the header is stale (re-run ``emit_frames``) or
     the registry changed and every flight binary on the bench is about to abort
-    its handshake - which is the correct verdict, but the offline gate must say
+    its handshake - which is the correct verdict, but the offline check must say
     so before a fleet does.
     """
     baked = re.search(r"#define BSK_LINK_FIT_REGISTRY_HASH 0x([0-9a-f]{8})u", FRAMES_H.read_text())
@@ -86,7 +86,7 @@ def test_digest_moves_with_wire_semantics_only(tmp_path: Path) -> None:
     assert registry_digest(base) == registry_digest(_write_registry(tmp_path, base_text))
 
     display_only = base_text.replace(
-        'display = "GNSS receiver (orbital knowledge, KN/KN2)"',
+        'display = "GNSS receiver (orbital knowledge)"',
         'display = "GNSS, renamed by a poet"',
         1,
     )
@@ -123,7 +123,7 @@ def test_declared_mask_reads_the_manifest_not_the_wire() -> None:
         return 1 << NAMES.index(name)
 
     assert declared_mask(["gpsReceiver"], None, rows) == bit("gnss")
-    # The star tracker is D13's fan-out in one line: its type feeds the P4b
+    # The star tracker is the fan-out in one line: its type feeds the onboard
     # bundle AND the registry's own attitude frame, so claiming the device
     # claims both wires. A manifest that names one sensor is not naming one
     # part, and the handshake report says so in two bits.
@@ -152,7 +152,7 @@ def test_declared_mask_reads_the_manifest_not_the_wire() -> None:
 
 
 def test_injections_lie_about_bits_and_never_the_digest() -> None:
-    """The knobs a gate uses are validated before a plant is built.
+    """The knobs a check uses are validated before a plant is built.
 
     An override flips a claim. A digest override simulates STALE FIRMWARE, and
     only that: a test about a missing sensor must not also pretend the catalog
@@ -178,7 +178,7 @@ def test_handshake_never_reaches_the_ground() -> None:
     identity would put the ground's copy of the verdict on the wire beside the
     flight one, and the next reader would grade the wrong number. The absence is
     the tripwire: a leak here turns into an UNKNOWN packet on the interface
-    service, which the p4 gate already refuses.
+    service, which the beacon-defs check already refuses.
     """
     eds = BSK_LINK_EDS.read_text()
     assert 'ContainerDataType name="FitManifest"' in eds

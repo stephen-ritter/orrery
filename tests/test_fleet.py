@@ -1,8 +1,8 @@
-"""Fleet addressing tests (D9 spine + D10 derivation): port blocks and names.
+"""Fleet addressing tests: port blocks and names.
 
 The binding contract is the FIRST test: instance 0 must be every pre-fleet
 port exactly, because every frozen trajectory digest was flown on it and the
-fleet promises physics-neutrality. The D10 contract: a scenario's vehicles
+fleet promises physics-neutrality. The contract: a scenario's vehicles
 are *derived* - block index is the port slot, the name is the COSMOS
 target - and the hand-authored ground map (plugin.txt) must agree.
 """
@@ -34,7 +34,7 @@ TWIN_OPS = REPO / "sim" / "scenarios" / "twin_ops.toml"
 def test_instance_zero_is_the_legacy_port_set() -> None:
     """Ports the frozen digests (25fc027b..., 4688fc5d...) were flown on.
 
-    The twin fleet (D10) adds its own frozen pair, flown twice by
+    The twin fleet adds its own frozen pair, flown twice by
     ``scripts/fly_fleet.sh``'s anchored 180 s choreography: chief
     01c03187..., deputy 85241e3a... At a 120 s twin flight chief's digest
     was 25fc027b... - the solo one: vehicles share an environment, never
@@ -47,7 +47,7 @@ def test_instance_zero_is_the_legacy_port_set() -> None:
     assert p.truth_endpoint == "tcp://*:5590"
     assert p.echo_endpoint == "tcp://*:5591"
     assert p.echo_dial == "tcp://127.0.0.1:5591"
-    assert p.truth_tcp == 5150  # P5: truth lands beside, never among
+    assert p.truth_tcp == 5150  # truth lands beside, never among
 
 
 def test_port_blocks_never_collide_across_the_fleet() -> None:
@@ -77,7 +77,7 @@ def test_negative_instance_is_a_loud_error() -> None:
 
 
 def test_truth_targets_derive_and_never_share_a_namespace() -> None:
-    """Every flight target derives exactly one truth target (P5).
+    """Every flight target derives exactly one truth target.
 
     A derived rule, not a config field - and the two sides can never
     name-clash, for any fleet the scenarios define.
@@ -90,7 +90,7 @@ def test_truth_targets_derive_and_never_share_a_namespace() -> None:
 
 
 # ---------------------------------------------------------------------------
-# D10: the fleet derives from the scenario - no hand-declared identity.
+# The fleet derives from the scenario - no hand-declared identity.
 
 
 def test_sat_target_derives_from_the_spacecraft_name() -> None:
@@ -127,7 +127,7 @@ def test_port_base_shifts_slots_never_identities() -> None:
 
 
 def test_interface_names_follow_the_plugin_convention() -> None:
-    """R3 derived these names from the hand-authored map: pin the rule."""
+    """These names derive from the scenario: pin the rule."""
     base = scenario_vehicles(REPO / "sim" / "scenarios" / "twin_ops.toml")
     assert [(flight_interface(v), truth_interface(v)) for v in base] == [
         ("GS_TCP_INT", "TRUTH_CHIEF_INT"),
@@ -158,7 +158,7 @@ def test_plugin_map_agrees_with_the_derived_fleet() -> None:
         mapped = re.match(r"\s+MAP_TARGET (\S+)", line)
         if mapped and current is not None:
             target_ports[mapped.group(1)] = current
-    for scenario in ("chief.toml", "twin_ops.toml"):  # the D10 fleet file too
+    for scenario in ("chief.toml", "twin_ops.toml"):  # the fleet file too
         for vehicle in scenario_vehicles(REPO / "sim" / "scenarios" / scenario):
             assert vehicle.cosmos_target in target_ports, f"{vehicle.cosmos_target} unmapped"
             assert vehicle.truth_target in target_ports, f"{vehicle.truth_target} unmapped"
@@ -192,7 +192,7 @@ def test_declared_orbits_orbit_and_do_not_fall() -> None:
 
     The fleet lived with velocity = [0, 7.5461, 0] for weeks: a km/s value
     in the m/s interface. BSK accepted it, gravity obeyed it, the vehicles
-    free-fell, and nothing in CI noticed until p5's receiver-scale rule met
+    free-fell, and nothing checked it until the coverage rule met
     a one-frame epoch skew (free-fall g x 1 s = 8.1 m/s dwarfs a 1 cm/s
     receiver). The schema cannot catch this - 7.5 m/s is a legal velocity -
     so the fleet file itself is checked against the orbit it claims.

@@ -14,7 +14,7 @@ export OPENC3_API_PASSWORD="${OPENC3_API_PASSWORD:-orrery-dev}"
 # The station must BE the pinned station (cosmos.lock). This deployment ran a
 # v6.4-era checkout against 7.5-era images for months - openc3.sh sources the
 # checkout's .env, so an old checkout and `:latest` images drift apart silently,
-# and every API the gates use answered correctly the whole time. The flight side
+# and every API the checks use answered correctly the whole time. The flight side
 # has never been allowed that silence; the ground side is not now.
 # Absent checkout -> this clones it (a fresh machine needs one command here too).
 bash "$REPO/scripts/get_cosmos.sh" || exit 1
@@ -68,7 +68,7 @@ run_cli setpassword >/dev/null 2>&1 || true
 # extracted. A script that rebuilds the gem every run must not accept a cached
 # load of a gem it just made; version bumps stay free to skip nothing now.
 # Bump GEM_VERSION whenever plugin.txt changes anyway - it names what is flying.
-# 0.1.5: CAM v2a - the command surface (CAM_SET_CONFIG on its own interface).
+# 0.1.5: the camera command surface (CAM_SET_CONFIG on its own interface).
 # 0.1.8: EDS strings reach the ground as typed STRING - CFDP_DOWN paths can be
 #        typed into the Command Installer; EOT filenames read as text.
 # 0.1.9: CAM_CMD FC 1 ManifestCmd - the store inventory has a ground name.

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    orrery time-tagged command execution (sps_app, P6) - hand-authored per
-    D3, mirroring the fcs.xml idiom: this XML is the single definition source
+    orrery time-tagged command execution (sps_app) - hand-authored, mirroring
+    the fcs.xml idiom: this XML is the single definition source
     for the ground defs (codegen/eds2cosmos), and the topic numbers live in
     cfe-topicids.xml with the flight-C mirror in orrery_topicids.h, pinned by
     tests/test_eds2cosmos.py.
@@ -12,13 +12,13 @@
     dictionary (sps_cmd_table.h - same EDS, so ground and flight can never
     disagree about what is executable), and it fires the stored command on
     the first sensor frame whose time is >= T. Execution rides the frame
-    strobe, never a wall timer (D8): a frozen sim freezes the clock, and a
+    strobe, never a wall timer: a frozen sim freezes the clock, and a
     schedule waits with it. A late schedule (T already passed) fires on the
     next frame and is counted - the queue never pretends to time-travel.
 
     Authority works like the control loop: the queue starts DISABLED, so a
     schedule can sit aboard without the ability to move anything until an
-    operator ENABLEs it. Payload bytes are target-native little-endian (D6).
+    operator ENABLEs it. Payload bytes are target-native little-endian.
 -->
 <PackageFile xmlns="http://www.ccsds.org/schema/sois/seds">
   <Package name="SPS" shortDescription="Orrery time-tagged command execution (stored program sequence)">

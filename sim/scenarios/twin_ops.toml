@@ -1,4 +1,4 @@
-# orrery twin fleet plant (decision D10): ONE world, TWO vehicles - this
+# orrery twin fleet plant: ONE world, TWO vehicles - this
 # file IS the fleet. One Basilisk process, one clock, one sun, one dipole;
 # each [[spacecraft]] block is one independently-flown vehicle with its own
 # cFS container, its own lockstep gate and its own port block.
@@ -6,13 +6,13 @@
 # Nothing here declares ports or ground identities (that is what killed the
 # manifest layer): the block INDEX is the port slot (sim/fleet.py:ports())
 # and the block NAME is the COSMOS target (SAT_<NAME>, TRUTH_<NAME>).
-# Launch:  scripts/fly_fleet.sh (acceptance)   scripts/fleet.sh up (R3)
+# Launch:  scripts/fly_fleet.sh (acceptance)   scripts/fleet.sh up
 #
 # Both vehicles are the operations plant (chief.toml) - copied, not
 # referenced: a scenario is one world, and a world says what bodies it has.
 # deputy rides 20 km along-track in the same circular orbit and tumbles on a
 # different axis mix, so the two truth streams differ visibly while sharing
-# one environment (the P8a property, arriving for free with D10).
+# one environment - the property a derived fleet gets for free.
 # Known caveat, accepted for a same-world twin: both IMUs inherit Basilisk's
 # constant default sensor seed (this Basilisk fixes RNGSeed at 464374481), so
 # the vehicles' gyro noise is CORRELATED - visible only if the two rate
@@ -58,7 +58,7 @@ type = "rv"
 [spacecraft.orbit.rv]
 position = [7.0e6, 0.0, 0.0]
 # SI - circular speed at r=7000 km is sqrt(mu/r) = 7546 m/s. (A km/s
-# decimal here had the whole fleet in free-fall until p5 caught it;
+# decimal here had the whole fleet in free-fall until the coverage check caught it;
 # tests/test_fleet.py now forbids falling fleets.)
 velocity = [0.0, 7546.1, 0.0]
 
@@ -133,7 +133,7 @@ type = "magnetometer"
 name = "mag"
 noise_sigma = 1.0e-8
 
-# KN2 (D13): the vehicle's own GNSS opinion - the manifest picks the part,
+# The vehicle's own GNSS opinion - the manifest picks the part,
 # the plant builds a SimpleNav receiver from it. Delete this block and the
 # NavState stream (0x08CF) goes silent: absence declared, not zero-filled.
 [[spacecraft.sensors]]
@@ -237,7 +237,7 @@ type = "magnetometer"
 name = "mag"
 noise_sigma = 1.0e-8
 
-# KN2 (D13): the vehicle's own GNSS opinion - the manifest picks the part,
+# The vehicle's own GNSS opinion - the manifest picks the part,
 # the plant builds a SimpleNav receiver from it. Delete this block and the
 # NavState stream (0x08CF) goes silent: absence declared, not zero-filled.
 [[spacecraft.sensors]]

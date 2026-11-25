@@ -1,13 +1,13 @@
-# camera_ops with the v2b store outlet: every 2nd capture becomes an onboard
+# camera_ops with the store outlet: every 2nd capture becomes an onboard
 # file. One TOML line is the whole difference from camera_ops.toml - which IS
 # the acceptance argument: with record_rate absent (or 0) the bird ships zero
 # image bytes and its digest is the untouched camera_ops anchor.
 #
-#   scripts/check_cam_v2b.sh            (control = camera_ops, this = record leg)
+#   scripts/check_cam_record.sh            (control = camera_ops, this = record leg)
 #
 # downlink stays at its honest default (false): frames recorded are NOT yet
-# eligible for CF - that promise is v2c's, and a dead outlet (downlink with
-# nothing to send) is refused by the schema, by design.
+# eligible for CF - that promise is the downlink flag's, and a dead outlet
+# (downlink without record_rate) is refused by the schema, by design.
 # chief with a rendered eye (CAM): the knowledge mission.
 #
 #   uv run python -m sim.forge_scenario --scenario sim/scenarios/camera_ops.toml
@@ -28,7 +28,7 @@
 #   pins what runs there via vizard.lock.
 #
 # The camera is a knowledge channel: it feeds no torque, and its presence
-# must not move the trajectory digest - the digest-invariance gate flies
+# must not move the trajectory digest - the digest-invariance check flies
 # this file with and without the trailing sections and demands the same
 # known-good digest. Vizard down is a LOUD stall, not a silent zero: the
 # camera task blocks its tick waiting for a frame, and the lockstep gate
@@ -40,7 +40,7 @@ duration = 120.0
 
 [simulation.dt]
 dynamics = 0.1
-# fsw is the FSW tick: the world gate, sensor frames, beacon and every
+# fsw is the FSW tick: the world check, sensor frames, beacon and every
 # anchored digest ride this rate. It must stay an integer multiple of
 # dynamics, and retuning it re-anchors every baseline - full ceremony.
 fsw = 1.0
@@ -161,7 +161,7 @@ type = "magnetometer"
 name = "mag"
 noise_sigma = 1.0e-8
 
-# KN2 (D13): the vehicle's own GNSS opinion - the manifest picks the part,
+# The vehicle's own GNSS opinion - the manifest picks the part,
 # the plant builds a SimpleNav receiver from it. Delete this block and the
 # NavState stream (0x08CF) goes silent: absence declared, not zero-filled.
 [[spacecraft.sensors]]
@@ -174,7 +174,7 @@ sample_time = 1.0
 # --- the rendered eye (CAM) ----------------------------------------------------
 # bskforge builds the camera module and the Vizard interface; the yard adds
 # the limb/horizon estimators on top (the onboard knowledge model is the
-# harness's job - D7) and streams only the ESTIMATE onto the link as an
+# harness's job) and streams only the ESTIMATE onto the link as an
 # OPNAV frame. Here the eye is also a payload: the store outlet (record_rate)
 # makes Basilisk's own PNG writer the byte source - the module writes each
 # capture into a run-scoped temp dir, and the outlet ships every Nth file's
@@ -192,4 +192,4 @@ render_rate = 2.0          # s between frames; each render tick costs one Vizard
 resolution = [512, 512]
 field_of_view = 0.8726646  # 50 deg: the Earth disc spans ~29 deg at 25 000 km
 sky_box = "black"
-record_rate = 2              # CAM v2b store outlet: every 2nd capture crosses the airgap
+record_rate = 2              # store outlet: every 2nd capture crosses the airgap

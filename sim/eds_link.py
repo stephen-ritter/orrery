@@ -1,4 +1,4 @@
-"""EdsLib codecs for the Basilisk side of the link (ROADMAP D6).
+"""EdsLib codecs for the Basilisk side of the link.
 
 The mission's EDS XML is the only description of what crosses the Basilisk <-> cFS
 boundary. ``edslink/build.sh`` compiles it into a runtime database; this module loads
@@ -98,10 +98,10 @@ class TorqueCommand:
 
 @dataclass(frozen=True)
 class StepAck:
-    """A decoded ``BSK_LINK/StepAck`` frame (the lockstep barrier, D5 amendment).
+    """A decoded ``BSK_LINK/StepAck`` frame (the lockstep barrier).
 
     ``mode`` is the fcs mode that answered the frame (0 disabled, 1 enabled,
-    2 safe - the P4b-2 supervisor latch); ``torques_issued`` is the issuing
+    2 safe - the supervisor latch); ``torques_issued`` is the issuing
     counter at ack time, so a torque packet can still be matched by ``frame``
     alone while this keeps the audit honest.
     """
@@ -114,7 +114,7 @@ class StepAck:
 
 @dataclass(frozen=True)
 class OnboardState:
-    """A decoded ``BSK_LINK/OnboardState`` frame (P4b observability companion).
+    """A decoded ``BSK_LINK/OnboardState`` frame (observability companion).
 
     Everything here is what the OBC's own instruments and actuators report:
     wheel feedback, ST quaternion (scalar-first), CSS cosines in TOML order,
@@ -144,7 +144,7 @@ def encode_sensor_frame(
 
 @dataclass(frozen=True)
 class FitManifest:
-    """A decoded ``BSK_LINK/FitManifest``: what the world claims is fitted (OB).
+    """A decoded ``BSK_LINK/FitManifest``: what the world claims is fitted.
 
     ``declared_bits`` are the bits of ``frame_rows`` order (sim.parts), and
     ``registry_hash`` is the registry's semantics digest - the two numbers the
@@ -162,7 +162,7 @@ class FitManifest:
 def encode_fit_manifest(
     sim_time_s: float, frame: int, declared_bits: int, registry_hash: str
 ) -> Any:  # noqa: ANN401 - stub-less C extension
-    """Build a packed ``BSK_LINK/FitManifest`` (the boot handshake, OB).
+    """Build a packed ``BSK_LINK/FitManifest`` (the boot handshake).
 
     Hand-written like the barrier's own frames on purpose: the generic
     ``encode_container`` refuses containers that are not landed registry parts,
@@ -221,7 +221,7 @@ def _registry_sizes() -> dict[str, int]:
 
 
 def encode_container(type_name: str, values: dict[str, float | int | tuple[float, ...]]) -> bytes:
-    """Pack one observability container by EDS name (REG: the sim's generic provider).
+    """Pack one observability container by EDS name (the sim's generic provider).
 
     The field names are the contract: they come from the schema and arrive as
     dict keys, so no per-container encode function is ever written again -
@@ -250,7 +250,7 @@ def encode_container(type_name: str, values: dict[str, float | int | tuple[float
     if len(payload) != sizes[type_name]:
         raise LinkUnavailable(
             f"{type_name} packed to {len(payload)} B but the registry declares "
-            f"{sizes[type_name]} B - row and schema disagree (re-run the gates)"
+            f"{sizes[type_name]} B - row and schema disagree (re-run the checks)"
         )
     return payload
 
@@ -271,7 +271,7 @@ def decode_onboard_state(payload: bytes) -> OnboardState:
 
 @dataclass(frozen=True)
 class NavState:
-    """A decoded ``BSK_LINK/NavState`` frame (KN: a GNSS opinion, never truth)."""
+    """A decoded ``BSK_LINK/NavState`` frame (a GNSS opinion, never truth)."""
 
     sim_time_s: float
     frame: int
@@ -321,13 +321,13 @@ def decode_opnav_state(payload: bytes) -> OpNavState:
 
 @dataclass(frozen=True)
 class CamState:
-    """A decoded ``BSK_LINK/CamState`` frame (confirmed device state, v2a+v2b).
+    """A decoded ``BSK_LINK/CamState`` frame (confirmed device state).
 
     The sim's side of the commanded-vs-confirmed pair: CAM_HK carries what the
     ground asked for, this carries what the camera module is actually running.
     ``captured`` counts distinct image writes seen since boot at recorder
     granularity - the firstPass boot stream included, because it is what the
-    camera captured, as honesty demands. ``frames_recorded`` (v2b) counts the
+    camera captured, as honesty demands. ``frames_recorded`` counts the
     frames the STORE OUTLET has sent: every ``record_rate``-th capture whose
     PNG bytes were chunked onto the wire. Zero means the camera is nav-only -
     an absence, not a failure.
@@ -359,7 +359,7 @@ def decode_cam_state(payload: bytes) -> CamState:
 
 @dataclass(frozen=True)
 class CamConfig:
-    """A decoded ``BSK_LINK/CamConfig`` frame (cFS -> sim, CAM v2a).
+    """A decoded ``BSK_LINK/CamConfig`` frame (cFS -> sim).
 
     One accepted ``CAM_SET_CONFIG`` leaving the bus. Fire-and-forget: nothing
     on this frame is a barrier, and a sim that cannot honour it (no such eye,
@@ -408,7 +408,7 @@ def encode_cam_config(
 def encode_torque_command(
     sim_time_s: float, torque_sum_b: tuple[float, float, float], frame: int
 ) -> Any:  # noqa: ANN401 - stub-less C extension
-    """Build a packed ``BSK_LINK/TorqueCommand`` (what the FSW will send in P3c)."""
+    """Build a packed ``BSK_LINK/TorqueCommand`` (what the FSW sends)."""
     lib = _lib()
     obj = entry("BSK_LINK/TorqueCommand")()
     obj["SimTimeS"] = sim_time_s
@@ -445,7 +445,7 @@ def encode_step_ack(sim_time_s: float, frame: int, mode: int, torques_issued: in
     """Build a packed ``BSK_LINK/StepAck``.
 
     Production acks come from ``fcs`` over the bus; this encoder exists for
-    the ground-side fake-FSW tests that must answer the gate without a
+    the ground-side fake-FSW tests that must answer the check without a
     container. verify.py pins that the bytes match ``<dQb3xI``.
     """
     lib = _lib()

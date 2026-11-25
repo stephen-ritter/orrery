@@ -24,7 +24,7 @@ BUILD_DIR="${BUILD_DIR:-$MISSION_DIR/build}"
 JOBS="${JOBS:-$(nproc)}"
 EDSLINK_BUILD_DIR="${EDSLINK_BUILD_DIR:-$HERE/../edslink/build}"
 
-# The link schema (ROADMAP D6): bsk_link decodes with the EdsLib database that
+# The link schema: bsk_link decodes with the EdsLib database that
 # edslink/ compiles from the same XML the ground defs come from. It needs host
 # cmake/gcc/Lua, all present in the build image; the result is a plain static
 # archive, so it is built once and reused by the mission build.

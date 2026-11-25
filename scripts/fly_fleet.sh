@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Twin fleet round trip (D10 / R2): ONE Basilisk world, N mission containers.
+# Twin fleet round trip: ONE Basilisk world, N mission containers.
 #
 # The scenario file IS the fleet: every [[spacecraft]] block gets a container
 # (named for the vehicle) on its derived port block, and the world steps only
@@ -8,10 +8,10 @@
 #
 #   scripts/fly_fleet.sh [scenario.toml]     default: sim/scenarios/twin_ops.toml
 #
-# Per vehicle the closed loop is the same P3 acceptance (sense -> ENABLE ->
+# Per vehicle the closed loop is the same acceptance the single vehicle flies (sense -> ENABLE ->
 # exact-law frame-matched torque -> echo proof -> retune), driven SEQUENTIALLY:
 # while vehicle A is tested the others sit in sense mode answering zero torque,
-# which is exactly what the shared gate tolerates. The sim runs to its finish
+# which is exactly what the shared check tolerates. The sim runs to its finish
 # so the per-vehicle trajectory digests (the determinism artifact) are printed.
 set -euo pipefail
 
@@ -26,34 +26,34 @@ LOG_DIR="${LOG_DIR:-/tmp/opencode}"
 cd "$REPO"
 SCENARIO="${1:-sim/scenarios/twin_ops.toml}"
 
-# The p3 stage sequence advances on TELEMETRY COUNTS, so its ENABLE/SET_GAIN
+# The stage sequence advances on TELEMETRY COUNTS, so its ENABLE/SET_GAIN
 # frames repeat only if the client's whole run is frame-anchored: every
 # vehicle passes --start-frame, the client holds ENABLE until that ABSOLUTE
 # sim frame appears on its own beacon, pinning the entire count-driven
 # sequence to the same frames every flight. An anchor the client cannot
 # reach in time is a hard failure inside the client.
 #
-# KN2 amendment (2026-11-22) - vehicle 0 is anchored too, and the old
+# Amendment (2026-11-22) - vehicle 0 is anchored too, and the old
 # "chief's digest is the classic-cadence artifact and stays so" stance is
 # retired BY MEASUREMENT: with the plant receiver aboard and the host busy
 # right after a restart, chief's ENABLE landed on a different sim frame and
 # the digest silently moved (01c03187... -> 46a773d...); three quiet flights
 # brought the old number back exactly. A wall-clock ENABLE is stable by
-# luck, not construction - the same disease the deputy caught at KN, so the
+# luck, not construction - the same disease the deputy caught, so the
 # same cure. Anchors now step by START_EVERY per vehicle so each client
 # joins BEFORE its own frame (they run sequentially).
 FIRST_START=60
 START_EVERY=70
 
-# KN doctrine - the anchor alone was half the story: the p3 client's
+# The doctrine - the anchor alone was half the story: the closed-loop client's
 # SET_GAIN used to ride the arrival of the 7.8 s FCS_HK poll (a wall-clock
 # cadence), which left ONE act to chance and made the deputy baseline
 # bistable (85241e3a... / d5c2dbb6..., 50/50). Every vehicle therefore
 # sends SET_GAIN at GAIN_AFTER sim frames past its own ENABLE anchor
-# (--gain-frame, the p3-solo cure).
+# (--gain-frame, the single-vehicle cure).
 GAIN_AFTER=7
 
-# Derived fleet (D10): index = instance = port block, name = container suffix.
+# Derived fleet: index = instance = port block, name = container suffix.
 mapfile -t FACTS < <(uv run python -c "
 from sim.fleet import scenario_vehicles
 for v in scenario_vehicles('$SCENARIO'):
@@ -108,7 +108,7 @@ for fact in "${FACTS[@]}"; do
 done
 
 # Every container must boot before the world starts: a missing one would look
-# like a gate stall three ticks in, and the operator deserves the named truth.
+# like a check stall three ticks in, and the operator deserves the named truth.
 for fact in "${FACTS[@]}"; do
     read -r name instance beacon uplink sensor link_cmd <<<"$fact"
     SECONDS=0
@@ -138,7 +138,7 @@ LOG="$LOG_DIR/twin_sim.log"
 
 # The rendered eye (CAM): a [[camera]] scenario stages its pinned Vizard as
 # a named container, swept by the cleanup loop - the full choreography law
-# (patient direct exec, squat guard, vizard.lock gate) lives in
+# (patient direct exec, squat guard, vizard.lock check) lives in
 # scripts/renderer.sh.
 if grep -qE '^[[:space:]]*\[\[camera\]\]' "$SCENARIO" 2>/dev/null; then
     RUNTIME="$RUNTIME" bash "$REPO/scripts/renderer.sh" stage "$SCENARIO" orrery-camera-viz
@@ -193,8 +193,8 @@ for fact in "${FACTS[@]}"; do
     index=$((index + 1))
 done
 
-# All gates proven live; let the paced world run to its finish for digests.
-echo "--- fleet gates proven; pacing to the finish (digests) ---"
+# All checks proven live; let the paced world run to its finish for digests.
+echo "--- fleet checks proven; pacing to the finish (digests) ---"
 deadline=$((SECONDS + SIM_DURATION + 60))
 while kill -0 "$SIM_PID" 2>/dev/null && [ "$SECONDS" -lt "$deadline" ]; do sleep 1; done
 sim_rc=0

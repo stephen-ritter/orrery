@@ -3,13 +3,13 @@
 #
 # Starts the (already built) mission, waits for both the gs_tcp listeners and
 # the FCS init event, launches the Basilisk scenario in LOCKSTEP (--zmq: the
-# sim owns the clock, every sensor frame gates on its fcs StepAck; --pace puts
+# sim owns the clock, every sensor frame checks on its fcs StepAck; --pace puts
 # 1 sim-s per real-s on top so the ground's sampling windows are wall-clock
 # sane), then drives the closed-loop acceptance from the host with
 # sim/fcs_probe.py: sense (zero answers = inert) -> ENABLE -> exact-law
 # torque frame-matched to its sensor frame -> sim echo proves the effector
 # felt it -> SET_GAIN live retune. Container and scenario are ALWAYS cleaned
-# up by the trap. A dead gate exits the scenario with rc=2 and fails here.
+# up by the trap. A dead check exits the scenario with rc=2 and fails here.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,7 +27,7 @@ SIM_DURATION="${SIM_DURATION:-60}"
 # same closed loop (W3: same rig, same acceptance, different build path).
 SIM_MODULE="${SIM_MODULE:-sim.detumble_scenario}"
 # Extra switches for the scenario module, e.g. SIM_ARGS="--scenario
-# sim/scenarios/chief.toml" flies the P4a operations plant (wheels + IMU)
+# sim/scenarios/chief.toml" flies the operations plant (wheels + IMU)
 # through the exact same closed loop.
 SIM_ARGS="${SIM_ARGS:-}"
 # Positional scenario (fly_fleet symmetry): fly_world.sh sim/scenarios/x.toml
@@ -36,9 +36,9 @@ SIM_ARGS="${SIM_ARGS:-}"
 if [ -n "${1:-}" ]; then SIM_MODULE="sim.forge_scenario"; SIM_ARGS="--scenario $1"; fi
 LOG="${LOG:-/tmp/opencode/world_scenario_$(basename "$SIM_MODULE").log}"
 
-# D10: this harness flies ONE vehicle on the legacy port block. Fleet work
+# This harness flies ONE vehicle on the legacy port block. Fleet work
 # (N worlds-gated-together missions) lives in scripts/fly_fleet.sh; the
-# D9 BIRD=<slug> manifest mode died with the manifest layer.
+# The BIRD=<slug> manifest mode died with the manifest layer.
 INSTANCE=0
 BEACON=$((5050 + 2 * INSTANCE))
 UPLINK=$((BEACON + 1))
@@ -75,7 +75,7 @@ while [ "$SECONDS" -lt "$BOOT_TIMEOUT" ]; do
         break
     fi
     if grep -qE "(GS_TCP|FCS|BSK_LINK).*(fail|DEAD)|Could not load file|ES Load Module Error" <<<"$LOGS"; then
-        echo "P3c ROUND TRIP FAILED (app init error)"
+        echo "ROUND TRIP FAILED (app init error)"
         grep -E "GS_TCP|FCS|BSK_LINK|LoadModule|Could not load|EVS Port1.*66/1/ES" <<<"$LOGS" | tail -12
         exit 1
     fi
@@ -86,7 +86,7 @@ done
 # surface as a confusing downstream "stuck in sense" 3 minutes later.
 LOGS="$("$RUNTIME" logs "$CONTAINER" 2>&1 || true)"
 if ! grep -q "gs_tcp downlink :$BEACON uplink :$UPLINK" <<<"$LOGS" || ! grep -q "FCS App Initialized" <<<"$LOGS"; then
-    echo "P3c ROUND TRIP FAILED (boot markers not seen within ${BOOT_TIMEOUT}s)"
+    echo "ROUND TRIP FAILED (boot markers not seen within ${BOOT_TIMEOUT}s)"
     grep -E "GS_TCP|FCS|BSK_LINK|Could not load" <<<"$LOGS" | tail -12
     exit 1
 fi
@@ -164,8 +164,8 @@ echo "--- mission console tail ---"
 "$RUNTIME" logs "$CONTAINER" 2>&1 | grep -E "FCS |BSK_LINK|TIME.*MET|slaved to link" | tail -8
 
 if [ "$rc" -eq 0 ]; then
-    echo "P3 ROUND TRIP OK"
+    echo "ROUND TRIP OK"
 else
-    echo "P3 ROUND TRIP FAILED"
+    echo "ROUND TRIP FAILED"
 fi
 exit "$rc"

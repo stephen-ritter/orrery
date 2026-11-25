@@ -1,11 +1,11 @@
-"""P4b-2 acceptance: the mode supervisor flies on onboard knowledge.
+"""Mode-supervisor acceptance: the supervisor flies on onboard knowledge.
 
 Requires the running mission (gs_tcp :5050/:5051) and the chief plant
 flying in lockstep (``forge_scenario --zmq --pace``: the ONBOARD frames the
 supervisor feeds on only exist on the TOML plant). From a ground seat this
 drives and proves, in order:
 
-1. sense/ENABLE as P3 knows it - the loop lives on SensorFrame, unchanged;
+1. sense/ENABLE as the closed loop knows it - the loop lives on SensorFrame, unchanged;
 2. uplink SET_WHEEL_LIMIT 10 -> EVS + HK acknowledge the new threshold;
 3. the first frame whose knowledge shows |wheel| >= 10 trips ENABLED -> SAFE:
    no bus torque on ANY later frame, the sim echo proves the effector felt
@@ -154,9 +154,9 @@ class FrameLog:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the P4b-2 mode-supervisor acceptance; returns process exit code."""
-    ap = argparse.ArgumentParser(description="P4b mode-supervisor acceptance client")
-    ap.add_argument("--instance", type=int, default=0, help="fleet port block (D9) to address")
+    """Run the mode-supervisor acceptance; returns process exit code."""
+    ap = argparse.ArgumentParser(description="mode-supervisor acceptance client")
+    ap.add_argument("--instance", type=int, default=0, help="fleet port block to address")
     args = ap.parse_args(argv)
     eds = build_eds(CFS, MISSION_DEFS)
     pkts = {p.name: p for p in eds.packets()}
@@ -254,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
                 stage = "refuse"
                 print(
                     f"inert in SAFE: no bus torque since frame {trip_frame}, echo zero, "
-                    f"gate alive ({hk.sensor_frames if hk else '?'} frames in) - ENABLE uplinked"
+                    f"check alive ({hk.sensor_frames if hk else '?'} frames in) - ENABLE uplinked"
                 )
                 continue
 
@@ -308,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
                 continue
 
             if stage == "obc":
-                # P4b-3 finale: the OBC must REPORT the incident it just
+                # Finale: the OBC must REPORT the incident it just
                 # lived through. Its own counts are fresh; the mode mirror
                 # rides the 7.8 s FCS_HK poll, so this waits, briefly.
                 obc = log.last_obc
@@ -335,9 +335,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if not ok:
         recent = [f"{a}/{e}" for a, e, _ in log.evs_events][-8:]
-        print(f"P4b MODES FAILED: stuck in stage {stage!r}; events {recent}")
+        print(f"MODES FAILED: stuck in stage {stage!r}; events {recent}")
         return 1
-    print("P4b MODES OK")
+    print("MODES OK")
     return 0
 
 

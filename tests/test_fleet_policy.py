@@ -12,7 +12,7 @@ and this project asks for it closed. What is left to test here is ours:
   why the codebase gets searched rather than trusted;
 * **our half of the message.** bskforge names the offending paths; only we can
   say what a smuggled device would hide from here and which route is allowed. A
-  gate that only forbids gets routed around by someone with a good reason, and
+  check that only forbids gets routed around by someone with a good reason, and
   they usually have one.
 
 The walk itself — depth, document paths, ``extends`` laundering, empty tables,
@@ -119,7 +119,7 @@ someBasiliskKnob = 0.01
 
 
 def test_the_failure_teaches_instead_of_only_forbidding(tmp_path: Path) -> None:
-    """The honest failure of this gate is a bskforge issue, not a deleted check.
+    """The honest failure of this check is a bskforge issue, not a deleted check.
 
     So the pedagogy is pinned: what the smuggled part hides from (the fit
     manifest is the one that bites at boot), the precedent that worked
@@ -177,12 +177,12 @@ def test_the_plant_refuses_before_it_builds_anything(
 
 
 def test_acceptance_refuses_to_grade_a_smuggled_world(tmp_path: Path) -> None:
-    """The gate that reads a manifest by env var refuses it too.
+    """The check that reads a manifest by env var refuses it too.
 
-    `ORRERY_SCENARIO` lets one unmodified truth gate judge two fleets, which
+    `ORRERY_SCENARIO` lets one unmodified truth check judge two fleets, which
     also means a scratch manifest can be pointed at acceptance without touching
     the plant. Grading such a world would put an unaudited wire inside an
-    exhibit, so the gate reads manifests through the same door the plant does.
+    exhibit, so the check reads manifests through the same door the plant does.
     """
     from sim.truth_exhibits import declared_sigmas
 

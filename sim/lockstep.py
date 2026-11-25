@@ -1,9 +1,9 @@
 """The orrery lockstep harness: the barrier, the clock, the link sockets.
 
-One gate implementation, many plants (D7) - and since D10, many vehicles per
-world: the rig gates ONE world step on an ack from EVERY attached mission
-container, one channel per vehicle. This module owns everything the D5
-amendment made load-bearing - the socket farm, the publish-and-gate tick,
+One check implementation, many plants - and for a fleet, many vehicles
+world: the rig checks ONE world step on an ack from EVERY attached mission
+per container, one channel per vehicle. This module owns everything the
+amendment made load-bearing - the socket farm, the publish-and-check tick,
 the retransmitting barrier handshake with its tripwire counters, and the
 boundary-aware stepping that lets the control period be any integer
 multiple of the sim's scan grid. What a vehicle *is* (hand-written rigid
@@ -12,10 +12,10 @@ of callbacks:
 
 * ``gyro() -> omega``      - what the satellite measures, never truth;
 * ``apply(torque)``        - write the effector command for this frame;
-* ``truth_bytes() -> bytes`` - the ground-only truth frame (P5 stream).
+* ``truth_bytes() -> bytes`` - the ground-only truth frame.
 
 ``DetumbleScenario`` and ``ForgeScenario`` are thin plant builders on one
-channel; ``ForgeFleet`` (D10) rides N channels on one sim. Two copies of a
+channel; ``ForgeFleet`` rides N channels on one sim. Two copies of a
 barrier would drift, so there is exactly one copy: this file.
 """
 
@@ -47,27 +47,27 @@ from sim.eds_link import (
 )
 from sim.parts import load_registry
 
-# Ports (D2's split taught the ground side; this is the sim side). The sim
+# Ports: the ground/sim split taught both sides. The sim
 # BINDS everything: it starts and dies far more often than the mission.
 TOPIC_SENSOR = b"SENSOR"
 TOPIC_ACK = b"ACK"
 TOPIC_CMD = b"CMD"
-# Camera config (CAM v2a): egressed on the cmd socket like CMD, but not part
+# Camera config: egressed on the cmd socket like CMD, but not part
 # of the barrier - _await_barrier applies it and keeps waiting. It lives with
 # the hardcoded constants because it is neither physics nor a registry part:
 # a command surface, fire-and-forget by contract.
 TOPIC_CAM = b"CAM"
 TOPIC_TRUTH = b"TRUTH"
-# The boot handshake (OB): the world's declared part fit, on the sensor socket
+# The boot handshake: the world's declared part fit, on the sensor socket
 # every tick. Not a part and not telemetry - it is the link's own control
 # chatter, so it joins the barrier constants rather than OBSERVER_TOPICS, and
 # its EDS container has no TopicId: no MsgId, no ground def, no beacon.
 TOPIC_FIT = b"FIT"
-# Observability topics the rig may publish (REG): the landed bsk_link rows
+# Observability topics the rig may publish: the landed bsk_link rows
 # of registry/parts.toml - the same table the spacecraft's generic consumer
 # reads, so sim and flight software can never disagree about which parts
 # exist. The constants above stay hardcoded on purpose: SENSOR/ACK/CMD are
-# the D5 barrier (physics) and TRUTH is the navigator's wire - neither is a
+# the barrier (physics) and TRUTH is the navigator's wire - neither is a
 # part, neither lands through the registry.
 OBSERVER_TOPICS = frozenset(
     p.zmq_topic for p in load_registry() if p.landed and p.consumer == "bsk_link"
@@ -83,13 +83,13 @@ ECHO_ENDPOINT = "tcp://*:5591"
 # loud-after-how-long, never whether the run fails.
 ACK_TIMEOUT_S = 10.0
 
-# The gate retransmits sensor{N} at this interval while it waits. A fresh ZMQ
+# The check retransmits sensor{N} at this interval while it waits. A fresh ZMQ
 # PUB/SUB pair silently eats frames published before the subscription lands -
 # measured here: the mission's SUB connects before the sim's PUB exists, so
 # frame 1 dies exactly when a lockstep run needs it most. Retransmission makes
 # the barrier a real handshake (shout until the shout lands), and fcs answers a
 # repeat frame idempotently, so control-law runs and counters stay once-per-
-# frame. Mid-run this also lets a mission RESTART heal the gate within the ack
+# frame. Mid-run this also lets a mission RESTART heal the check within the ack
 # timeout instead of dooming the run.
 ACK_RETRY_S = 0.5
 
@@ -133,7 +133,7 @@ def truth_bytes(truth: Truth) -> bytes:
 
 
 def trajectory_sha256(rate_history: list[tuple[float, float]]) -> str:
-    """The determinism fingerprint (D5 amendment): the whole measured trajectory.
+    """The determinism fingerprint: the whole measured trajectory.
 
     Time and rate, hashed. Two seeded runs on the same binary MUST print the
     same digest - single-scan stepping in the caller's thread makes the
@@ -177,7 +177,7 @@ class RigChannel:
     """One gated vehicle in the world: its callbacks and its link sockets.
 
     The frame counter and the clock belong to the WORLD (the rig); the
-    counters and histories belong to a channel - whose gate shouted,
+    counters and histories belong to a channel - whose check shouted,
     stalled, or answered is a per-vehicle fact, and a fleet run reports
     them side by side.
     """
@@ -187,29 +187,29 @@ class RigChannel:
     apply_torque: Callable[[np.ndarray], None]
     truth_provider: Callable[[], bytes]
     kp: np.ndarray
-    # Registry-driven observability (REG): one provider per registered
+    # Registry-driven observability: one provider per registered
     # topic, publish order = insertion order (determinism: the digest
     # ledger depends on the world never racing itself). Keys must be
     # landed registry rows' topics - see __post_init__.
     observers: dict[str, Callable[[], bytes]] = field(default_factory=dict)
-    # The boot handshake (OB): this vehicle's declared fit, published on the
+    # The boot handshake: this vehicle's declared fit, published on the
     # sensor socket every tick so the spacecraft can compare three views - the
     # manifest, what the binary was BUILT with, and what its bus actually
     # streams. ``None`` means the scenario says nothing about its fit, and the
     # mission reports the link as legacy (no presence verdict either way).
     fit_provider: Callable[[], bytes] | None = None
-    # The camera config door (CAM v2a): called with each decoded CamConfig
+    # The camera config door: called with each decoded CamConfig
     # the instant it arrives, between ticks - the module write lands at the
     # next Basilisk update by the sim's own law (camera.cpp re-reads its
-    # fields every tick, proven by the Phase-0 spike). ``None`` means this
+    # fields every tick, proven by an early spike). ``None`` means this
     # vehicle has no commanded eye; a config for it is decoded, counted, and
     # dropped - visible in the exit report, never silently absorbed.
     cam_sink: Callable[[CamConfig], None] | None = None
     sockets: dict[str, zmq.Socket] = field(default_factory=dict)
 
-    stale_torques: int = 0  # frames (torque or ack) the gate already passed
-    sensor_retransmits: int = 0  # gate shouts that had to be repeated
-    foreign_frames: int = 0  # frames ahead of the gate: a protocol breach
+    stale_torques: int = 0  # frames (torque or ack) the check already passed
+    sensor_retransmits: int = 0  # check shouts that had to be repeated
+    foreign_frames: int = 0  # frames ahead of the check: a protocol breach
     bad_frames: int = 0  # undecodable or malformed multipart frames
     cam_configs: int = 0  # camera configs received (applied is the sink's tally)
     rate_history: list[tuple[float, float]] = field(default_factory=list)
@@ -227,7 +227,7 @@ class RigChannel:
 
 
 class LockstepRig:
-    """The tick/barrier/stepper half of a orrery scenario (D7).
+    """The tick/barrier/stepper half of a orrery scenario.
 
     A scan of the sim is the metronome; a tick is what happens AFTER the scan
     lands on a control boundary: for every channel measure with ``gyro`` and
@@ -235,7 +235,7 @@ class LockstepRig:
     that vehicle's ``fcs`` to answer THIS frame, write every answered torque
     (or zero - a disabled loop is inert, frame-matched), and only then let
     the next scan exist. One world step therefore needs one ack from every
-    mission container (D10); a dead container stalls the world, loudly.
+    mission container; a dead container stalls the world, loudly.
     In standalone mode the barriers are absent and each internal law
     ``-kp * omega`` closes its own loop.
     """
@@ -264,7 +264,7 @@ class LockstepRig:
         ``apply_torque``, ``truth_provider``, ``kp``, optional
         ``observers``) - DetumbleScenario, ForgeScenario and every frozen
         digest enter through that door, and get exactly one channel. The
-        fleet form (D10) passes ready ``channels`` instead.
+        fleet form passes ready ``channels`` instead.
 
         ``control_period_s`` must be an integer multiple of the sim's scan
         grid (the gcd of its task rates) or ticks would silently skip
@@ -324,17 +324,17 @@ class LockstepRig:
 
     @property
     def stale_torques(self) -> int:
-        """Tripwire across all channels: answers from frames the gate passed."""
+        """Tripwire across all channels: answers from frames the check passed."""
         return sum(ch.stale_torques for ch in self.channels)
 
     @property
     def sensor_retransmits(self) -> int:
-        """Handshakes the gates had to repeat, summed over channels."""
+        """Handshakes the checks had to repeat, summed over channels."""
         return sum(ch.sensor_retransmits for ch in self.channels)
 
     @property
     def foreign_frames(self) -> int:
-        """Tripwire across all channels: answers from frames ahead of the gate."""
+        """Tripwire across all channels: answers from frames ahead of the check."""
         return sum(ch.foreign_frames for ch in self.channels)
 
     @property
@@ -415,7 +415,7 @@ class LockstepRig:
                     break
 
     def _await_barrier(self, ch: RigChannel, frame: int, sensor_bytes: bytes) -> np.ndarray | None:
-        """The lockstep gate (D5 amendment): hold until ``fcs`` acks this frame.
+        """The lockstep barrier: hold until ``fcs`` acks this frame.
 
         Returns the torque commanded for *this* frame, or ``None`` when none
         came - the loop was disabled, yet the ack still arrives and time moves
@@ -423,7 +423,7 @@ class LockstepRig:
         recovery logic); a frame from the future cannot exist in lockstep and
         aborts as a protocol breach. No ack before the deadline raises
         ``LockStalled``: that satellite stopped reacting, and the alternative -
-        keep flying on stale knowledge - is what this gate exists to forbid.
+        keep flying on stale knowledge - is what this check exists to forbid.
         In a fleet the stall message names the channel: one dead container is
         one named mission, not an anonymous hang.
 
@@ -439,7 +439,7 @@ class LockstepRig:
         sock = ch.sockets["cmd"]
         sensor_sock = ch.sockets["sensor"]
         # A single-vehicle run stalls with the classic message; only a fleet
-        # can leave the operator asking WHICH gate stalled, so only then does
+        # can leave the operator asking WHICH check stalled, so only then does
         # the message name the channel.
         who = f" from {ch.name}" if len(self.channels) > 1 else ""
         now = time.monotonic()
@@ -469,7 +469,7 @@ class LockstepRig:
             topic, body = parts
             try:
                 if topic == TOPIC_CAM:
-                    # Fire-and-forget (CAM v2a): apply the config, keep
+                    # Fire-and-forget: apply the config, keep
                     # waiting at the gate. A camera answer must never open a
                     # physics barrier - that law survived from v1 unchanged.
                     cfg = decode_cam_config(body)
@@ -507,12 +507,12 @@ class LockstepRig:
                 ch.foreign_frames += 1
 
     def control_tick(self) -> np.ndarray:
-        """One world tick: measure all -> publish all -> gate all -> apply all.
+        """One world tick: measure all -> publish all -> check all -> apply all.
 
         With ``lockstep`` each vehicle's control law lives in its own flight
         software: publish every sensor frame first (they *are* the tick, and
         every reading is taken before any answer can perturb anything), let
-        each gate return whatever its fcs commanded for exactly this frame,
+        each check return whatever its fcs commanded for exactly this frame,
         then apply every torque and integrate - the satellites' compute takes
         zero sim time, which is what makes the loop both deterministic and
         one-way dependent: the sim steps on flight-software answers, never the
@@ -545,9 +545,9 @@ class LockstepRig:
                 ch.sockets["sensor"].send_multipart([TOPIC_SENSOR, sensor_bytes])
                 ch.sockets["truth"].send_multipart([TOPIC_TRUTH, ch.truth_provider()])
                 for topic, provider in ch.observers.items():
-                    # Observability (P4b/KN discipline, registry-driven since
-                    # REG): sampled at the same instant as the sensor frame,
-                    # on the same socket, and NO gate waits for it - fcs never
+                    # Observability: registry-driven, sampled at the same
+                    # instant as the sensor frame,
+                    # on the same socket, and NO check waits for it - fcs never
                     # sees knowledge through this path. Knowledge flows,
                     # physics stays gated.
                     ch.sockets["sensor"].send_multipart([topic.encode("ascii"), provider()])
@@ -565,7 +565,7 @@ class LockstepRig:
                 torque = -ch.kp * omega_meas
             gated.append((ch, omega_meas, torque))
 
-        # Every gate answered before any torque is written: a tick that
+        # Every check answered before any torque is written: a tick that
         # stalls changes nothing the next scan could integrate.
         applied_first: np.ndarray | None = None
         for ch, omega_meas, torque in gated:
@@ -589,7 +589,7 @@ class LockstepRig:
 
         The world keeps ticking until the CURRENT tick completes - every
         container acked, every torque applied - and only then does ``run_to``
-        return. Mid-gate abandonment is the failure this harness exists to
+        return. Mid-check abandonment is the failure this harness exists to
         prevent; a stop request does not exempt itself from that rule.
         """
         self._stop.set()
@@ -616,13 +616,13 @@ class LockstepRig:
         The controller - and in lockstep, the barrier - sits between scans, so
         the sim owns time absolutely: nothing across the link can accelerate
         it, and the wall clock only matters if ``--pace`` asked for it.
-        ``--pace`` (the human watch layer) sleeps after the gate so 1 sim-s
+        ``--pace`` (the human watch layer) sleeps after the check so 1 sim-s
         takes 1 real s. It throttles the barrier, never replaces it.
 
-        ``sim_time_s = inf`` is **perpetual mode** (P5a, D11): no horizon, the
+        ``sim_time_s = inf`` is **perpetual mode**: no horizon, the
         loop runs until ``request_stop()`` - honored only after a complete
         world tick, so Ctrl-C / SIGTERM end a fleet run the same way a
-        duration does: at a boundary, with every gate answered.
+        duration does: at a boundary, with every check answered.
         """
         if self._stop.is_set():
             return
@@ -666,7 +666,7 @@ def install_stop_handlers(rig: LockstepRig) -> None:
     control boundary, after every container has acked - so ``fleet.sh down``
     (SIGTERM) and an operator's Ctrl-C both end the world the way a finite
     run ends it: complete tick, clean sockets, digest printed. A run stuck
-    at a dead gate still exits through ``LockStalled``, exactly as with a
+    at a dead check still exits through ``LockStalled``, exactly as with a
     duration; ``kill -9`` remains the rude door.
     """
 

@@ -37,7 +37,7 @@ pytestmark = pytest.mark.skipif(
     not CFS.is_dir(), reason="cFS is not fetched: run scripts/fetch_cfs.sh"
 )
 
-# The link package lives in the mission EDS dir since P3c: its two frames
+# The link package lives in the mission EDS dir: its two frames
 # graduated to the Software Bus, so they need TopicIds next to the other
 # mission topics. Same file, same guarantees, fewer directories.
 LINK_XML = MISSION_DEFS_EDS / "bsk_link.xml"
@@ -64,7 +64,9 @@ def test_codegen_parses_the_link_package_too() -> None:
     eds = load_eds(CFS, mission_define_files(), extra_files=[])
     assert "BSK_LINK/SensorFrame" in eds.types
     assert "BSK_LINK/TorqueCommand" in eds.types
-    assert "BSK_LINK/OnboardState" in eds.types, "P4b frame missing from the shared schema"
+    assert "BSK_LINK/OnboardState" in eds.types, (
+        "onboard-state frame missing from the shared schema"
+    )
 
 
 def test_cmake_mirror_matches_the_python_enumeration() -> None:
@@ -76,7 +78,7 @@ def test_cmake_mirror_matches_the_python_enumeration() -> None:
 
 
 def test_step_ack_decode_matches_packed_bytes() -> None:
-    """The sim's gate decodes the 24 B barrier ack from raw struct bytes.
+    """The sim's check decodes the 24 B barrier ack from raw struct bytes.
 
     The bytes are what bsk_link forwards verbatim from the bus: struct.pack
     here is the same contract verify.py pins on the encode side, seen from the
@@ -94,9 +96,9 @@ def test_step_ack_decode_matches_packed_bytes() -> None:
 
 
 def test_onboard_state_codec_round_trip() -> None:
-    """P4b observability frame: exact values out, plain C bytes on the wire.
+    """Observability frame: exact values out, plain C bytes on the wire.
 
-    R4: the sim packs observability containers through ONE registry-checked
+    The sim packs observability containers through ONE registry-checked
     codec - the dict keys are the schema's field names, nothing per-frame.
     """
     if not (DIST / "EdsLib.so").is_file():
@@ -134,7 +136,7 @@ def test_onboard_state_codec_round_trip() -> None:
 
 
 def test_nav_state_codec_round_trip() -> None:
-    """KN observability frame: the GNSS opinion out exactly, plain C bytes in."""
+    """The GNSS observability frame: opinion out exactly, plain C bytes in."""
     if not (DIST / "EdsLib.so").is_file():
         pytest.skip("run edslink/build.sh to build the EdsLib database and binding")
     import struct
@@ -192,7 +194,7 @@ def test_opnav_container_round_trips_through_the_registry_door() -> None:
 
 
 def test_container_codec_refuses_unregistered_containers() -> None:
-    """Observability codecs come from the registry (REG): no row, no codec.
+    """Observability codecs come from the registry: no row, no codec.
 
     The control-plane frames (SensorFrame and friends) are not parts and
     never pack through this door - a provider asking for an unregistered or

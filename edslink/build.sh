@@ -2,7 +2,7 @@
 # Build the EdsLib runtime database + CPython binding for this mission's EDS tree.
 #
 # The result is what lets the Basilisk side speak the mission's own schema instead
-# of a second hand-written one (ROADMAP D6):
+# of a second hand-written one:
 #
 #   dist/orrery_eds_db.so   EDS compiled to a runtime database (EDSLIB_ORRERY_*)
 #   dist/EdsLib.so             CPython binding: import EdsLib; EdsLib.Database("...")

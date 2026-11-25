@@ -61,7 +61,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   kconfig-frontends  an old comment swore cFS prep failed without it. cFS v7.0.1
 #                      configures, compiles and installs from a wiped build tree
 #                      without it — evidence, not memory: see the from-nothing
-#                      build receipt in ROADMAP and scripts/image.sh --list.
+#                      build receipt recorded by scripts/image.sh --list.
 #   python3            nothing in this build asks for an interpreter: the container
 #                      compiles the EdsLib database with EDSLINK_NO_PYTHON=1 (the
 #                      CPython binding is a host artifact, built from the project

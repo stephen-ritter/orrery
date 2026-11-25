@@ -23,7 +23,7 @@ typedef struct
     uint64   Frame;      /* sim frame counter                   */
 } __attribute__((packed)) BskSensorFrame_Payload_t;
 
-/* BSK_LINK/OnboardState: everything else the OBC reads off its buses (P4b).
+/* BSK_LINK/OnboardState: everything else the OBC reads off its buses.
  * Wheel axes fixed at three, CSS at four - the schema, this struct and the
  * sim's provider all state the same mission hardware. */
 typedef struct
@@ -36,7 +36,7 @@ typedef struct
     double   MagB[3];      /* measured field, body frame [T]         */
 } __attribute__((packed)) BskOnboardState_Payload_t;
 
-/* BSK_LINK/NavState: the satellite's OPINION of its orbit (KN) — a modelled
+/* BSK_LINK/NavState: the satellite's OPINION of its orbit — a modelled
  * GNSS receiver's fix produced world-side with a seeded error model, the
  * honest sibling of TruthState: the pair must differ (receiver scale) and
  * agree (one world), and only this one may ever touch the flight bus. */
@@ -56,14 +56,14 @@ typedef struct
     uint64   Frame;         /* source frame counter             */
 } __attribute__((packed)) BskTorqueCmd_Payload_t;
 
-/* BSK_LINK/StepAck: lockstep barrier ack (D5 amendment). fcs answers every
+/* BSK_LINK/StepAck: lockstep barrier ack. fcs answers every
  * sensor frame it processes; the sim holds the next Basilisk step until the
  * ack for the frame it just published arrives. */
 typedef struct
 {
     double   SimTimeS;   /* sim time of the acked frame [s]      */
     uint64   Frame;      /* acked sim frame counter              */
-    uint8    Mode;       /* fcs mode when acking (0/1/2, P4b-2 adds SAFE)  */
+    uint8    Mode;       /* fcs mode when acking (0/1/2; 2 is SAFE)        */
     uint8    AlignPad[3]; /* explicit EDS pad, not a compiler pad */
     uint32   TorquesIssued; /* issued-so-far counter (debug)      */
 } __attribute__((packed)) BskStepAck_Payload_t;
@@ -126,7 +126,7 @@ typedef struct
     FcsSetGain_Payload_t    Payload;
 } FcsSetGainCmd_t;
 
-/* FCS_SET_WHEEL_LIMIT (P4b-2): the supervisor threshold, own packet for the
+/* FCS_SET_WHEEL_LIMIT: the supervisor threshold, own packet for the
  * same schema-honest reason as SetGain - an argument needs a real payload. */
 typedef struct
 {
@@ -234,7 +234,7 @@ typedef struct
 {
     uint8  CommandCounter;
     uint8  CommandErrorCounter;
-    uint8  Mode; /* 0 disabled, 1 enabled, 2 safe (P4b-2 supervisor latch) */
+    uint8  Mode; /* 0 disabled, 1 enabled, 2 safe (supervisor latch)   */
     uint8  Unused;
     uint32 SensorFramesReceived;
     uint32 TorqueCommandsIssued;
@@ -242,7 +242,7 @@ typedef struct
     double LastSimTimeS;
     double LastTorqueB[3];
     double Kp[3];
-    uint32 OnboardFramesReceived; /* knowledge frames ingested (P4b-2)   */
+    uint32 OnboardFramesReceived; /* knowledge frames ingested         */
     uint8  AlignPad2[4];          /* explicit EDS pad before the doubles */
     double WheelLimit;            /* supervisor trip threshold [rad/s]   */
     double WheelSpeeds[3];        /* latest wheel feedback [rad/s]       */
@@ -255,10 +255,10 @@ typedef struct
     FcsHkTlm_Payload_t        Payload;
 } FcsHkTlm_t;
 
-/* CAM ground commands (CAM v2a, cam_app). SET_CONFIG is its own packet on
+/* CAM ground commands (cam_app). SET_CONFIG is its own packet on
  * the SetGain law; RenderRateS arrives in the GROUND's seconds and must be
  * > 0 - the app refuses otherwise, because vizInterface's image-request
- * modulo divides by it (B1: zero is a hardware fault, not a config). */
+ * modulo divides by it (zero is a hardware fault, not a config). */
 typedef struct
 {
     uint8  Shutter;    /* 1 open (request images), 0 closed       */
@@ -295,8 +295,8 @@ typedef struct
     uint8  AlignPad[4];         /* explicit EDS pad before the doubles  */
     double LastConfigSimTimeS;  /* sim time of the last frame forwarded */
     double RenderRateCmd;       /* last commanded image interval [s]    */
-    uint32 FramesRecorded;      /* sim store outlet sent (CamState, v2b)    */
-    uint32 FramesStored;        /* bsk_link completed /cf/img files (v2b)   */
+    uint32 FramesRecorded;      /* sim store outlet sent (CamState)     */
+    uint32 FramesStored;        /* bsk_link completed /cf/img files     */
     uint32 FramesTransferred;   /* CF EOT count: files CF closed clean, TX */
 } __attribute__((packed)) CamHkTlm_Payload_t;
 
@@ -323,7 +323,7 @@ typedef struct
     BskCamConfig_Payload_t    Payload;
 } BskCamConfigTlm_t;
 
-/* BSK_LINK/CamStorage: the onboard image ledger (CAM v2b). bsk_link owns
+/* BSK_LINK/CamStorage: the onboard image ledger. bsk_link owns
  * this truth - it is the one that reassembles bytes into /cf/img files -
  * and cam app merely reports it. Divergence from CamState.FramesRecorded
  * (what the sim's outlet sent) is the airgap eating a frame. */
@@ -341,7 +341,7 @@ typedef struct
     BskCamStorage_Payload_t    Payload;
 } BskCamStorageTlm_t;
 
-/* BSK_LINK/CamState as C reads it (CAM v2b): the registry row is decoded by
+/* BSK_LINK/CamState as C reads it: the registry row is decoded by
  * EdsLib on the generic path, but cam app wants the store tally on the bus,
  * and a hand-written twin with a size pin beats linking the whole DB for
  * one field. Drift vs bsk_link.xml is a compile error, not a screen lie. */
@@ -353,7 +353,7 @@ typedef struct
     uint64  Shutter;
     double  RenderRateS;
     uint64  Captured;
-    uint64  FramesRecorded; /* store outlet sends (CAM v2b) */
+    uint64  FramesRecorded; /* store outlet sends */
 } __attribute__((packed)) BskCamState_Payload_t;
 
 typedef struct
@@ -362,7 +362,7 @@ typedef struct
     BskCamState_Payload_t     Payload;
 } BskCamStateTlm_t;
 
-/* IMG chunk header (CAM v2b): orrery's OWN framing for the image byte
+/* IMG chunk header: orrery's OWN framing for the image byte
  * stream, deliberately outside the EDS telemetry model (the STEP_ACK
  * precedent for non-ground frames) - packed 24 B header, then the binary
  * slice. The sim's struct.pack("<QQII") mirror lives in sim/forge_scenario;
@@ -375,7 +375,7 @@ typedef struct
     uint32 Total;    /* parts in this capture                    */
 } __attribute__((packed)) BskImageChunkHeader_t;
 
-/* OBC housekeeping (P4b-3, hk_app). Field order mirrors OBC/HkTlm_Payload,
+/* OBC housekeeping (hk_app). Field order mirrors OBC/HkTlm_Payload,
  * pads included: everything here is bus-observed counts and freshest bus
  * reports - the OBC's view of itself, never navigator truth. */
 typedef struct
@@ -402,7 +402,7 @@ typedef struct
     ObcHk_Payload_t           Payload;
 } ObcHkTlm_t;
 
-/* Time-tagged command execution (P6, sps app). The schedule envelope is a
+/* Time-tagged command execution (sps app). The schedule envelope is a
  * complete command image - target MsgId + function code + verbatim payload
  * bytes - so anything the EDS dictionary knows is schedulable. */
 typedef struct

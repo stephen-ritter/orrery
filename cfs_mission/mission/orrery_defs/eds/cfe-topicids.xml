@@ -176,7 +176,7 @@
 
     <!-- orrery custom apps: topics in the free block above the stock
          assignments (max stock value is 188). App topics are hand-written
-         here; registered PART topics (REG) live in the generated region
+         here; registered PART topics live in the generated region
          below and come from registry/parts.toml. The golden tests pin XML,
          mirror headers, and registry against each other. -->
     <Define name="BSK_LINK_SENSOR_FRAME_TLM_TOPICID" value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 200" />
@@ -196,7 +196,7 @@
     <Define name="SPS_SCHEDULE_CMD_TOPICID"           value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 207" />
     <Define name="SPS_SEND_HK_TOPICID"                value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 208" />
 
-    <!-- Camera payload (CAM v2a): the command surface. Offsets 210+ were the
+    <!-- Camera payload: the command surface. Offsets 210+ were the
          clean high block (nothing above 209 was in use on either bus). The
          SET_CONFIG payload rides its OWN topic on the SetGainPkt law. The
          CAMSTATE telemetry topic is the registry row (generated region), not

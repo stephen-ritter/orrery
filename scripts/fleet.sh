@@ -92,7 +92,7 @@ services_of() {
         s+=("$name" "truth-$name")
     done
     s+=("world")
-    # the renderer joins only when the scenario's camera gate exported its
+    # the renderer joins only when the scenario's camera check exported its
     # profile (scenario_up); an explicit service list must know it too
     [ "${COMPOSE_PROFILES:-}" = "camera" ] && s+=("camera")
     printf '%s\n' "${s[@]}"

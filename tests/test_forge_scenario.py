@@ -1,6 +1,6 @@
 """W3: the bskforge-built plant must be indistinguishable from the hand-written one.
 
-The whole point of decision D7 is that scenarios come from TOML without the
+The whole point is that scenarios come from TOML without the
 lockstep contract changing shape. These tests demand the strongest version of
 that: the two build paths produce a BIT-IDENTICAL trajectory sha256 - same
 integration, same actuation order (the P3f trap re-armed inside bskforge and
@@ -63,7 +63,7 @@ def _write(tmp_path: Path, body: str) -> Path:
 
 
 def test_forge_plant_matches_handwritten_plant_bit_for_bit() -> None:
-    """The W3 parity gate: two build paths, one trajectory (D7).
+    """The parity check: two build paths, one trajectory.
 
     Gravity is the one thing the TOML adds (bskforge always connects the
     central body), and the digest stays identical: point-mass gravity bends
@@ -113,7 +113,7 @@ def test_effector_runs_before_the_spacecraft_after_the_build_fix() -> None:
 
 
 def test_bskforge_fsw_stack_is_rejected(tmp_path: Path) -> None:
-    """D7 in force: a TOML that grows an onboard law cannot be loaded."""
+    """A TOML that grows an onboard law cannot be loaded."""
     path = _write(tmp_path, _MINIMAL_TOML + "[spacecraft.fsw]\n")
     with pytest.raises(fz.ForgeError, match="control law lives"):
         fz.ForgeScenario(path)
@@ -129,7 +129,7 @@ def test_multi_vehicle_scenario_is_rejected(tmp_path: Path) -> None:
 def test_fake_fsw_closes_the_gate_on_the_forge_plant(forge_ports: dict[str, str]) -> None:
     """The lockstep barrier rides the forge plant unchanged: same rig, same rules.
 
-    Same pre-pushed answer script that pins the hand-written plant's gate:
+    Same pre-pushed answer script that pins the hand-written plant's check:
     torque{N} applied on frame N, ack-only (loop disabled) applies bit-exact
     zero. A forge-only barrier bug - reading a bskforge sensor message where
     truth lives, say - would miss the frame-exact torque here.
@@ -169,11 +169,11 @@ def test_cli_reports_convergence(capsys: pytest.CaptureFixture[str]) -> None:
     assert "trajectory sha256" in out
 
 
-# ---- P4a: the operations plant (wheels + sensor suite) -----------------------
+# ---- the operations plant (wheels + sensor suite) ----------------------------
 
 
 def test_wheeled_plant_detumbles_through_the_wheels() -> None:
-    """The rig commands a WHEEL ARRAY, not a bare torque port (P4a).
+    """The rig commands a WHEEL ARRAY, not a bare torque port.
 
     Same lockstep-independent law, same rig, same acceptance ratio - but
     actuation now goes through motor torques (body torque = -motor torque)
@@ -220,7 +220,7 @@ def test_wheel_effector_runs_before_the_spacecraft() -> None:
 
 
 def test_plant_imu_is_the_rate_knowledge_when_fitted() -> None:
-    """With an IMU in the TOML, the measurement IS the sensor message (P4a).
+    """With an IMU in the TOML, the measurement IS the sensor message.
 
     Shortly after init the gyro's random walk is still ~1e-8 rad/s, so the
     gap between measurement and truth is the configured bias - proof that
@@ -239,7 +239,7 @@ def test_plant_imu_is_the_rate_knowledge_when_fitted() -> None:
 
 
 def test_operations_plant_sees_the_sun_from_boot() -> None:
-    """The P4b provider must carry light, or it silently teaches fcs "eclipse".
+    """The onboard-state provider must carry light, or it silently teaches fcs "eclipse".
 
     First flight of chief.toml caught a real geometry bug this way: a
     32 deg initial attitude put the sun 43.7 deg off the css1 axis, outside a
