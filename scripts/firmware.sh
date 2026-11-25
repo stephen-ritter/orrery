@@ -88,10 +88,21 @@ cfs_checkout() {
 provenance_inputs() {
     # NUL-separated, because paths are data and a filename with a space is a real
     # thing that has broken build scripts before.
+    #
+    # The scenario's build fragment (mission_applist.cmake) is not tracked - it
+    # lives exactly as long as the yard (scripts/fleet.sh lands it, sweeps it) -
+    # but while it exists it decided WHICH APPS got compiled, so it is part of
+    # the fact being hashed: an image built for another scenario's list fails
+    # the check exactly like stale sources do.
     (
         cd "$REPO" 2>/dev/null || die "cannot enter $REPO to list its inputs"
-        "${GIT[@]}" ls-files -z -- cfs_mission 2>/dev/null |
-            grep -zv -E '\.md$|^cfs_mission/cfs\.lock$' | LC_ALL=C sort -z
+        {
+            "${GIT[@]}" ls-files -z -- cfs_mission 2>/dev/null |
+                grep -zv -E '\.md$|^cfs_mission/cfs\.lock$'
+            if [ -f cfs_mission/mission/orrery_defs/mission_applist.cmake ]; then
+                printf 'cfs_mission/mission/orrery_defs/mission_applist.cmake\0'
+            fi
+        } | LC_ALL=C sort -z
     )
 }
 

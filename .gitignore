@@ -33,6 +33,10 @@ edslink/dist/
 .protoc_check/
 .scratch/
 *.log
+
+# the scenario's build fragment (codegen/emit_applist): it lands with the
+# yard and is swept when the yard goes quiet - never a tracked fact
+cfs_mission/mission/orrery_defs/mission_applist.cmake
 cfs_mission/mission/last_build.log
 *.gem
 

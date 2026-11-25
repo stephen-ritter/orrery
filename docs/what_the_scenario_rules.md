@@ -20,6 +20,7 @@ touches:
 | The message shapes | The byte contract of every packet, on flight and ground alike. | `codegen/eds2cosmos.py` generates the COSMOS definitions and the `gs_tcp` MsgId table from the cFS EDS; `edslink` builds the simulator side from the same XML list, so the two cannot drift. |
 | The spacecraft's wake-up | Which flight-software apps the core starts. | `codegen/emit_startup.py` derives the ES startup table from the scenario per vehicle; the yard door lands it, and a craft boots its own table or refuses to boot. See below. |
 | The station's offering | Which commands and packets the operator is offered for a vehicle. | `codegen/eds2cosmos --scope-scenario` cuts the COSMOS dictionary to the same wake list: no button for an app the vehicle never wakes. |
+| The image's organs | Which flight-software apps exist as object files at all. | `codegen/emit_applist` lands the scenario's build fragment; `targets.cmake` compiles exactly that list, and the build's own wake-up table can name no organ the build never compiled. |
 | The proof | Which acceptance exhibits a part arrives with. | Every `[[part]]` row names its exhibit; the checks read the row, so a part cannot be added without its verdict. |
 
 The registry law covers all of it: generators and checks read
@@ -126,11 +127,22 @@ the discipline the previous one taught:
    a scenario might not have grown, which is exactly what lets a
    per-scenario flight image leave a declared app out without stranding
    a timer that talks to it.
-3. **The binary is cut from the TOML**: the manifest feeds the mission's app
-   list, so a cameraless vehicle's image holds no camera object file at all.
-   This one multiplies provenance — each variant is its own stamped image —
-   and its honest payoff is the promise itself plus size, not anything an
-   operator or the bus can distinguish once steps 1 and 2 are landed.
+3. **The binary is cut from the TOML** (landed): the manifest feeds the
+   mission's app list. The yard door lands a build fragment naming the apps
+   the flying fleet can wake (`codegen/emit_applist` beside the startup
+   tables), and `targets.cmake` compiles exactly those — a scenario that
+   never grew the eye carries no `cam` object file to boot, to link, or to
+   lose. The image's own wake-up table follows the same list, so a build-time
+   fallback can never promise an organ the build never compiled. No fragment,
+   the all-parts union: the same fallback law as the startup table, and a test
+   pins the union literal to the inventory. The entailments are the build
+   door for free — what the manifest cannot serve, it must not compile.
+   Provenance multiplies honestly: the fragment enters the stamp, so an image
+   built for one scenario's list fails another's check, and `down` sweeps the
+   fragment back to the union. `scripts/check_scenario_image.sh` flies the
+   plane itself: cut world with no object file and a beacon that streams
+   everything but the eye, whole world with the file and CAM_HK answered,
+   union restored.
 
 ## The law that keeps it honest
 

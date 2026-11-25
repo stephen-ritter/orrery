@@ -68,6 +68,10 @@ class AppRow:
     # EDS packages whose ground definitions ride this app's wake-up (the
     # ground-scope seam, codegen/eds2cosmos --scope-scenario).
     eds_packages: tuple[str, ...] = ()
+    # Core-shipped apps are built by the core or the per-CPU lists, never by
+    # the scenario's build fragment (codegen/emit_applist): they answer for
+    # themselves on every image.
+    core_shipped: bool = False
 
 
 def _checked_field(name: str, field_name: str, value: str) -> str:
@@ -101,6 +105,7 @@ def load_apps(path: Path = APPS_REGISTRY, parts: list[Part] | None = None) -> li
             baseline=str(row["when"]) == "baseline",
             requires=tuple(row.get("requires", ())),
             eds_packages=tuple(row.get("eds_packages", ())),
+            core_shipped=str(row.get("shipped_with", "mission")) == "core",
         )
         for row in doc.get("app", [])
     ]

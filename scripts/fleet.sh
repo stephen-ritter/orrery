@@ -152,6 +152,12 @@ scenario_up() {
     uv run python -m codegen.emit_startup --scenario "$SCENARIO" \
         --write "cfs_mission/mission/build/exe/cpu1/cf" || return 1
 
+    # and the image itself is a scenario fact: the build list is cut to this
+    # world before compose builds it, so a scenario that never grew the eye
+    # compiles no eye to boot (codegen/emit_applist, rung two of the ladder).
+    # `down` sweeps the fragment: a quiet yard means the all-parts union.
+    uv run python -m codegen.emit_applist --scenario "$SCENARIO" || return 1
+
     # a cold machine builds both images and the mission inside `up` (the
     # compose init services; the mission install rewrites the image's own
     # fallback table, never the per-vehicle ones); the boot wait must
@@ -222,6 +228,16 @@ fleet_down() {
         "$RUNTIME" rm -f "$name" >/dev/null 2>&1 || true
     done < <("$RUNTIME" ps -a --filter "name=orrery-" --format '{{.Names}}' 2>/dev/null || true)
     rm -f "$STATE_DIR"/fleet_*.compose.json 2>/dev/null || true
+    # the quiet yard means the union: sweep the scenario's build fragment and
+    # reinstall the plane it cut, so the next door finds the all-parts image
+    # and the stamp moves with the tree it describes (a warm install costs
+    # seconds; the sweep is rung two's shape of rung one's swept tables - a
+    # dead scenario's list must never bias the next build).
+    if [ -f "cfs_mission/mission/orrery_defs/mission_applist.cmake" ]; then
+        uv run python -m codegen.emit_applist --sweep || true
+        bash "$REPO/scripts/mission_build.sh" install >/dev/null 2>&1 ||
+            echo "[down] union reinstall FAILED - the plane still carries a scenario's cuts" >&2
+    fi
     [ -n "${SCENARIO:-}" ] && echo "[${STEM:-?}] down" || true
 }
 

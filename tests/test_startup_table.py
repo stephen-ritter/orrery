@@ -49,7 +49,18 @@ def _cmake_default() -> list[tuple[str, ...]]:
     order = re.search(r"set\(CFS_APP_STARTUP_ORDER ([^)]+)\)", cmake)
     assert order, "generate_startup.cmake lost its startup-order list"
     targets = (DEFS / "targets.cmake").read_text(encoding="utf-8")
-    built = " ".join(re.findall(r"(?i)APPEND MISSION_GLOBAL_APPLIST ([^\n)]+)", targets)).split()
+    # the union literal (rung two moved it into the scenario fallback); the
+    # APPEND line is a ${} reference, not a list - the same exclusion rule
+    # the records use
+    built = " ".join(
+        m
+        for pattern in (
+            r"(?i)APPEND MISSION_GLOBAL_APPLIST ([^\n)]+)",
+            r"set\(ORRERY_SCENARIO_APPLIST\s+([^)]+)\)",
+        )
+        for m in re.findall(pattern, targets)
+        if "${" not in m
+    ).split()
     tail = [
         ("CFE_APP", app, f"{app.upper()}_AppMain", app.upper(), "70", "131072", "0x0", "0")
         for app in order.group(1).split()

@@ -85,19 +85,30 @@ SET(SPACECRAFT_ID 0x42)
 # for every defined target.  These are built as dynamic modules
 # and must be loaded explicitly via startup script or command.
 # This list is effectively appended to every TGTx_APPLIST in targets.cmake.
-# Example:
-list(APPEND MISSION_GLOBAL_APPLIST sample_app sample_lib bsk_link fcs gs_tcp obc_hk sps cam cf_tcp)
-
-LIST(APPEND MISSION_GLOBAL_APPLIST cf)
-LIST(APPEND MISSION_GLOBAL_APPLIST hs)
-LIST(APPEND MISSION_GLOBAL_APPLIST md)
-LIST(APPEND MISSION_GLOBAL_APPLIST mm)
-LIST(APPEND MISSION_GLOBAL_APPLIST cs)
-LIST(APPEND MISSION_GLOBAL_APPLIST fm)
-LIST(APPEND MISSION_GLOBAL_APPLIST lc)
-LIST(APPEND MISSION_GLOBAL_APPLIST sc)
-LIST(APPEND MISSION_GLOBAL_APPLIST ds)
-LIST(APPEND MISSION_GLOBAL_APPLIST hk)
+#
+# orrery: the list is a scenario fact (docs/what_the_scenario_rules.md).
+# The yard door lands mission_applist.cmake (codegen/emit_applist) naming
+# the apps the flying scenario can wake - a scenario that never grew the
+# eye compiles no cam object at all. With no fragment (a hand-run yard)
+# the list below is the all-parts union: every organ, the way this build
+# has always booted. tests/test_scenario_image.py pins this union to
+# registry/apps.toml; moving the inventory moves this list too.
+# The fragment's presence is decided by a CONFIGURE_DEPENDS glob, not by an
+# OPTIONAL include: an include records nothing while the file is absent, and
+# CMake only tracks dependencies it saw at configure time - a fragment that
+# APPEARS later (a swept yard waking a scenario) would sleep through every
+# build. A globbed path re-checks at build time: appear, change, vanish, all
+# reconfigure.
+file(GLOB ORRERY_APPLIST_FRAGMENT CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_LIST_DIR}/mission_applist.cmake")
+if (ORRERY_APPLIST_FRAGMENT)
+    include("${ORRERY_APPLIST_FRAGMENT}")
+else ()
+    set(ORRERY_SCENARIO_APPLIST
+        sample_app sample_lib bsk_link fcs gs_tcp obc_hk sps cam cf_tcp
+        cf hs md mm cs fm lc sc ds hk)
+endif ()
+list(APPEND MISSION_GLOBAL_APPLIST ${ORRERY_SCENARIO_APPLIST})
 
 # orrery: SBN is excluded entirely (sample def legacy; it subscribes to
 # every topic and floods pipe-overflow events; the ground link is gs_tcp).

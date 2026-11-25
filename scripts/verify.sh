@@ -85,6 +85,7 @@ GATES=(
     "live|cam-downlink|the ground names a file from the manifest and receives it byte-identical; the link heals without a bounce|bash scripts/check_cam_downlink.sh|ground"
     "live|startup-table|the scenario is the core's wake list: silence undeclared, CAM_HK declared, heard on the raw port|bash scripts/check_startup_config.sh|"
     "live|ground-scope|the station offers each vehicle exactly what its scenario wakes - and takes it back cleanly|bash scripts/check_ground_scope.sh|ground"
+    "live|scenario-image|the manifest decides which organs exist at all: cut plane boots clean, whole plane answers, union restored|bash scripts/check_scenario_image.sh|"
     "live|truth-exhibits|exhibits at device scale, truth uncommandable, refusal logged|bash scripts/check_truth_exhibits.sh|ground"
     "live|beacon-wrap|beacon table vs generated defs, both ways, 0 UNKNOWN|bash scripts/check_beacon_tables.sh|ground"
 )

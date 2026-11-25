@@ -28,6 +28,11 @@
 #               scope away; a packet whose package no app owns is a door
 #               refusal, not a silent pass.
 #   requires    entailments: apps this one needs awake on the same bus.
+#   shipped_with  "core" = built by the core or the per-CPU lists (sch_lab,
+#               the labs, the assert lib): present on every image whatever
+#               the scenario says, outside the scenario's build fragment
+#               (codegen/emit_applist). Absent = the mission builds it, and
+#               the scenario's wake list decides whether it exists at all.
 #               The generator refuses an unsatisfiable wake list with a
 #               named sentence - "you asked for the manifest but no
 #               file-transfer engine" is a door, not a segfault.
@@ -48,6 +53,7 @@ short = "ASSERT_LIB"
 priority = 0
 stack = 0
 when = "baseline"
+shipped_with = "core"
 
 [[app]]
 name = "sample_lib"
@@ -66,6 +72,7 @@ short = "SCH_LAB"
 priority = 35
 stack = 32768
 when = "baseline"
+shipped_with = "core"
 
 [[app]]
 name = "ci_lab"
@@ -75,6 +82,7 @@ short = "CI_LAB"
 priority = 40
 stack = 32768
 when = "baseline"
+shipped_with = "core"
 eds_packages = ["CI_LAB"]
 
 [[app]]
@@ -85,6 +93,7 @@ short = "TO_LAB"
 priority = 45
 stack = 32768
 when = "baseline"
+shipped_with = "core"
 eds_packages = ["TO_LAB"]
 
 [[app]]

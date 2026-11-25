@@ -82,7 +82,13 @@ prep() {
 }
 
 build()   { cmake --build "$BUILD_DIR" --target mission-all -j "$JOBS"; }
-install() { DESTDIR="$BUILD_DIR" cmake --build "$BUILD_DIR" --target mission-install; }
+install() {
+    # A build plane holds only what THIS list builds. cmake install never
+    # prunes, so an app the scenario cut would survive as an orphan .so in
+    # cf/ - and "the image carries no eye" must not be a lie by residue.
+    rm -f "$BUILD_DIR"/exe/cpu*/cf/*.so
+    DESTDIR="$BUILD_DIR" cmake --build "$BUILD_DIR" --target mission-install
+}
 run()     { cd "$BUILD_DIR/exe/cpu1" && ./container-start; }
 
 # Provenance: record the exact tree this binary came from, so every launcher can
