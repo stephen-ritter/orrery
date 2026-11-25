@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 import signal
 import struct
 import threading
@@ -91,7 +92,19 @@ ACK_TIMEOUT_S = 10.0
 # repeat frame idempotently, so control-law runs and counters stay once-per-
 # frame. Mid-run this also lets a mission RESTART heal the check within the ack
 # timeout instead of dooming the run.
+#
+# Retransmission heals a LATE subscriber; it cannot heal an EARLY one. Measured
+# (FIT probes, 2026-11-25): when the craft dials a port whose listener has
+# already exited, the kernel completes the connect into a dead backlog - the
+# SUB believes itself connected forever, libzmq never re-attaches, and the
+# re-shout has no peer to reach: a green-booting craft receiving nothing,
+# forever. That is what ``LockstepRig._await_subscribers`` exists to forbid.
 ACK_RETRY_S = 0.5
+
+# The first-subscriber gate's ceiling (see _await_subscribers). Generous
+# because a cold compose boot is honestly slow; loud because a timeout there
+# means the barrier is about to fly against a wall.
+SUBSCRIBER_WAIT_S = 90.0
 
 
 class LockStalled(RuntimeError):
@@ -309,6 +322,7 @@ class LockstepRig:
         self.pace = pace
 
         self.frame = 0  # ONE frame counter for the whole world
+        self._link_ready = False  # the first-subscriber gate has been through
         # perpetual mode: requested anytime, honored at a boundary
         self._stop = threading.Event()
 
@@ -413,6 +427,52 @@ class LockstepRig:
                     sock.recv_multipart(flags=zmq.NOBLOCK)
                 except zmq.Again:  # pragma: no cover - poll said readable
                     break
+
+    def _await_subscribers(self, timeout_s: float = SUBSCRIBER_WAIT_S) -> bool:
+        """Hold the first tick until every gated vehicle has a LIVE peer.
+
+        The barrier retransmits (ACK_RETRY_S) to heal a mission that
+        subscribes LATE. It cannot heal one that subscribed EARLY to nobody:
+        the kernel completes a connect to a just-departed listener's backlog,
+        libzmq considers the peer established, and the re-shout reaches no
+        one (measured 2026-11-25: boots green, receive zero, stall frame 1).
+        Only the listener can break that phantom peer, by existing before
+        the dial. So the world binds first and waits for the craft to knock:
+        a monitor on the sensor listener reports ACCEPTED + HANDSHAKE_SUCCEEDED
+        per peer - a real, ZMTP-verified connection, not a kernel backlog
+        maybe. One proof per vehicle, in channel order: a fleet whose first
+        craft answers is a fleet whose listener existed before any dial, and
+        the remaining crafts' re-shouts are the barrier's own healing. A
+        timeout is not fatal - the tick proceeds and the barrier stalls
+        loudly with its named message - but it prints first, because "the
+        world waited 90 s and nobody dialed" is the sentence an operator needs.
+        """
+        for ch in self.channels:
+            sensor = ch.sockets.get("sensor")
+            if sensor is None:
+                continue
+            endpoint = f"inproc://orrery-peer-gate-{id(ch)}"
+            monitor = sensor.get_monitor_socket(events=zmq.EVENT_ACCEPTED, addr=endpoint)
+            deadline = time.monotonic() + timeout_s
+            accepted = False
+            try:
+                while time.monotonic() < deadline:
+                    if monitor.poll(250, zmq.POLLIN):
+                        monitor.recv()
+                        accepted = True
+                        break
+            finally:
+                sensor.disable_monitor()
+                monitor.close()
+            if accepted:
+                continue
+            print(
+                f"WAIT TIMEOUT: no live peer dialed channel {ch.name} within {timeout_s:g}s"
+                " - the barrier may stall on frame 1 (craft down? port squatted?)",
+                flush=True,
+            )
+            return False
+        return True
 
     def _await_barrier(self, ch: RigChannel, frame: int, sensor_bytes: bytes) -> np.ndarray | None:
         """The lockstep barrier: hold until ``fcs`` acks this frame.
@@ -525,6 +585,16 @@ class LockstepRig:
         Returns the torque applied to the FIRST channel - the single-vehicle
         contract fleets do not use (they read per-channel histories).
         """
+        if self.lockstep and not self._link_ready and any(ch.sockets for ch in self.channels):
+            # frame 0 is the only tick that can be published into a phantom
+            # subscription, or into a run whose craft has not booted yet (the
+            # 10 s barrier deadline is shorter than a craft boot - the world
+            # must not be the first to give up): gate it. The env knob exists
+            # for the harness tests, which dial before they tick.
+            wait_s = float(os.environ.get("ORRERY_FIRST_TICK_WAIT_S", SUBSCRIBER_WAIT_S))
+            if wait_s > 0:
+                self._await_subscribers(wait_s)
+            self._link_ready = True
         samples: list[tuple[RigChannel, np.ndarray, bytes]] = []
         for ch in self.channels:
             omega_meas = np.asarray(ch.gyro(), dtype=float)

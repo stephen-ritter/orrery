@@ -281,6 +281,61 @@ def test_silent_mission_stalls_the_world_and_is_named(tmp_path: Path) -> None:
         rig.close()
 
 
+# --- the first-tick peer gate (the 2026-11-25 stall law) ---------------------
+
+
+def test_first_tick_holds_for_a_late_dialer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A craft that boots after the world gets frame 1 - the world waits, not dies.
+
+    The yard law this pins: the 10 s barrier deadline is SHORTER than a real
+    craft boot, so a world that ticks immediately would execute its own stall
+    before the craft ever dials (measured 2026-11-25: FIT legs where the craft
+    booted green and received nothing - the world had already died at frame 1).
+    The gate holds frame 1; the late dialer's ACCEPTED opens it; the re-shout
+    does the rest, exactly as the fleet's boot choreography needs.
+    """
+    monkeypatch.setenv("ORRERY_FIRST_TICK_WAIT_S", "10")
+    sink: list[np.ndarray] = []
+    rig, _ = _rig(tmp_path, [_channel("rittersat", sink)], ack_timeout_s=3.0, ack_retry_s=0.1)
+    late: list[_Acker] = []
+    appended = threading.Event()
+
+    def _dial_late() -> None:
+        time.sleep(0.5)
+        acker = _Acker(f"ipc://{tmp_path}/sensor0", f"ipc://{tmp_path}/cmd0")
+        late.append(acker)
+        appended.set()
+
+    threading.Thread(target=_dial_late, daemon=True).start()
+    try:
+        rig.control_tick()  # would raise LockStalled if the gate or re-shout failed
+        assert rig.frame == 1
+    finally:
+        appended.wait(3.0)
+        for acker in late:
+            acker.close()
+        rig.close()
+
+
+def test_world_waits_then_stalls_when_nobody_dials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No dialer: the gate times out, then the barrier says its classic sentence."""
+    monkeypatch.setenv("ORRERY_FIRST_TICK_WAIT_S", "0.2")
+    rig, _ = _rig(tmp_path, [_channel("lonely", [])], ack_timeout_s=0.5, ack_retry_s=0.1)
+    started = time.monotonic()
+    try:
+        with pytest.raises(LockStalled, match="no StepAck"):
+            rig.control_tick()
+        # the stall message is the loud sentence; the gate only delays it honestly
+        assert time.monotonic() - started >= 0.2
+        assert rig.frame == 1
+    finally:
+        rig.close()
+
+
 def test_legacy_single_channel_entry_is_unchanged(tmp_path: Path) -> None:
     """The loose-callback constructor (every frozen digest's door) still works."""
     applied: list[np.ndarray] = []
