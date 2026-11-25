@@ -1,3 +1,9 @@
+# Fallback wake-up table: codegen/emit_startup.py derives a startup table
+# per vehicle from the scenario and the registry, and the yard door lands
+# it (docs/what_the_scenario_rules.md). This build-time table is what a
+# hand-run compose yard boots: the all-parts union, every app the inventory
+# holds. tests/test_startup_table.py pins the two sources of this grammar to
+# each other - edit registry/apps.toml, and this file's list must follow.
 function (generate_cfs_startup_script CFS_INSTALL_DIR)
     set (STARTUP_FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${CFS_INSTALL_DIR}/cfe_es_startup.scr")
 

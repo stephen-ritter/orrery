@@ -73,6 +73,10 @@ class Part:
     subscribers: tuple[str, ...] = ()
     declared: dict[str, str] = field(default_factory=dict)
     exhibit: Exhibit | None = None
+    # payload apps this part brings onto a vehicle that mounts it; empty for
+    # pure-row parts, whose frames ride the generic consumer. The startup
+    # generator (codegen/emit_startup.py) turns these into wake-up lists.
+    fsw_apps: tuple[str, ...] = ()
 
 
 def _row_to_part(row: dict[str, Any]) -> Part:
@@ -101,6 +105,7 @@ def _row_to_part(row: dict[str, Any]) -> Part:
         subscribers=tuple(row.get("subscribers", ())),
         declared=dict(row.get("declared", {})),
         exhibit=exhibit,
+        fsw_apps=tuple(row.get("fsw_apps", ())),
     )
 
 

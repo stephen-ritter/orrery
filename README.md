@@ -82,6 +82,7 @@ pair in `compose.yml`: `docs/adding_a_spacecraft.md` walks through it.
 | `docs/adding_a_spacecraft.md` | how to add a vehicle: a scenario block plus a service pair in `compose.yml` |
 | `docs/coverage.md` | what this project supports, refuses, and has not wired yet; generated from `registry/coverage.toml` |
 | `docs/data_provenance.md` | the truth/knowledge boundary: which wire is which, and why truth never reaches the flight software |
+| `docs/what_the_scenario_rules.md` | what the scenario decides down to the wake-up list: row or app, and the ladder that extends the promise |
 | `scripts/verify.sh` | the acceptance ladder — mirrors, builds and live fleet checks in one command |
 | `sim/` | Basilisk plants + the shared lockstep rig: `lockstep.py` (barrier/clock/link gate — one world step checks on every vehicle's ack), `detumble_scenario.py` (hand-written rigid body), `forge_scenario.py` + `scenarios/*.toml` (bskforge-built plants; `detumble_forge.toml` is the frozen parity witness, `chief.toml` the wheeled + sensed operations plant, `twin_ops.toml` the two-vehicle fleet). Biased + noisy onboard sensors, EDS link frames, separate truth stream |
 | `cfs_mission/` | cFS mission layer — our apps and defs, grafted onto the core at configure time. The core itself is fetched, never vendored: `cfs_mission/cfs.lock` pins it (cFS v7.0.1) and `scripts/fetch_cfs.sh` fills in `cfs_mission/cFS/`, which git never sees |

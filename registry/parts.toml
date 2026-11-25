@@ -17,6 +17,9 @@
 #                 it (orrery_msgids.h), never the other way around.
 #   consumer      the FSW app that crosses the frame over the airgap
 #                 ("bsk_link" = the generic world-frame consumer).
+#   fsw_apps      payload apps a mounting vehicle wakes with (codegen/
+#                 emit_startup.py); empty = a pure-row part riding the
+#                 generic consumer. Names must exist in registry/apps.toml.
 #   subscribers   bus consumers AFTER bsk_link republishes ([] = the frame
 #                 exists for ground observation only).
 #   exhibit       the acceptance promise, declaratively: kind truth_pair =
@@ -186,6 +189,7 @@ evs_info = "BSK_LINK_OPNAV_INF_EID"
 evs_info_id = 20                       # 14..19 serve ONBOARD/NAV/ATTSTATE and the FIT verdict
 evs_label = "OpNav knowledge"
 consumer = "bsk_link"                  # the generic consumer: zero C edits at landing
+fsw_apps = ["cam"]                     # the eye's payload authority wakes with the eye
 subscribers = []                       # knowledge channel: ground watches; fcs never reads it
 
 [part.declared]
@@ -231,4 +235,5 @@ evs_info = "BSK_LINK_CAM_STATE_INF_EID"
 evs_info_id = 21                       # 20 is the opnav row
 evs_label = "CamState"
 consumer = "bsk_link"                  # the generic consumer: zero C edits at landing
+fsw_apps = ["cam"]                     # same authority, same presence: one wake list
 subscribers = []                       # ground screens it; the cam app forwards, never reads

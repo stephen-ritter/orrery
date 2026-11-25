@@ -1,3 +1,25 @@
-#!/bin/bash 
+#!/bin/bash
+# orrery_defs/cpu1/container-start: boot this craft on ITS startup table.
+#
+# The yard door (scripts/fleet.sh) lands one ES startup table per vehicle
+# beside the core (cf/cfe_es_startup.<vehicle>.scr, derived by
+# codegen/emit_startup from the scenario + registry). With ORRERY_VEHICLE
+# set - compose.yml sets it per craft service - this script lands that
+# table and SAYS so on the record; the fleet boot wait reads the sentence,
+# so a vehicle silently booting the image fallback is a refused boot, not a
+# quiet coincidence. Without it (a hand-run `docker compose up`) the image's
+# own build-time table boots, which is the all-parts union: every app, the
+# way the yard booted before the table became a deploy-time artifact.
+
+TABLE="cf/cfe_es_startup.scr"
+if [ -n "${ORRERY_VEHICLE:-}" ] && [ -f "cf/cfe_es_startup.${ORRERY_VEHICLE}.scr" ]; then
+    cp "cf/cfe_es_startup.${ORRERY_VEHICLE}.scr" "$TABLE" || {
+        echo "container-start: cannot land the ${ORRERY_VEHICLE} startup table" >&2
+        exit 1
+    }
+    echo "container-start: startup table: scenario door (${ORRERY_VEHICLE})"
+else
+    echo "container-start: startup table: build default"
+fi
 
 ./core-cpu1

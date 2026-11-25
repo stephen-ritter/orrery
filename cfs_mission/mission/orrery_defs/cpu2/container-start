@@ -1,3 +1,17 @@
 #!/bin/bash
+# orrery_defs/cpu2/container-start: boot on this CPU's landed startup table.
+# Same door law as cpu1 (see that script); the yard flies cpu1 today, and
+# cpu2 keeps the law so a second CPU never silently opts out of it.
+
+TABLE="cf/cfe_es_startup.scr"
+if [ -n "${ORRERY_VEHICLE:-}" ] && [ -f "cf/cfe_es_startup.${ORRERY_VEHICLE}.scr" ]; then
+    cp "cf/cfe_es_startup.${ORRERY_VEHICLE}.scr" "$TABLE" || {
+        echo "container-start: cannot land the ${ORRERY_VEHICLE} startup table" >&2
+        exit 1
+    }
+    echo "container-start: startup table: scenario door (${ORRERY_VEHICLE})"
+else
+    echo "container-start: startup table: build default"
+fi
 
 ./core-cpu2

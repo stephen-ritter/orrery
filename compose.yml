@@ -14,6 +14,9 @@
 # environment; the ${...:-defaults} below are the stock twin_ops values,
 # so `docker compose up` also works by hand (export ORRERY_UID/ORRERY_GID
 # to your ids first: the init services build into this checkout).
+# ORRERY_VEHICLE names each craft's startup table: the yard door lands one
+# per vehicle (codegen/emit_startup, docs/what_the_scenario_rules.md), and
+# container-start boots it - or says it is booting the image default.
 #
 # COSMOS is deliberately absent: the ground station is its own pinned world
 # (cosmos.lock, scripts/get_cosmos.sh).
@@ -95,6 +98,7 @@ services:
       - ${ORRERY_REPO:-.}:/work
     environment:
       HOME: /tmp
+      ORRERY_VEHICLE: chief
       ORRERY_TLM_PORT: "${CHIEF_BEACON:-5050}"
       ORRERY_CMD_PORT: "${CHIEF_UPLINK:-5051}"
       ORRERY_ZMQ_SENSOR_ENDPOINT: "tcp://127.0.0.1:${CHIEF_SENSOR:-5580}"
@@ -127,6 +131,7 @@ services:
       - ${ORRERY_REPO:-.}:/work
     environment:
       HOME: /tmp
+      ORRERY_VEHICLE: deputy
       ORRERY_TLM_PORT: "${DEPUTY_BEACON:-5052}"
       ORRERY_CMD_PORT: "${DEPUTY_UPLINK:-5053}"
       ORRERY_ZMQ_SENSOR_ENDPOINT: "tcp://127.0.0.1:${DEPUTY_SENSOR:-5600}"

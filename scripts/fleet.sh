@@ -143,8 +143,19 @@ scenario_up() {
     # their containers now)
     rm -f "$STATE_DIR"/fleet_*_truth.log "$STATE_DIR/fleet_${STEM}_sim.log"
 
+    # the wake list is a scenario fact: land one startup table per vehicle
+    # (docs/what_the_scenario_rules.md). The generator sweeps stale tables
+    # first, so a leftover from a dead scenario can never wake this yard;
+    # container-start lands its own at boot and says so, and the wait below
+    # reads the sentence - a craft quietly booting the image fallback is a
+    # refused boot here, not a coincidence.
+    uv run python -m codegen.emit_startup --scenario "$SCENARIO" \
+        --write "cfs_mission/mission/build/exe/cpu1/cf" || return 1
+
     # a cold machine builds both images and the mission inside `up` (the
-    # compose init services); the boot wait must outlast a real build
+    # compose init services; the mission install rewrites the image's own
+    # fallback table, never the per-vehicle ones); the boot wait must
+    # outlast a real build
     local wait_max=120
     if ! "$RUNTIME" image inspect orrery-cfs:dev >/dev/null 2>&1 ||
             [ ! -x "cfs_mission/mission/build/exe/cpu1/container-start" ]; then
@@ -157,18 +168,23 @@ scenario_up() {
     for fact in "${FLEET[@]}"; do
         read -r name instance beacon uplink _s _l <<<"$fact"
         echo "--- [$name] instance $instance: beacon :$beacon uplink :$uplink ---"
-        local booted=0 _
+        local booted=0 _ craft_log
         for _ in $(seq 1 "$wait_max"); do
-            # capture-then-grep: pipefail + grep -q + SIGPIPE (cosmos_stack.sh)
-            if grep -q "gs_tcp downlink :$beacon uplink :$uplink" \
-                    <<<"$($RUNTIME logs "orrery-$name" 2>&1 || true)"; then
+            # capture-then-grep: pipefail + grep -q + SIGPIPE (cosmos_stack.sh).
+            # Both sentences must be in the record: the door's startup-table
+            # line (this vehicle booted ITS wake list, not the image
+            # fallback) and the ground door opening on ITS ports.
+            craft_log="$($RUNTIME logs "orrery-$name" 2>&1 || true)"
+            if grep -q "startup table: scenario door" <<<"$craft_log" &&
+                    grep -q "gs_tcp downlink :$beacon uplink :$uplink" <<<"$craft_log"; then
                 booted=1
                 break
             fi
             sleep 1
         done
         if [ "$booted" -ne 1 ]; then
-            echo "[$name] FAILED to boot on its own ports (see $RUNTIME logs orrery-$name)" >&2
+            echo "[$name] FAILED to boot on its own ports (see $RUNTIME logs orrery-$name);" \
+                 "a 'build default' line there means the startup table never landed" >&2
             return 1
         fi
     done

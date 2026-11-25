@@ -1,0 +1,253 @@
+# orrery app inventory - what the core is allowed to wake, and on whose word.
+#
+# One [[app]] row per module the ES startup table can name, in boot order
+# (the startup file IS an order: ES starts apps as it reads them). The
+# startup generator (codegen/emit_startup.py) reads this file plus the parts
+# registry's fsw_apps fields to answer one question per vehicle: which apps
+# does this scenario's declaration wake? Everything here is one visible
+# sentence; the fallback table the image installs is pinned equal to the
+# all-parts union by tests/test_startup_table.py - two sources of one
+# grammar, checked against each other.
+#
+# Field notes:
+#   class       the ES entry type: CFE_APP or CFE_LIB (drivers/tasks would
+#               be legal too; this fleet has none yet).
+#   entry       the module's entry symbol; short    its ES short name;
+#               priority/stack/flags/load ride the startup record verbatim -
+#               the values the yard has always booted with.
+#   when        "baseline"  = the vehicle's plumbing: every vehicle, every
+#                            scenario, by declaration instead of by comment.
+#               "declared"  = payload authority: wakes only on a vehicle
+#                            whose scenario mounts a part whose fsw_apps
+#                            names this app (registry/parts.toml).
+#   requires    entailments: apps this one needs awake on the same bus.
+#               The generator refuses an unsatisfiable wake list with a
+#               named sentence - "you asked for the manifest but no
+#               file-transfer engine" is a door, not a segfault.
+#
+# The grammar law this file obeys: cFE's startup parser knows commas as
+# field delimiters, ';' as end-of-record, and '!' as end-of-file - it has NO
+# comments. This registry is the comment-free file's comment-bearing twin.
+
+schema_version = 1
+
+# --- the vehicle's plumbing: baseline, in boot order -------------------------
+
+[[app]]
+name = "cfe_assert"
+class = "CFE_LIB"
+entry = "CFE_Assert_LibInit"
+short = "ASSERT_LIB"
+priority = 0
+stack = 0
+when = "baseline"
+
+[[app]]
+name = "sample_lib"
+class = "CFE_LIB"
+entry = "SAMPLE_LIB_Init"
+short = "SAMPLE_LIB"
+priority = 0
+stack = 0
+when = "baseline"
+
+[[app]]
+name = "sch_lab"
+class = "CFE_APP"
+entry = "SCH_LAB_AppMain"
+short = "SCH_LAB"
+priority = 35
+stack = 32768
+when = "baseline"
+
+[[app]]
+name = "ci_lab"
+class = "CFE_APP"
+entry = "CI_LAB_AppMain"
+short = "CI_LAB"
+priority = 40
+stack = 32768
+when = "baseline"
+
+[[app]]
+name = "to_lab"
+class = "CFE_APP"
+entry = "TO_LAB_AppMain"
+short = "TO_LAB"
+priority = 45
+stack = 32768
+when = "baseline"
+
+[[app]]
+name = "sample_app"
+class = "CFE_APP"
+entry = "SAMPLE_APP_Main"
+short = "SAMPLE_APP"
+priority = 50
+stack = 32768
+when = "baseline"
+
+[[app]]
+name = "bsk_link"
+class = "CFE_APP"
+entry = "BSK_LINK_AppMain"
+short = "BSK_LINK"
+priority = 55
+stack = 131072
+when = "baseline"
+
+[[app]]
+name = "fcs"
+class = "CFE_APP"
+entry = "FCS_AppMain"
+short = "FCS"
+priority = 65
+stack = 65536
+when = "baseline"
+
+[[app]]
+name = "obc_hk"
+class = "CFE_APP"
+entry = "OBC_HK_AppMain"
+short = "OBC_HK"
+priority = 66
+stack = 65536
+when = "baseline"
+
+[[app]]
+name = "sps"
+class = "CFE_APP"
+entry = "SPS_AppMain"
+short = "SPS"
+priority = 67
+stack = 65536
+when = "baseline"
+
+# --- the payload authorities: woken by declaration ---------------------------
+#
+# cam sits between sps and cf_tcp in boot order for a mundane reason: that
+# is where the yard has always booted it, and a declared flight's table must
+# stay byte-equivalent in MEANING to the table that earned the digests.
+# Its entailments: the store's request path answers through CF and the PDU
+# bridge - ask for the manifest without them and the promise is a lie, so
+# the door says so at boot time, not at request time.
+
+[[app]]
+name = "cam"
+class = "CFE_APP"
+entry = "CAM_AppMain"
+short = "CAM"
+priority = 68
+stack = 65536
+when = "declared"
+requires = ["cf", "cf_tcp"]
+
+[[app]]
+name = "cf_tcp"
+class = "CFE_APP"
+entry = "CF_TCP_AppMain"
+short = "CF_TCP"
+priority = 69
+stack = 65536
+when = "baseline"
+
+# --- plumbing again: the ground door, then the service labs ------------------
+
+[[app]]
+name = "gs_tcp"
+class = "CFE_APP"
+entry = "GS_TCP_AppMain"
+short = "GS_TCP"
+priority = 60
+stack = 65536
+when = "baseline"
+
+[[app]]
+name = "lc"
+class = "CFE_APP"
+entry = "LC_AppMain"
+short = "LC"
+priority = 70
+stack = 131072
+when = "baseline"
+
+[[app]]
+name = "cf"
+class = "CFE_APP"
+entry = "CF_AppMain"
+short = "CF"
+priority = 70
+stack = 131072
+when = "baseline"
+
+[[app]]
+name = "ds"
+class = "CFE_APP"
+entry = "DS_AppMain"
+short = "DS"
+priority = 70
+stack = 131072
+when = "baseline"
+
+[[app]]
+name = "fm"
+class = "CFE_APP"
+entry = "FM_AppMain"
+short = "FM"
+priority = 70
+stack = 131072
+when = "baseline"
+
+[[app]]
+name = "hk"
+class = "CFE_APP"
+entry = "HK_AppMain"
+short = "HK"
+priority = 70
+stack = 131072
+when = "baseline"
+
+[[app]]
+name = "hs"
+class = "CFE_APP"
+entry = "HS_AppMain"
+short = "HS"
+priority = 70
+stack = 131072
+when = "baseline"
+
+[[app]]
+name = "mm"
+class = "CFE_APP"
+entry = "MM_AppMain"
+short = "MM"
+priority = 70
+stack = 131072
+when = "baseline"
+
+[[app]]
+name = "sc"
+class = "CFE_APP"
+entry = "SC_AppMain"
+short = "SC"
+priority = 70
+stack = 131072
+when = "baseline"
+
+[[app]]
+name = "md"
+class = "CFE_APP"
+entry = "MD_AppMain"
+short = "MD"
+priority = 70
+stack = 131072
+when = "baseline"
+
+[[app]]
+name = "cs"
+class = "CFE_APP"
+entry = "CS_AppMain"
+short = "CS"
+priority = 70
+stack = 131072
+when = "baseline"
