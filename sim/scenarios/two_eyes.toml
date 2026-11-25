@@ -1,0 +1,178 @@
+# The two-eyed camera plant: ONE bird, TWO rendered eyes.
+#
+# This file is camera_record.toml plus one [[camera]] block - which IS the
+# acceptance argument: a second eye is a second instance of the same part,
+# not a new world. Both eyes stream CAMSTATE (ids 1 and 2), both hold their
+# own store outlet, and one SET_CONFIG still commands exactly one named eye
+# at a time. The knowledge frame (OPNAV) keeps its v1 scope - the first
+# eye's opinion - until its own channel goes plural; that scope is the
+# check's own assertion, not a silent gap.
+#
+#   scripts/fleet.sh up sim/scenarios/two_eyes.toml     (profile camera)
+#   scripts/check_two_eyes.sh                           (acceptance)
+#
+# Physics law inherited from camera_record.toml, unchanged and re-proven
+# here: pixels never touch torque. The trajectory digest of this flight must
+# equal the one-eyed record leg's byte for byte - a second eye that moved
+# the bird is a second eye wired into the control law, and the digest says
+# so. Both eyes ride the same nadir-pointed bus at 25 000 km (the disc fits
+# the frame there; see camera_record.toml's header for the full trap tour).
+
+[simulation]
+name = "chief with two eyes (multi-instance camera plant)"
+duration = 120.0
+
+[simulation.dt]
+dynamics = 0.1
+# fsw is the FSW tick: the world check, sensor frames, beacon and every
+# anchored digest ride this rate. It must stay an integer multiple of
+# dynamics, and retuning it re-anchors every baseline - full ceremony.
+fsw = 1.0
+
+[world]
+central_body = "earth"
+
+[world.sun]
+position = [1.496e11, 0.0, 0.0]
+
+[environment]
+
+[environment.magnetic_field]
+type = "centered_dipole"
+
+[[spacecraft]]
+name = "chief"  # operational identity: the COSMOS target derives from it (SAT_CHIEF)
+
+[spacecraft.hub]
+mass = 300.0
+
+[spacecraft.hub.inertia]
+ixx = 750.0
+iyy = 620.0
+izz = 540.0
+
+[spacecraft.orbit]
+type = "rv"
+
+[spacecraft.orbit.rv]
+position = [2.5e7, 0.0, 0.0]
+# SI - metres per second. The altitude is the camera's, not the law's:
+# the limb must fit the frame (see the header). The velocity-unit trap
+# that free-fell the fleet once lives in chief.toml's comment.
+velocity = [0.0, 3993.0, 0.0]   # circular at r = 25 000 km: sqrt(mu/r)
+
+[spacecraft.attitude.initial]
+# nadir-pointed camera: Earth sits on body +Z (the camera axis) at this
+# instant; sigma = -y * tan(90/4) is a -90-degree pitch (MRP is tan(theta/4)
+# - get the scale wrong and every rendered frame is black, 90 degrees away).
+sigma_BN = [0.0, -0.41421356, 0.0]
+omega_BN_B = [0.0, 0.0, 0.0]
+
+# --- actuators: three orthogonal reaction wheels -----------------------------
+
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.2
+
+[[spacecraft.effectors.wheels]]
+direction_B = [1.0, 0.0, 0.0]
+max_speed = 628.0      # rad/s (6000 rpm)
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 1.0, 0.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 0.0, 1.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+# --- sensing: the suite the FSW gets to know the universe through -----------
+
+[[spacecraft.sensors]]
+type = "imuSensor"
+name = "imu"
+gyro_bias = [2.0e-5, -1.5e-5, 1.0e-5]
+gyro_walk = [1.0e-8, 1.0e-8, 1.0e-8]
+
+[[spacecraft.sensors]]
+type = "starTracker"
+name = "st"
+sigma_SB = [0.0, 0.0, 0.0]
+white_noise = 1.0e-4
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css1"
+boresight_B = [1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css2"
+boresight_B = [-1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css3"
+boresight_B = [0.0, 1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css4"
+boresight_B = [0.0, -1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "magnetometer"
+name = "mag"
+noise_sigma = 1.0e-8
+
+# The vehicle's own GNSS opinion - the manifest picks the part,
+# the plant builds a SimpleNav receiver from it. Delete this block and the
+# NavState stream (0x08CF) goes silent: absence declared, not zero-filled.
+[[spacecraft.sensors]]
+type = "gpsReceiver"
+name = "gnss"
+
+[spacecraft.logging.state]
+sample_time = 1.0
+
+# --- the rendered eyes (CAM x2) ------------------------------------------------
+# Eye 1 is camera_record.toml's eye down to the byte: same render cadence,
+# same outlet. Eye 2 differs only in what any second instrument may decide
+# on its own - id, cadence, and a coarser picture - so a per-instance stream
+# that reports (id, rate, captures) can be told apart on the wire by eye.
+
+[visualization]
+enabled = true
+no_display = true          # headless: the renderer dials in, nobody watches a window
+
+[[camera]]
+parent = "chief"
+camera_id = 1
+render_rate = 2.0          # s between frames; each render tick costs one Vizard latency
+resolution = [512, 512]
+field_of_view = 0.8726646  # 50 deg: the Earth disc spans ~29 deg at 25 000 km
+sky_box = "black"
+record_rate = 2              # store outlet: every 2nd capture crosses the airgap
+
+[[camera]]
+parent = "chief"
+camera_id = 2
+render_rate = 3.0          # the second eye blinks at its own rhythm
+resolution = [256, 256]
+field_of_view = 0.8726646
+sky_box = "black"
+record_rate = 3              # its own outlet: every 3rd capture, its own files

@@ -28,6 +28,7 @@ import sim.forge_scenario as fz
 REPO = Path(__file__).resolve().parents[1]
 CAMERA_SCENARIO = REPO / "sim" / "scenarios" / "camera_ops.toml"
 TWIN_SCENARIO = REPO / "sim" / "scenarios" / "twin_ops.toml"
+TWO_EYES_SCENARIO = REPO / "sim" / "scenarios" / "two_eyes.toml"
 
 
 def build_bodies(path: Path) -> list[fz.ForgeBody]:
@@ -56,9 +57,10 @@ def test_the_camera_world_builds_its_estimators() -> None:
     """[[camera]] rides the full knowledge chain: camera -> limb -> horizon."""
     (body,) = build_bodies(CAMERA_SCENARIO)
     assert body.has_plant_opnav, "[[camera]] on this craft built no estimators"
-    assert body._opnav is not None
-    camera_id, module, horizon, _, recorder, image_recorder = body._opnav
+    assert body._eyes, "the plant mounted no eye chain"
+    camera_id, module, horizon, _, recorder, image_recorder, store = body._eyes[0]
     assert camera_id == 1
+    assert store is None, "this plant says no record_rate: an outlet would be a lie"
     assert module is not None, "the config door writes through this handle"
     assert horizon.planetTarget == fz.OPNAV_PLANET_TARGET == 2, (
         "Earth's celestial index is what the scene's limb findings carry;"
@@ -111,17 +113,24 @@ def test_the_frame_packs_and_reports_silence_before_the_first_render() -> None:
 
 
 def test_the_camstate_frame_reports_the_device_as_built() -> None:
-    """The device frame packs the module's OWN fields, pre-run."""
+    """The device frame packs the module's OWN fields, pre-run.
+
+    The provider returns the eye stream: one payload per mounted eye, so a
+    single-eyed plant says exactly one frame per tick - the multi-instance
+    row rides its topic append-only, never zero-filled or doubled.
+    """
     from sim.eds_link import decode_cam_state
 
     (camera_body,) = build_bodies(CAMERA_SCENARIO)
-    payload = camera_body.cam_state_bytes(1.0, 1)
+    payloads = camera_body.cam_state_bytes(1.0, 1)
+    assert len(payloads) == 1, "one eye streams one frame per tick"
+    payload = payloads[0]
     assert len(payload) == 56, "the provider packs what the row declares"
     frame = decode_cam_state(payload)
     assert (frame.sim_time_s, frame.frame) == (1.0, 1)
     assert frame.camera_id == 1
-    assert camera_body._opnav is not None
-    module = camera_body._opnav[1]
+    assert camera_body._eyes
+    module = camera_body._eyes[0][1]
     assert frame.shutter == int(module.cameraIsOn), "the frame is the module, not an opinion"
     assert frame.render_rate_s == pytest.approx(module.renderRate / 1e9)
     assert frame.captured == 0, "nothing rendered yet; a default capture would be a lie"
@@ -147,13 +156,14 @@ def test_the_store_outlet_streams_every_nth_capture_and_only_once(tmp_path: Path
             self.timeTag: list[float] = []
 
     (camera_body,) = build_bodies(CAMERA_SCENARIO)
-    assert camera_body._opnav is not None
-    camera_id, module, horizon, att, knowledge, _ = camera_body._opnav
+    assert camera_body._eyes
     fake = FakeRecorder()
-    camera_body._opnav = (camera_id, module, horizon, att, knowledge, fake)
+    eye = list(camera_body._eyes[0])
+    eye[5] = fake  # the captured witness: scripted, no renderer
     store_dir = tmp_path / "store"
     store_dir.mkdir()
-    camera_body._cam_store = {"rate": 2, "dir": store_dir, "sent": [], "count": 0}
+    eye[6] = {"rate": 2, "dir": store_dir, "sent": [], "count": 0}  # the outlet
+    camera_body._eyes = [tuple(eye)]
     sent: list[bytes] = []
     camera_body.attach_store_emitter(sent.append)
 
@@ -166,7 +176,7 @@ def test_the_store_outlet_streams_every_nth_capture_and_only_once(tmp_path: Path
         fake.timeTag.append(t * 1e9)
         (store_dir / f"{t:.6f}.png").write_bytes(data)
 
-    payload = camera_body.cam_state_bytes(5.0, 5)
+    payload = camera_body.cam_state_bytes(5.0, 5)[0]
     frame = decode_cam_state(payload)
     assert frame.frames_recorded == 2, "captures 2 and 4 are the record_rate=2 set"
     headers = [struct.unpack(camera_body.IMG_HEADER, f[:24]) for f in sent]
@@ -181,16 +191,16 @@ def test_the_store_outlet_streams_every_nth_capture_and_only_once(tmp_path: Path
 
     # same tick's state again: the outlet never re-sends a capture
     before = len(sent)
-    frame2 = decode_cam_state(camera_body.cam_state_bytes(6.0, 6))
+    frame2 = decode_cam_state(camera_body.cam_state_bytes(6.0, 6)[0])
     assert len(sent) == before and frame2.frames_recorded == 2, "exactly-once per capture"
 
     # patience law: a due capture with no file yet is retried, not lost
     fake.timeTag.append(5.0 * 1e9)
     fake.timeTag.append(6.0 * 1e9)
-    frame3 = decode_cam_state(camera_body.cam_state_bytes(7.0, 7))
+    frame3 = decode_cam_state(camera_body.cam_state_bytes(7.0, 7)[0])
     assert frame3.frames_recorded == 2 and len(sent) == before, "no file, no record"
     (store_dir / "6.000000.png").write_bytes(small)
-    frame4 = decode_cam_state(camera_body.cam_state_bytes(8.0, 8))
+    frame4 = decode_cam_state(camera_body.cam_state_bytes(8.0, 8)[0])
     assert frame4.frames_recorded == 3, "the file landed; the capture is finally recorded"
 
 
@@ -200,7 +210,7 @@ def test_the_store_outlet_is_silent_when_the_scenario_said_no() -> None:
     sent: list[bytes] = []
     camera_body.attach_store_emitter(sent.append)
     assert camera_body.store_active is False
-    assert camera_body._pump_store(1, [1.0, 2.0, 3.0]) == 0
+    assert camera_body._pump_store(camera_body._eyes[0], [1.0, 2.0, 3.0]) == 0
     assert sent == []
 
 
@@ -216,8 +226,8 @@ def test_the_config_door_applies_refuses_and_stays_reversible() -> None:
     from sim.eds_link import CamConfig
 
     (camera_body,) = build_bodies(CAMERA_SCENARIO)
-    assert camera_body._opnav is not None
-    module = camera_body._opnav[1]
+    assert camera_body._eyes
+    module = camera_body._eyes[0][1]
 
     camera_body.apply_cam_config(CamConfig(1.0, 10, 1, 0, 4.0))
     assert module.cameraIsOn == 0 and module.renderRate == 4_000_000_000
@@ -234,6 +244,41 @@ def test_the_config_door_applies_refuses_and_stays_reversible() -> None:
 
     camera_body.apply_cam_config(CamConfig(4.0, 40, 1, 1, 2.0))  # reversible
     assert module.cameraIsOn == 1 and module.renderRate == 2_000_000_000
+
+
+def test_a_two_eyed_plant_streams_every_eye_in_order() -> None:
+    """The multi-instance device stream: two eyes, one tick, two frames.
+
+    The whole law in one build: the plant mounts both ``[[camera]]``
+    blocks, the CAMSTATE provider answers once PER EYE in ascending id
+    (append-only, deterministic), each eye reports its own cadence, the
+    config door writes only the named eye, and the knowledge frame keeps
+    its v1 scope - the lowest id - until its own channel goes plural.
+    The first eye also keeps the v1 model tags: a second eye mounted
+    beside a flown bird must not relabel the first one's models, because
+    the frozen digests are named artifacts.
+    """
+    from sim.eds_link import CamConfig, decode_cam_state, decode_opnav_state
+
+    (body,) = build_bodies(TWO_EYES_SCENARIO)
+    assert len(body._eyes) == 2, "the plant mounts two cameras; the world saw otherwise"
+    (eye1, eye2) = body._eyes
+    assert (eye1[0], eye2[0]) == (1, 2), "ascending id: the stream's order is the law"
+    assert eye1[2].ModelTag == "chief_horizonNav", "the first eye was relabeled"
+    assert eye2[2].ModelTag == "chief_horizonNav2", "the second eye is unnamed"
+
+    frames = [decode_cam_state(payload) for payload in body.cam_state_bytes(1.0, 1)]
+    assert [f.camera_id for f in frames] == [1, 2]
+    assert frames[0].render_rate_s == pytest.approx(2.0)
+    assert frames[1].render_rate_s == pytest.approx(3.0), "each eye keeps its own rhythm"
+    assert decode_opnav_state(body.opnav_state_bytes(1.0, 1)).camera_id == 1
+
+    assert body.store_active, "both eyes record_rate > 0: the outlets exist"
+    body.apply_cam_config(CamConfig(2.0, 20, 9, 1, 5.0))  # eye 9 not mounted
+    assert body._cam_stats["refused_id"] == 1, "the bird answered for an eye it does not own"
+    body.apply_cam_config(CamConfig(3.0, 30, 2, 1, 5.0))
+    assert eye2[1].renderRate == 5_000_000_000
+    assert eye1[1].renderRate == 2_000_000_000, "a command for eye 2 edited eye 1"
 
 
 def test_the_cam_config_frame_round_trips_through_the_schema() -> None:

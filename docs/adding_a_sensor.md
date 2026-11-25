@@ -222,6 +222,14 @@ of as a decode error inside the spacecraft. Publish order is insertion order —
 the world never shuffles its own publishes, because the trajectory digest hashes
 the stream.
 
+A row with several instances on one vehicle (an eye per `[[camera]]` block, say)
+needs no new seam either: the provider returns a LIST of payloads and the rig
+rides them on the same topic in the provider's order — one frame per instance
+per tick, append-only. Each frame names its own instance (the row's
+`instance_field`), so the spacecraft tallies the streamed ids per row from the
+frames' own words, and the boot handshake's id slots compare what the world
+declared against what the wire carried.
+
 Absence is free here, and is the point: the `if` means a vehicle without the
 device streams nothing, says so in the check's own text, and reports a clean boot
 with that part's bit clear. Nothing is zero-filled anywhere on this path. Note

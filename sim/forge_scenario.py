@@ -132,7 +132,7 @@ OPNAV_PLANET_TARGET = 2
 
 def plant_observers(
     body: ForgeBody, clock: Callable[[], tuple[float, int]]
-) -> dict[str, Callable[[], bytes]]:
+) -> dict[str, Callable[[], bytes | list[bytes]]]:
     """Wire the registered observer frames this plant can actually feed.
 
     The topic a provider rides comes from the registry row; WHETHER the
@@ -145,7 +145,7 @@ def plant_observers(
     ``if`` line in this function plus its provider method. The rig, the
     codec, the spacecraft, and the check learn the part from the registry.
     """
-    observers: dict[str, Callable[[], bytes]] = {}
+    observers: dict[str, Callable[[], bytes | list[bytes]]] = {}
     if body.has_plant_state:
         observers[PART_ROWS["onboard"].zmq_topic] = lambda: body.onboard_state_bytes(*clock())
     if body.has_plant_nav:
@@ -449,23 +449,24 @@ class ForgeBody:
         # so they join here, between the build and InitializeSimulation, on a
         # task created AFTER the forge's camera task: each tick reads the
         # frame the camera just received.
-        self._opnav: tuple[Any, ...] | None = None
+        # One chain per mounted eye, ascending camera id: the order the
+        # CAMSTATE stream rides the wire (append-only, deterministic).
+        self._eyes: list[Any] = []
         self._cam_stats = {"applied": 0, "refused_id": 0, "refused_rate": 0}
-        # Store outlet (set by _build_opnav when record_rate > 0):
+        # Store outlets (one per eye whose record_rate > 0, inside its eye):
         # rate, source dir, PNG filenames already chunked onto the wire,
         # and the FramesRecorded tally. The emitter is attached at rig wiring
-        # - the outlet streams frames but never owns the socket it rides.
-        self._cam_store: dict[str, Any] | None = None
+        # - the outlets stream frames but never own the socket they ride.
         self._store_emit: Callable[[bytes], None] | None = None
         if cams:
-            self._opnav = self._build_opnav(ctx, cams)
+            self._eyes = self._build_eyes(ctx, cams)
 
-    def _build_opnav(
+    def _build_eyes(
         self,
         ctx: Any,  # noqa: ANN401 - bskforge SimContext (SWIG types inside)
         cams: list[Any],
-    ) -> tuple[Any, ...]:
-        """Wire limbFinding -> horizonOpNav onto this body's rendered camera.
+    ) -> list[Any]:
+        """Wire limbFinding -> horizonOpNav onto every rendered eye this body mounts.
 
         The trimmed wheel's spellings are the API (``limbFinding.LimbFinding``,
         ``horizonOpNav.horizonOpNav`` - proven on the matched wheel), and
@@ -476,71 +477,81 @@ class ForgeBody:
         created after the forge's camera task so the frame they read was
         received in the same tick.
 
-        Returns the tuple ``(camera_id, camera module, horizon module,
-        attitude message, knowledge recorder, image recorder)``.
+        Returns one tuple per eye, ascending ``camera_id`` - the order the
+        CAMSTATE stream rides the wire: ``(camera_id, camera module, horizon
+        module, attitude message, knowledge recorder, image recorder,
+        store)`` with ``store`` None for a nav-only eye.
+
+        Naming law: the first eye keeps the v1 model and task tags untouched
+        (the frozen trajectory digests are named artifacts - a second eye
+        mounted beside it must not relabel the first one's models), and each
+        additional eye numbers its own. Every eye gets the full chain even
+        while OPNAV reports only the first: the device view (CAMSTATE) needs
+        the image recorder, and the knowledge frame goes plural when its own
+        channel grows - not before.
 
         Raises:
-            ForgeError: The plant mounts more than one camera for this body
-                (v1 knowledge channels are single-eyed), or the forge built
-                no module for a ``[[camera]]`` line naming this vehicle.
+            ForgeError: The forge built no module for a ``[[camera]]`` line
+                naming this vehicle.
         """
-        if len(cams) > 1:
-            raise ForgeError(
-                f"{self.name}: the OPNAV frame carries one camera's knowledge; "
-                f"this plant mounts {len(cams)}"
+        eyes: list[Any] = []
+        for index, cam in enumerate(sorted(cams, key=lambda c: int(c.camera_id))):
+            suffix = "" if index == 0 else str(int(cam.camera_id))
+            cam_module = ctx.modules_by_tag.get(f"{cam.parent}_camera{cam.camera_id}")
+            if cam_module is None:
+                raise ForgeError(
+                    f"{self.name}: the forge built no camera module "
+                    f"'{cam.parent}_camera{cam.camera_id}' for this body"
+                )
+            limb = limbFinding.LimbFinding()
+            limb.ModelTag = f"{self.name}_limbFinder{suffix}"
+            horizon = horizonOpNav.horizonOpNav()
+            horizon.ModelTag = f"{self.name}_horizonNav{suffix}"
+            limb.imageInMsg.subscribeTo(cam_module.imageOutMsg)
+            horizon.limbInMsg.subscribeTo(limb.opnavLimbOutMsg)
+            horizon.cameraConfigInMsg.subscribeTo(cam_module.cameraConfigOutMsg)
+            att_msg = messaging.NavAttMsg()
+            horizon.attInMsg.subscribeTo(att_msg)
+            horizon.planetTarget = OPNAV_PLANET_TARGET
+            task = f"{self.name}OpNavTask{suffix}"
+            process = ctx.ensure_process(DYN_PROCESS, priority=3)
+            process.addTask(ctx.sim.CreateNewTask(task, macros.sec2nano(cam.render_rate)))
+            ctx.sim.AddModelToTask(task, limb)
+            ctx.sim.AddModelToTask(task, horizon)
+            # This wheel's Python read door is msg.recorder() (field arrays on
+            # the recorder); addSubscriber does not exist on OpNavMsg_C. The
+            # recorder rides last in the task so each tick records the write
+            # horizon just made.
+            recorder = horizon.opNavOutMsg.recorder()
+            ctx.sim.AddModelToTask(task, recorder)
+            # A recorder on the IMAGE port, same task, is the captured
+            # witness. Recorder granularity is this task's tick: images that
+            # complete between two ticks share one record, so Captured is a
+            # floor, and its docstring says so rather than pretending otherwise.
+            image_recorder = cam_module.imageOutMsg.recorder()
+            ctx.sim.AddModelToTask(task, image_recorder)
+            # Store outlet: Basilisk's own PNG writer (camera.cpp
+            # saveImages, written synchronously inside updateState, file named by
+            # the capture time to 6 decimals) becomes the byte source - no memory
+            # trickery on imagePointer, and the reassembled file is literally the
+            # rendered file, byte for byte. The OUTLET owns the switch: a nav-only
+            # camera (record_rate = 0) never has these fields touched and writes
+            # zero PNGs; absence stays visible on disk as well as on the wire.
+            store: dict[str, Any] | None = None
+            record_rate = int(getattr(cam, "record_rate", 0))
+            if record_rate > 0:
+                store_dir = Path(tempfile.mkdtemp(prefix=f"cam_store_{cam.camera_id}_"))
+                cam_module.saveImages = 1
+                cam_module.saveDir = f"{store_dir}/"
+                store = {"rate": record_rate, "dir": store_dir, "sent": [], "count": 0}
+                print(
+                    f"{self.name}: camera{cam.camera_id} store outlet ON "
+                    f"(every {record_rate}th capture -> {store_dir})"
+                )
+            eyes.append(
+                (int(cam.camera_id), cam_module, horizon, att_msg, recorder, image_recorder, store)
             )
-        cam = cams[0]
-        cam_module = ctx.modules_by_tag.get(f"{cam.parent}_camera{cam.camera_id}")
-        if cam_module is None:
-            raise ForgeError(
-                f"{self.name}: the forge built no camera module "
-                f"'{cam.parent}_camera{cam.camera_id}' for this body"
-            )
-        limb = limbFinding.LimbFinding()
-        limb.ModelTag = f"{self.name}_limbFinder"
-        horizon = horizonOpNav.horizonOpNav()
-        horizon.ModelTag = f"{self.name}_horizonNav"
-        limb.imageInMsg.subscribeTo(cam_module.imageOutMsg)
-        horizon.limbInMsg.subscribeTo(limb.opnavLimbOutMsg)
-        horizon.cameraConfigInMsg.subscribeTo(cam_module.cameraConfigOutMsg)
-        att_msg = messaging.NavAttMsg()
-        horizon.attInMsg.subscribeTo(att_msg)
-        horizon.planetTarget = OPNAV_PLANET_TARGET
-        task = f"{self.name}OpNavTask"
-        process = ctx.ensure_process(DYN_PROCESS, priority=3)
-        process.addTask(ctx.sim.CreateNewTask(task, macros.sec2nano(cam.render_rate)))
-        ctx.sim.AddModelToTask(task, limb)
-        ctx.sim.AddModelToTask(task, horizon)
-        # This wheel's Python read door is msg.recorder() (field arrays on
-        # the recorder); addSubscriber does not exist on OpNavMsg_C. The
-        # recorder rides last in the task so each tick records the write
-        # horizon just made.
-        recorder = horizon.opNavOutMsg.recorder()
-        ctx.sim.AddModelToTask(task, recorder)
-        # A recorder on the IMAGE port, same task, is the captured
-        # witness. Recorder granularity is this task's tick: images that
-        # complete between two ticks share one record, so Captured is a
-        # floor, and its docstring says so rather than pretending otherwise.
-        image_recorder = cam_module.imageOutMsg.recorder()
-        ctx.sim.AddModelToTask(task, image_recorder)
-        # Store outlet: Basilisk's own PNG writer (camera.cpp
-        # saveImages, written synchronously inside updateState, file named by
-        # the capture time to 6 decimals) becomes the byte source - no memory
-        # trickery on imagePointer, and the reassembled file is literally the
-        # rendered file, byte for byte. The OUTLET owns the switch: a nav-only
-        # camera (record_rate = 0) never has these fields touched and writes
-        # zero PNGs; absence stays visible on disk as well as on the wire.
-        record_rate = int(getattr(cam, "record_rate", 0))
-        if record_rate > 0:
-            store_dir = Path(tempfile.mkdtemp(prefix=f"cam_store_{cam.camera_id}_"))
-            cam_module.saveImages = 1
-            cam_module.saveDir = f"{store_dir}/"
-            self._cam_store = {"rate": record_rate, "dir": store_dir, "sent": [], "count": 0}
-            print(
-                f"{self.name}: camera store outlet ON (every {record_rate}th capture "
-                f"-> {store_dir})"
-            )
-        return (cam.camera_id, cam_module, horizon, att_msg, recorder, image_recorder)
+        return eyes
 
     @property
     def has_plant_state(self) -> bool:
@@ -572,8 +583,8 @@ class ForgeBody:
 
     @property
     def has_plant_opnav(self) -> bool:
-        """Whether this plant mounts the rendered camera that feeds OPNAV."""
-        return self._opnav is not None
+        """Whether this plant mounts rendered cameras that feed OPNAV."""
+        return bool(self._eyes)
 
     def opnav_state_bytes(self, sim_time_s: float, frame: int) -> bytes:
         """Pack one ``OpNavState``: what this body's camera pixels say (CAM).
@@ -582,9 +593,15 @@ class ForgeBody:
         its target and eye, and the estimator's own verdict flags. The image
         never travels: pixels that crossed the airgap would stop being a
         knowledge channel and start being a bandwidth problem.
+
+        The frame carries one eye's opinion: the lowest-numbered mounted eye.
+        This is the knowledge channel's scope, not the plant's - CAMSTATE
+        already streams every eye. When OpNav goes plural (its own change,
+        by the same append-only law) this provider returns one frame per eye
+        like its device-view sibling.
         """
-        assert self._opnav is not None, "opnav_state_bytes without a rendered eye"
-        camera_id, _, _, _, recorder, _ = self._opnav
+        assert self._eyes, "opnav_state_bytes without a rendered eye"
+        camera_id, _, _, _, recorder, _, _ = self._eyes[0]
         if recorder.size():
             latest = recorder.size() - 1
             los = tuple(float(v) for v in recorder.r_BN_B[latest])
@@ -611,26 +628,39 @@ class ForgeBody:
     def has_plant_cam(self) -> bool:
         """Whether this plant mounts a commandable eye.
 
-        The same [[camera]] line that feeds OPNAV: one hardware, two honest
+        The same [[camera]] lines that feed OPNAV: one hardware, two honest
         views - the estimator's opinion (opnav row) and the device's own
-        confirmed state (camstate row).
+        confirmed state (camstate row, one frame per eye).
         """
-        return self._opnav is not None
+        return bool(self._eyes)
 
-    def cam_state_bytes(self, sim_time_s: float, frame: int) -> bytes:
-        """Pack one ``CamState``: what this body's camera IS.
+    def cam_state_bytes(self, sim_time_s: float, frame: int) -> list[bytes]:
+        """Pack one ``CamState`` per mounted eye: what each camera IS.
 
-        The device side of the commanded-vs-confirmed pair: read from the
+        The device side of the commanded-vs-confirmed pair: read from each
         module's live fields, which Basilisk re-reads every update
         (camera.cpp) - an early spike flew this conclusion before the
         schema was written. ``captured`` counts distinct image timeTags at
         estimator-task granularity, boot stream included; two images
         completing between consecutive recorder ticks would share one count,
         so this is a floor, and the storage ledger is where the exact
-        number lives.
+        number lives. Order is the eye order (ascending id): the world's
+        multi-instance frames ride their topic append-only.
         """
-        assert self._opnav is not None, "cam_state_bytes without a rendered eye"
-        camera_id, module, _, _, _, image_recorder = self._opnav
+        assert self._eyes, "cam_state_bytes without a rendered eye"
+        return [
+            self._cam_state_bytes_one(eye, sim_time_s, frame)
+            for eye in sorted(self._eyes, key=lambda e: e[0])
+        ]
+
+    def _cam_state_bytes_one(
+        self,
+        eye: Any,  # noqa: ANN401 - eye tuple
+        sim_time_s: float,
+        frame: int,
+    ) -> bytes:
+        """Pack one eye's ``CamState`` (see cam_state_bytes for the pair law)."""
+        camera_id, module, _, _, _, image_recorder, _ = eye
         # timeTag is the camera's own stamp on each received frame - in
         # NANOSECONDS (measured live: t=2 s arrives as 2e9), while the PNG
         # name is std::to_string of the SECONDS value to 6 decimals. One
@@ -645,7 +675,7 @@ class ForgeBody:
         # The store outlet rides this same per-tick door: every Nth
         # capture's PNG bytes go out as IMG chunks before the state is packed,
         # so FramesRecorded in THIS frame counts sends made in THIS tick.
-        frames_recorded = self._pump_store(camera_id, captures)
+        frames_recorded = self._pump_store(eye, captures)
         return encode_container(
             "BSK_LINK/CamState",
             {
@@ -666,20 +696,24 @@ class ForgeBody:
         rate is a divide-by-zero inside vizInterface's request modulo (B1),
         and both sides of the airgap refuse it because a stale firmware on
         either side must not be able to kill the vehicle. Writes land on
-        the module handle; the next Basilisk update sees them (spike-
-        proven) and every digest stays byte-equal either way. Refusals
+        the named eye's module handle; the next Basilisk update sees them
+        (spike-proven) and every digest stays byte-equal either way. A
+        config naming an eye the bird does not mount is refused - the bird
+        answers to its own fit, not to the ground's wishes. Refusals
         tally instead of acking: this door answers nobody, and the ground
         reads the divergence (CAM_HK vs CamState), not a receipt.
         """
-        assert self._opnav is not None, "apply_cam_config without a rendered eye"
-        camera_id, module, _, _, _, _ = self._opnav
-        if cfg.camera_id != camera_id:
+        assert self._eyes, "apply_cam_config without a rendered eye"
+        eyes = {eye[0]: eye for eye in self._eyes}
+        if cfg.camera_id not in eyes:
             self._cam_stats["refused_id"] += 1
+            fitted = ",".join(str(eye_id) for eye_id in sorted(eyes))
             print(
                 f"[{self.name}] cam config refused: eye {cfg.camera_id} "
-                f"not fitted (bird has {camera_id})"
+                f"not fitted (bird has {fitted})"
             )
             return
+        camera_id, module, _, _, _, _, _ = eyes[cfg.camera_id]
         if not math.isfinite(cfg.render_rate_s) or cfg.render_rate_s <= 0.0:
             self._cam_stats["refused_rate"] += 1
             print(f"[{self.name}] cam refused: rate {cfg.render_rate_s} must be > 0 (B1)")
@@ -713,17 +747,20 @@ class ForgeBody:
 
     @property
     def store_active(self) -> bool:
-        """True when this body's camera has a store outlet (record_rate > 0)."""
-        return self._cam_store is not None
+        """True when any eye on this body has a store outlet (record_rate > 0)."""
+        return any(eye[6] is not None for eye in self._eyes)
 
-    def _pump_store(self, camera_id: int, capture_times: list[float]) -> int:
-        """Chunk every ``record_rate``-th capture's PNG onto the wire.
+    def _pump_store(self, eye: Any, capture_times: list[float]) -> int:  # noqa: ANN401 - eye tuple
+        """Chunk one eye's every ``record_rate``-th capture's PNG onto the wire.
 
-        Returns FramesRecorded: the count of captures whose COMPLETE byte set
-        has been handed to the emitter (a capture enters the tally only when
-        its last part has left - a part-truncated capture is not recorded).
+        Returns FramesRecorded for THIS eye: the count of captures whose
+        COMPLETE byte set has been handed to the emitter (a capture enters
+        the tally only when its last part has left - a part-truncated
+        capture is not recorded). Eyes pump in their own provider's pass, so
+        one capture's parts leave contiguously on the socket - the store's
+        reassembler names files by (camera, capture) and never interleaves.
         """
-        store = self._cam_store
+        camera_id, _, _, _, _, _, store = eye
         if store is None or self._store_emit is None:
             return 0
         rate = store["rate"]
@@ -775,19 +812,21 @@ class ForgeBody:
             )
         else:
             self._torque_msg.write(messaging.CmdTorqueBodyMsgPayload(torqueRequestBody=values))
-        if self._opnav is not None:
+        if self._eyes:
             # The knowledge channel's attitude truth rides the same door:
-            # horizonOpNav reads the LAST-written NavAttMsg on its own task,
-            # and this is the only per-tick write point the rig gives a body.
-            # The estimate was 0.73 degrees from truth with exactly this
-            # feed - one tick old, which at these rates is this tick.
-            _, _, _, att_msg, _, _ = self._opnav
+            # every eye's horizonOpNav reads the LAST-written NavAttMsg on
+            # its own task, and this is the only per-tick write point the rig
+            # gives a body. The estimate was 0.73 degrees from truth with
+            # exactly this feed - one tick old, which at these rates is this
+            # tick. One reading, written to every mounted eye: the body has
+            # one attitude, the eyes merely disagree about its planet.
             state = self._state_sub()
             payload = messaging.NavAttMsgPayload()
             payload.timeTag = self.sim_time_s
             payload.sigma_BN = np.asarray(state.sigma_BN, dtype=float).reshape(-1).tolist()
             payload.omega_BN_B = np.asarray(state.omega_BN_B, dtype=float).reshape(-1).tolist()
-            att_msg.write(payload)
+            for eye in self._eyes:
+                eye[3].write(payload)
 
     def truth(self) -> Truth:
         """The simulator's own solution: ideal, unbiased, never on the sensor feed."""

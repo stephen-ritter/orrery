@@ -135,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     """Drive (or just watch) one camera flight; returns process exit code."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--instance", type=int, default=0, help="fleet port block")
-    ap.add_argument("--mode", choices=("control", "spam", "record"), default="spam")
+    ap.add_argument("--mode", choices=("control", "spam", "record", "twins"), default="spam")
     ap.add_argument("--duration", type=float, default=56.0, help="wall seconds to watch")
     args = ap.parse_args(argv)
     block = ports(args.instance)
@@ -175,6 +175,20 @@ def main(argv: list[str] | None = None) -> int:
         42.0: ("ghost-eye", (1, 7, 2.0)),
         45.0: ("accept-restore", (1, 1, 2.0)),
     }
+    # The two-eyed script: every order is well-formed (no refusals this leg -
+    # refusals are the command leg's exhibit), each eye gets its own cadence,
+    # and the closing/reopening targets eye 2 while eye 1 holds a DIFFERENT
+    # commanded pair: the audit then screens that eye 1 never blinked. One
+    # commanded pair per vehicle stays the law; the leg proves the pair
+    # follows the named eye, not the other way round.
+    sends_twins = {
+        18.0: ("eye2-open", (1, 2, 3.0)),
+        28.0: ("eye1-fast", (1, 1, 2.5)),
+        38.0: ("eye2-close", (0, 2, 3.0)),
+        46.0: ("eye2-reopen", (1, 2, 3.0)),
+    }
+    if args.mode == "twins":
+        sends = sends_twins
     sent: list[str] = []
 
     t0 = time.monotonic()
@@ -185,6 +199,8 @@ def main(argv: list[str] | None = None) -> int:
     last_store: CamStorage | None = None
     store_seen = 0
     transitions: list[CamState] = []  # distinct (shutter, rate) states, in order
+    by_id: dict[int, CamState] = {}  # latest confirmed view per eye (twins)
+    trans_by_id: dict[int, list[CamState]] = {}  # per-eye transitions (twins)
     closed_window: list[tuple[float, int]] = []  # (t, captured) while shutter closed
     last_poll = 0.0
     seq = 0
@@ -193,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         while time.monotonic() < deadline:
             now = time.monotonic() - t0
-            if args.mode == "spam":
+            if args.mode in ("spam", "twins"):
                 for at, (label, (shutter, camera_id, rate)) in sends.items():
                     if now >= at and label not in sent:
                         client.send_packet(set_config(cfg_model, seq, shutter, camera_id, rate))
@@ -203,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
                             f"t={now:5.1f}s sent CAM_SET_CONFIG shutter={shutter} "
                             f"camera={camera_id} rate={rate:g} ({label})"
                         )
-            if args.mode in ("spam", "record") and now - last_poll >= 2.0:
+            if args.mode in ("spam", "record", "twins") and now - last_poll >= 2.0:
                 client.send_packet(build_cmd(pkts["CAM_SEND_HK"].msgid, 0))
                 last_poll = now
 
@@ -218,9 +234,19 @@ def main(argv: list[str] | None = None) -> int:
             elif msgid == cs_model.msgid:
                 cs_seen += 1
                 state = CamState(pkt, cs_model)
+                if args.mode == "twins":
+                    # Per-eye screens: a two-eyed leg reads the device view
+                    # BY EYE - the id in the frame is the authority on which
+                    # instrument a transition belongs to.
+                    by_id[state.camera_id] = state
+                    per_eye = trans_by_id.setdefault(state.camera_id, [])
+                    if not per_eye or per_eye[-1].key() != state.key():
+                        per_eye.append(state)
+                        print(f"t={now:5.1f}s cam{state.camera_id}: {state}")
                 if not transitions or transitions[-1].key() != state.key():
                     transitions.append(state)
-                    print(f"t={now:5.1f}s {state}")
+                    if args.mode != "twins":
+                        print(f"t={now:5.1f}s {state}")
                 if state.shutter == 0:
                     closed_window.append((state.sim_time_s, state.captured))
                 last_cs = state
@@ -280,6 +306,40 @@ def main(argv: list[str] | None = None) -> int:
                     "FramesTransferred moved without a transfer: that is a lie, not a feature"
                 )
         verdict = "CAM RECORD OK" if not reasons else "CAM RECORD FAILED"
+    elif args.mode == "twins":
+        # The two-eyed law, screened from the ground: both eyes confirm
+        # themselves independently, the commanded pair follows the NAMED
+        # eye, and a command aimed at one eye never edits the other.
+        if not {1, 2} <= set(by_id):
+            reasons.append(f"the device view never showed both eyes: ids={sorted(by_id)}")
+        for eye_id, state in sorted(by_id.items()):
+            if state.captured < 1:
+                reasons.append(f"eye {eye_id} never streamed: captured={state.captured}")
+        eye1, eye2 = by_id.get(1), by_id.get(2)
+        if eye1 is not None and eye1.key() != (1, 2.5):
+            reasons.append(
+                f"eye 1 ended at {eye1.key()}, want (1, 2.5): the fast cadence did not stick"
+            )
+        if eye2 is not None and eye2.key() != (1, 3.0):
+            reasons.append(f"eye 2 ended at {eye2.key()}, want (1, 3.0) after the reopen")
+        if any(state.key()[0] == 0 for state in trans_by_id.get(1, [])):
+            reasons.append("eye 1's shutter closed: a command aimed at eye 2 edited eye 1")
+        if last_hk is None:
+            reasons.append("no CAM_HK ever arrived: the commanded view is deaf")
+        else:
+            if last_hk.errs != 0:
+                reasons.append(f"the twins leg refused {last_hk.errs} well-formed orders")
+            if last_hk.camera_id != 2:
+                reasons.append(f"the commanded eye ended at {last_hk.camera_id}, want 2")
+            # Per-eye divergence audit, the twins leg's own screen: CAM_HK is the
+            # commander's word for ONE eye; that eye's CamState is the
+            # device's word. They must agree exactly - for the named eye.
+            if eye2 is not None and (last_hk.shutter, round(last_hk.rate_cmd, 3)) != eye2.key():
+                reasons.append(
+                    f"per-eye divergence: CAM_HK commands {last_hk.shutter}/"
+                    f"{last_hk.rate_cmd:g} while eye 2 confirms {eye2.key()}"
+                )
+        verdict = "CAM TWINS OK" if not reasons else "CAM TWINS FAILED"
     else:
         if last_hk is None:
             reasons.append("no CAM_HK ever arrived: the commanded view is deaf")

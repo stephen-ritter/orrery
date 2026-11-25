@@ -202,9 +202,11 @@ class RigChannel:
     kp: np.ndarray
     # Registry-driven observability: one provider per registered
     # topic, publish order = insertion order (determinism: the digest
-    # ledger depends on the world never racing itself). Keys must be
-    # landed registry rows' topics - see __post_init__.
-    observers: dict[str, Callable[[], bytes]] = field(default_factory=dict)
+    # ledger depends on the world never racing itself). A provider may
+    # return one payload or a LIST of them: a multi-instance row (N eyes)
+    # rides its topic once per instance, in the provider's order. Keys must
+    # be landed registry rows' topics - see __post_init__.
+    observers: dict[str, Callable[[], bytes | list[bytes]]] = field(default_factory=dict)
     # The boot handshake: this vehicle's declared fit, published on the
     # sensor socket every tick so the spacecraft can compare three views - the
     # manifest, what the binary was BUILT with, and what its bus actually
@@ -267,7 +269,7 @@ class LockstepRig:
         ack_timeout_s: float = ACK_TIMEOUT_S,
         ack_retry_s: float = ACK_RETRY_S,
         pace: bool = False,
-        observers: dict[str, Callable[[], bytes]] | None = None,
+        observers: dict[str, Callable[[], bytes | list[bytes]]] | None = None,
         fit_provider: Callable[[], bytes] | None = None,
         cam_sink: Callable[[CamConfig], None] | None = None,
     ) -> None:
@@ -619,8 +621,11 @@ class LockstepRig:
                     # instant as the sensor frame,
                     # on the same socket, and NO check waits for it - fcs never
                     # sees knowledge through this path. Knowledge flows,
-                    # physics stays gated.
-                    ch.sockets["sensor"].send_multipart([topic.encode("ascii"), provider()])
+                    # physics stays gated. A multi-instance row (an eye per
+                    # frame) rides its topic once per payload, in order.
+                    sampled = provider()
+                    for payload in sampled if isinstance(sampled, list) else [sampled]:
+                        ch.sockets["sensor"].send_multipart([topic.encode("ascii"), payload])
             published.append((ch, omega_meas, sensor_bytes))
 
         gated: list[tuple[RigChannel, np.ndarray, np.ndarray]] = []

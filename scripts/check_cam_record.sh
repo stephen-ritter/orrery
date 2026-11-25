@@ -119,7 +119,7 @@ fly_cycle() {
     "$RUNTIME" rm -f "$RENDERER" >/dev/null 2>&1 || true
 
     if [ "$mode" = record ]; then
-        CYCLE_STORE_DIR="$(grep -oE 'camera store outlet ON \(every [0-9]+th capture -> [^)]+\)' \
+        CYCLE_STORE_DIR="$(grep -oE 'camera[0-9]+ store outlet ON \(every [0-9]+th capture -> [^)]+\)' \
             "$WORK/sim_record.log" | head -1 | sed -E 's/.*-> ([^)]+)\)/\1/')"
     fi
     echo "=== [$mode] digest ${CYCLE_DIGEST:0:16}... probe rc=$CYCLE_RC ==="
