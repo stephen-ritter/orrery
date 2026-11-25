@@ -19,6 +19,7 @@ touches:
 | The wire | Which knowledge frames cross to flight software. | Rows in `registry/parts.toml` claim topics; `RigChannel` refuses to stream a frame whose part the scenario never mounted. Absence is declared, not zero-filled. |
 | The message shapes | The byte contract of every packet, on flight and ground alike. | `codegen/eds2cosmos.py` generates the COSMOS definitions and the `gs_tcp` MsgId table from the cFS EDS; `edslink` builds the simulator side from the same XML list, so the two cannot drift. |
 | The spacecraft's wake-up | Which flight-software apps the core starts. | `codegen/emit_startup.py` derives the ES startup table from the scenario per vehicle; the yard door lands it, and a craft boots its own table or refuses to boot. See below. |
+| The station's offering | Which commands and packets the operator is offered for a vehicle. | `codegen/eds2cosmos --scope-scenario` cuts the COSMOS dictionary to the same wake list: no button for an app the vehicle never wakes. |
 | The proof | Which acceptance exhibits a part arrives with. | Every `[[part]]` row names its exhibit; the checks read the row, so a part cannot be added without its verdict. |
 
 The registry law covers all of it: generators and checks read
@@ -104,10 +105,18 @@ the discipline the previous one taught:
    image's own build-time table stays as the honest fallback for a hand-run
    `docker compose up`, byte-identical to the all-parts union — a test pins
    the two sources of the grammar to each other.
-2. **The ground is cut from the same TOML**: `eds2cosmos` already generates
-   every dictionary from the EDS — the next step is giving it the vehicle's
-   scope, so an operator is never offered a command for an app that vehicle
-   never woke. Scheduler tables deserve the same scope.
+2. **The ground is cut from the same TOML** (landed): `eds2cosmos --scope-scenario`
+   cuts a vehicle's COSMOS dictionary to the apps its scenario wakes — no
+   command for an organ the vehicle never grew. The scope is a filter over the
+   same EDS pipeline, so a declared-eye vehicle's scoped definitions are
+   byte-identical to the catalog a test can pin; `CFE_*` commands are nobody's
+   to scope away (the core always boots), and frames riding the generic
+   consumer stay defined — they are shared vocabulary, scoped by row-landing
+   on the wire, not by the boot record. `scripts/check_ground_scope.sh` flies
+   the station itself: a strict plugin variant (versioned below the shipped
+   one, so a restart can only wake the catalog) loads, the buttons vanish for
+   the cameraless chief while the unscoped deputy keeps them, and the catalog
+   restore brings them back. Scheduler tables are the remaining scope to cut.
 3. **The binary is cut from the TOML**: the manifest feeds the mission's app
    list, so a cameraless vehicle's image holds no camera object file at all.
    This one multiplies provenance — each variant is its own stamped image —
@@ -129,4 +138,6 @@ hall of mirrors.
 `scripts/check_startup_config.sh` is that rule made flesh: the same
 command sentence, flown on a vehicle that declared an eye (`CAM_HK` arrives)
 and one that never did (the raw beacon stays silent, the booted table is
-named in the container's record).
+named in the container's record). `scripts/check_ground_scope.sh` is its
+ground-side twin: the verdict is what the station's own dictionary offers,
+read back from the station's own API.

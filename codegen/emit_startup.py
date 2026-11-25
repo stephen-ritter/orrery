@@ -65,6 +65,9 @@ class AppRow:
     load: int
     baseline: bool
     requires: tuple[str, ...] = ()
+    # EDS packages whose ground definitions ride this app's wake-up (the
+    # ground-scope seam, codegen/eds2cosmos --scope-scenario).
+    eds_packages: tuple[str, ...] = ()
 
 
 def _checked_field(name: str, field_name: str, value: str) -> str:
@@ -97,6 +100,7 @@ def load_apps(path: Path = APPS_REGISTRY, parts: list[Part] | None = None) -> li
             load=int(row.get("load", 0)),
             baseline=str(row["when"]) == "baseline",
             requires=tuple(row.get("requires", ())),
+            eds_packages=tuple(row.get("eds_packages", ())),
         )
         for row in doc.get("app", [])
     ]
@@ -110,6 +114,14 @@ def load_apps(path: Path = APPS_REGISTRY, parts: list[Part] | None = None) -> li
     names = [row.name for row in rows]
     if len(names) != len(set(names)):
         raise StartupDoorError(f"{path}: duplicate app rows: {names}")
+    owned: dict[str, str] = {}
+    for row in rows:
+        for pkg in row.eds_packages:
+            if pkg in owned:
+                raise StartupDoorError(
+                    f"{path}: EDS package {pkg!r} owned by both {owned[pkg]!r} and {row.name!r}"
+                )
+            owned[pkg] = row.name
     by_name = {row.name: row for row in rows}
     for row in rows:
         for want in row.requires:

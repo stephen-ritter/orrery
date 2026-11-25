@@ -20,6 +20,13 @@
 #               "declared"  = payload authority: wakes only on a vehicle
 #                            whose scenario mounts a part whose fsw_apps
 #                            names this app (registry/parts.toml).
+#   eds_packages  the EDS package names this app owns (the target_app on a
+#               generated ground definition). The ground-scope generator
+#               (codegen/eds2cosmos --scope-scenario) cuts a vehicle's
+#               dictionary with it: no command for an app that vehicle never
+#               wakes. CFE_* packages belong to the core and are nobody's to
+#               scope away; a packet whose package no app owns is a door
+#               refusal, not a silent pass.
 #   requires    entailments: apps this one needs awake on the same bus.
 #               The generator refuses an unsatisfiable wake list with a
 #               named sentence - "you asked for the manifest but no
@@ -68,6 +75,7 @@ short = "CI_LAB"
 priority = 40
 stack = 32768
 when = "baseline"
+eds_packages = ["CI_LAB"]
 
 [[app]]
 name = "to_lab"
@@ -77,6 +85,7 @@ short = "TO_LAB"
 priority = 45
 stack = 32768
 when = "baseline"
+eds_packages = ["TO_LAB"]
 
 [[app]]
 name = "sample_app"
@@ -86,6 +95,7 @@ short = "SAMPLE_APP"
 priority = 50
 stack = 32768
 when = "baseline"
+eds_packages = ["SAMPLE_APP"]
 
 [[app]]
 name = "bsk_link"
@@ -95,6 +105,7 @@ short = "BSK_LINK"
 priority = 55
 stack = 131072
 when = "baseline"
+eds_packages = ["BSK_LINK"]
 
 [[app]]
 name = "fcs"
@@ -104,6 +115,7 @@ short = "FCS"
 priority = 65
 stack = 65536
 when = "baseline"
+eds_packages = ["FCS"]
 
 [[app]]
 name = "obc_hk"
@@ -113,6 +125,7 @@ short = "OBC_HK"
 priority = 66
 stack = 65536
 when = "baseline"
+eds_packages = ["OBC"]
 
 [[app]]
 name = "sps"
@@ -122,6 +135,7 @@ short = "SPS"
 priority = 67
 stack = 65536
 when = "baseline"
+eds_packages = ["SPS"]
 
 # --- the payload authorities: woken by declaration ---------------------------
 #
@@ -140,6 +154,7 @@ short = "CAM"
 priority = 68
 stack = 65536
 when = "declared"
+eds_packages = ["CAM"]
 requires = ["cf", "cf_tcp"]
 
 [[app]]
@@ -170,6 +185,7 @@ short = "LC"
 priority = 70
 stack = 131072
 when = "baseline"
+eds_packages = ["LC"]
 
 [[app]]
 name = "cf"
@@ -179,6 +195,7 @@ short = "CF"
 priority = 70
 stack = 131072
 when = "baseline"
+eds_packages = ["CF"]
 
 [[app]]
 name = "ds"
@@ -188,6 +205,7 @@ short = "DS"
 priority = 70
 stack = 131072
 when = "baseline"
+eds_packages = ["DS"]
 
 [[app]]
 name = "fm"
@@ -197,6 +215,7 @@ short = "FM"
 priority = 70
 stack = 131072
 when = "baseline"
+eds_packages = ["FM"]
 
 [[app]]
 name = "hk"
@@ -206,6 +225,7 @@ short = "HK"
 priority = 70
 stack = 131072
 when = "baseline"
+eds_packages = ["HK"]
 
 [[app]]
 name = "hs"
@@ -215,6 +235,7 @@ short = "HS"
 priority = 70
 stack = 131072
 when = "baseline"
+eds_packages = ["HS"]
 
 [[app]]
 name = "mm"
@@ -224,6 +245,7 @@ short = "MM"
 priority = 70
 stack = 131072
 when = "baseline"
+eds_packages = ["MM"]
 
 [[app]]
 name = "sc"
@@ -233,6 +255,7 @@ short = "SC"
 priority = 70
 stack = 131072
 when = "baseline"
+eds_packages = ["SC"]
 
 [[app]]
 name = "md"
@@ -242,6 +265,7 @@ short = "MD"
 priority = 70
 stack = 131072
 when = "baseline"
+eds_packages = ["MD"]
 
 [[app]]
 name = "cs"
@@ -251,3 +275,4 @@ short = "CS"
 priority = 70
 stack = 131072
 when = "baseline"
+eds_packages = ["CS"]

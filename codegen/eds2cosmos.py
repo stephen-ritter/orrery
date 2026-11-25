@@ -210,6 +210,51 @@ def mission_packets(packets: Iterable[Packet]) -> list[Packet]:
     return [p for p in packets if p.name not in drop]
 
 
+def woken_app_names(scenario: Path, vehicle: str) -> set[str]:
+    """The vehicle's wake list, straight from the door's own generator."""
+    from codegen.emit_startup import load_apps, select_apps
+    from sim.parts import load_registry
+
+    apps, parts = load_apps(), load_registry()
+    return {row.name for row in select_apps(apps, parts, scenario, vehicle)}
+
+
+def scope_packets(packets: Iterable[Packet], woken: set[str]) -> list[Packet]:
+    """The dictionary a vehicle earns: every packet its wake list can answer.
+
+    The ground-scope seam of the wake list (docs/what_the_scenario_rules.md):
+    a command stays in the dictionary only while its owning app is on the
+    boot record, so the station never offers a button for an organ the
+    scenario never grew. CFE_* packages belong to the core - the core always
+    boots, so nobody can scope them away. A package no app claims is the
+    lying-registry shape this bench refuses everywhere else: the door names
+    it instead of letting a packet scope itself into (or out of) existence.
+    """
+    from codegen.emit_startup import StartupDoorError, load_apps
+
+    owner: dict[str, str] = {}
+    for row in load_apps():
+        for pkg in row.eds_packages:
+            owner[pkg] = row.name
+    scoped: list[Packet] = []
+    orphan: list[str] = []
+    for pkt in packets:
+        if pkt.target_app.startswith("CFE_"):
+            scoped.append(pkt)
+            continue
+        app = owner.get(pkt.target_app)
+        if app is None:
+            if pkt.target_app not in orphan:
+                orphan.append(pkt.target_app)
+        elif app in woken:
+            scoped.append(pkt)
+    if orphan:
+        raise StartupDoorError(
+            f"packets with no owning app in registry/apps.toml (eds_packages): {orphan}"
+        )
+    return scoped
+
+
 def emit_c_table(packets: list[Packet], cfs_sha: str) -> str:
     """C header: the gs_tcp MsgId subscription table (downlink telemetry only).
 
@@ -387,6 +432,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--target", default=TARGET, help=f"COSMOS target name (default {TARGET})")
     ap.add_argument(
+        "--scope-scenario",
+        type=Path,
+        help="cut the defs to one vehicle's wake list (with --scope-vehicle): "
+        "no command for an app that vehicle never wakes",
+    )
+    ap.add_argument("--scope-vehicle", help="vehicle name within --scope-scenario")
+    ap.add_argument(
         "--emit-truth",
         action="store_true",
         help="emit the truth target's tlm defs (from BSK_LINK/TruthState) instead of flight defs",
@@ -407,6 +459,25 @@ def main(argv: list[str] | None = None) -> int:
 
     all_packets = eds.packets()
     packets = mission_packets(all_packets)
+    if args.scope_scenario or args.scope_vehicle:
+        if not (args.scope_scenario and args.scope_vehicle):
+            print(
+                "eds2cosmos: --scope-scenario and --scope-vehicle come as a pair", file=sys.stderr
+            )
+            return 2
+        from codegen.emit_startup import StartupDoorError
+        from sim.fleet import sat_target
+
+        if not args.out_cosmos:
+            print("eds2cosmos: a scoped emission needs --out-cosmos", file=sys.stderr)
+            return 2
+        try:
+            woken = woken_app_names(args.scope_scenario, args.scope_vehicle)
+            packets = scope_packets(packets, woken)
+        except StartupDoorError as exc:
+            print(f"eds2cosmos: {exc}", file=sys.stderr)
+            return 1
+        args.target = sat_target(args.scope_vehicle)
     for p in all_packets:
         if p.name in MODEL_DRIFT_EXCLUSIONS:
             print(f"EXCLUDED {p.name}: {MODEL_DRIFT_EXCLUSIONS[p.name]}", file=sys.stderr)
