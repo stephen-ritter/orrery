@@ -6,7 +6,11 @@
    CFDP engine dials in, and each direction moves whole PDUs - never
    halves. A frame that would go out broken takes the link down instead
    (half a PDU would desynchronise the peer's framing forever); a frame
-   that arrives broken is refused and counted, and the peer reconnects. The
+   that arrives broken is refused and counted, and the peer reconnects. A
+   peer's leaving is visible - a FIN frees the seat on the next tick, and
+   keepalive catches the silent deaths - so the one-peer law never strands
+   the bridge on a corpse: refusal means a live conversation is not
+   displaced, which is the only thing it was ever for. The
    bridge has no opinions about CFDP: no acks, no retransmit, no file
    knowledge - reliability is CF class 2's declared job, and a pipe doing
    reliability quietly would be the second, lying copy of it.
@@ -227,6 +231,8 @@ static void CF_TCP_InjectPdu(const uint8 *Pdu, size_t PduLen)
  */
 static void CF_TCP_ServiceRx(CF_TCP_Client_t *Client)
 {
+    bool Eof = false;
+
     for (;;)
     {
         ssize_t Got = recv(Client->Fd, &Client->Rx[Client->RxLen],
@@ -236,11 +242,16 @@ static void CF_TCP_ServiceRx(CF_TCP_Client_t *Client)
             Client->RxLen += (uint32)Got;
             continue;
         }
-        break; /* EAGAIN (quiet) or a dead peer (handled below) */
+        Eof = Got == 0; /* FIN means the peer is gone; EAGAIN means quiet */
+        break;
     }
 
     if (Client->RxLen == 0)
     {
+        if (Eof)
+        {
+            CF_TCP_CloseClient(Client, "peer closed");
+        }
         return;
     }
 
@@ -250,6 +261,14 @@ static void CF_TCP_ServiceRx(CF_TCP_Client_t *Client)
 
         if (Client->RxLen < CF_TCP_LEN_BYTES)
         {
+            if (Eof)
+            {
+                if (Client->RxLen > 0)
+                {
+                    Client->RxDropCount++; /* a header fragment dies with the peer */
+                }
+                CF_TCP_CloseClient(Client, "peer closed");
+            }
             return; /* still waiting for the length itself */
         }
         LenField = ((uint32)Client->Rx[0] << 24) | ((uint32)Client->Rx[1] << 16) |
@@ -266,6 +285,12 @@ static void CF_TCP_ServiceRx(CF_TCP_Client_t *Client)
         }
         if (Client->RxLen < CF_TCP_LEN_BYTES + LenField)
         {
+            if (Eof)
+            {
+                Client->RxDropCount++; /* the rest of this segment never comes */
+                CF_TCP_CloseClient(Client, "peer died mid-segment");
+                return;
+            }
             Client->RxPartial = CF_TCP_LEN_BYTES + LenField - Client->RxLen;
             return; /* mid-segment: patience, the rest is in flight */
         }
@@ -312,6 +337,11 @@ static void CF_TCP_AcquirePeer(void)
             fcntl(ClientFd, F_SETFL, Flags | O_NONBLOCK);
         }
         setsockopt(ClientFd, IPPROTO_TCP, TCP_NODELAY, &One, sizeof(One));
+        /* A peer that vanishes without a FIN (killed mid-flight, unreachable
+         * network) is detected by keepalive - slowly, but without anyone
+         * rebooting the craft. The polite goodbye is handled on the next
+         * tick; this covers the impolite one. */
+        setsockopt(ClientFd, SOL_SOCKET, SO_KEEPALIVE, &One, sizeof(One));
 
         if (!CF_TCP_AppData.Client[0].Used)
         {
