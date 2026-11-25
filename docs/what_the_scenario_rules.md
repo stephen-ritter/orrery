@@ -116,7 +116,16 @@ the discipline the previous one taught:
    the station itself: a strict plugin variant (versioned below the shipped
    one, so a restart can only wake the catalog) loads, the buttons vanish for
    the cameraless chief while the unscoped deputy keeps them, and the catalog
-   restore brings them back. Scheduler tables are the remaining scope to cut.
+   restore brings them back. The craft's own timer obeys the same list:
+   the schedule table (`orrery_defs/tables/sch_lab_table.c`) is compiled
+   into every image and fires onboard, so it may speak only to the core
+   and the baseline organs — `tests/test_schedule_law.py` pins the ledger
+   against the inventory, and against the built table where one exists.
+   A payload app's housekeeping is ground-polled through the scoped
+   dictionary, never timer-driven: the timer never fires toward an organ
+   a scenario might not have grown, which is exactly what lets a
+   per-scenario flight image leave a declared app out without stranding
+   a timer that talks to it.
 3. **The binary is cut from the TOML**: the manifest feeds the mission's app
    list, so a cameraless vehicle's image holds no camera object file at all.
    This one multiplies provenance — each variant is its own stamped image —
