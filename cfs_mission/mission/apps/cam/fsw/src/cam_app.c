@@ -145,9 +145,10 @@ static void CAM_HandleSetConfig(const CFE_SB_Buffer_t *BufPtr)
  * Names starting with '.' are store internals (bsk_link's .part files): the
  * inventory lists what the ground may ask for, and a half-written part is
  * not that. Sizes come from OS_stat per name - this OSAL's dirent carries a
- * name only. A file that vanishes between the read and the stat is skipped,
- * counted nothing: an inventory line for a file nobody can request is the
- * kind of line that makes liars of good tables.
+ * name only. A file that cannot be stat-ed - vanished between the read and
+ * the stat, or a name over the store's path budget - is skipped and named
+ * in an event: an inventory line for a file nobody can request is the kind
+ * of line that makes liars of good tables.
  *
  * The draft-and-swap is not ceremony: a CFDP read already in flight holds
  * the OLD file whole while the new manifest lands, so a manifest rewrite
@@ -200,8 +201,13 @@ static void CAM_HandleManifest(void)
             continue;
         }
         snprintf(Path, sizeof(Path), "%s/%s", CAM_IMG_DIR, Name);
-        if (OS_stat(Path, &Stats) != OS_SUCCESS)
+        Status = OS_stat(Path, &Stats);
+        if (Status != OS_SUCCESS)
         {
+            /* A file nobody can request has no business on the inventory,
+             * but dropping it in silence moves the lie to the reader. */
+            CFE_EVS_SendEvent(CAM_MANIFEST_ERR_EID, CFE_EVS_EventType_ERROR,
+                              "manifest skipped %s: status %d", Name, (int)Status);
             continue;
         }
         snprintf(Line, sizeof(Line), "%s,%llu\n", Name, (unsigned long long)OS_FILESTAT_SIZE(Stats));
