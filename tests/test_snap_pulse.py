@@ -88,13 +88,14 @@ def test_the_pulse_is_an_edge_with_exactly_one_source() -> None:
 # -- the sim door, unit-tested without a world ---------------------------------
 
 
-def _body(tmp: Path, rate: int = 100) -> Any:  # noqa: ANN401 - a bundle of test doubles
+def _body(tmp: Path, rate: int = 100, mode: str = "cadence") -> Any:  # noqa: ANN401 - a bundle of test doubles
     """A ForgeBody skeleton wired only to a store outlet, plus its captures.
 
     Returns (body, store, emitted, eye, captures). Captures 1..4 exist on
     disk (t = 1.0 .. 4.0 s); the cadence door is pinned shut (rate=100) so
     anything sent in these tests is a pulse's doing, and nothing else can
-    move the counters.
+    move the counters. ``mode`` sets the outlet door: "snap" closes the
+    cadence door by declaration instead of by distance.
     """
     from sim import forge_scenario as fz
 
@@ -107,6 +108,7 @@ def _body(tmp: Path, rate: int = 100) -> Any:  # noqa: ANN401 - a bundle of test
     body.name = "unit"
     body._store_emit = emitted.append
     store = {
+        "mode": mode,
         "rate": rate,
         "dir": tmp,
         "sent": [],
@@ -196,6 +198,46 @@ def test_the_config_frame_round_trips_with_its_edge() -> None:
     cfg = decode_cam_config(pulse)
     assert cfg.pulse == 1 and cfg.shutter == 0, (
         "the edge must not masquerade as a steady shutter command"
+    )
+
+
+def test_snap_mode_closes_the_cadence_door_by_declaration(tmp_path: Path) -> None:
+    """Snap mode is the door DECLARED, not a cadence faked by distance.
+
+    The old bench got this from record_rate 1000 - arithmetic pretending to
+    be a law. Here the cadence door does not exist: pumping a streaming
+    eye's captures ships nothing, rate 0 never reaches the modulo (the
+    rung-4 divide-by-zero landmine), and one ask ships exactly one capture.
+    A delivered pulse IS a recorded frame: the outlet owns the tally.
+    """
+    body, store, emitted, eye, captures = _body(tmp_path, rate=0, mode="snap")
+    assert body._pump_store(eye, captures) == 0, "snap mode shipped a steady capture"
+    assert emitted == []
+    store["snap"].append({"baseline": 2, "deadline_s": 999.0})
+    assert body._pump_snap(eye, captures, sim_time_s=10.0) == 1
+    assert _sent_ordinals(emitted) == [3]
+    assert body._pump_store(eye, captures) == 1, "a delivered pulse is not counted as recorded"
+    assert body._pump_store(eye, captures) == 1, "the steady door stays shut forever"
+
+
+def test_the_snap_scenario_declares_its_own_door() -> None:
+    """camera_snap.toml: the record bird with the declaration, no arithmetic.
+
+    The schema refuses record_rate beside record_mode upstream; this pins
+    the yard's own scenario to keep the cadence door out of the file
+    entirely and the recorder sized for the bytes pulses will write.
+    """
+    import tomllib
+
+    facts = tomllib.loads((REPO / "sim" / "scenarios" / "camera_snap.toml").read_text())
+    cams = facts["camera"]
+    assert len(cams) == 1 and cams[0]["record_mode"] == "snap"
+    assert "record_rate" not in cams[0], (
+        "cadence smuggled beside a declared snap door: the schema would refuse this file"
+    )
+    assert cams[0].get("downlink", False) is False
+    assert any(row["parent"] == cams[0]["parent"] for row in facts["store"]), (
+        "an open outlet with no sized recorder"
     )
 
 

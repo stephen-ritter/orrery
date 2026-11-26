@@ -221,8 +221,8 @@ def main(argv: list[str] | None = None) -> int:
     }
     if args.mode == "twins":
         sends = sends_twins
-    # The pulse leg script: the record door is pinned shut by the bench
-    # scenario (record_rate above this leg's total captures), so the cadence
+    # The pulse leg script: the bench scenario declares the outlet door
+    # pulse-only (record_mode = "snap"), so the cadence
     # never admits anything and every frame that lands is a pulse's doing.
     # The first pulse fires while the eye streams; the second fires after
     # the shutter closes - the true pulse: it opens the shutter, delivers

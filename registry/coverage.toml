@@ -296,6 +296,10 @@ eye, delivers the NEXT capture (never an old file) to the store outside the
 record cadence, and restores the ground's steady shutter; the ask and the
 delivery are separate witnesses (CAM_HK.SnapshotCmds vs CamState.Snapshots),
 and an unanswered pulse is dropped uncounted rather than counted falsely.
+The outlet's door is itself a scenario fact: `record_rate` files every Nth
+capture, `record_mode = "snap"` files ONLY pulse deliveries - an eye streams
+for the estimator forever while the store stays silent until the ground
+asks - and the schema refuses both doors on one outlet.
 What remains: the working index is still door-lawed to the manifest's sort
 budget (512 entries), and a receipt carried across a restart is spent by
 the next capture - boot records deliveries, it does not perform them."""

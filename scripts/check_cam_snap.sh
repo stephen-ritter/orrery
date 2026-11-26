@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Shutter-pulse acceptance: "look now" buys exactly one NEW frame, or nothing.
 #
-#   The bench scenario is camera_record.toml with the record door pinned
-#   shut (record_rate 1000 - a leg this short never sees the cadence open).
-#   So every frame that reaches the store on this flight was paid for by a
+#   The bench scenario is camera_snap.toml: its outlet door is DECLARED
+#   pulse-only (record_mode = "snap"), so no cadence door exists - an eye
+#   that streams forever still files nothing but SNAP deliveries. Every
+#   frame that reaches the store on this flight was paid for by a
 #   SNAP, and the bench grades what a pulse is:
 #
 #   next-frame law   an ask is cashed by the capture AFTER the command,
@@ -48,14 +49,14 @@ trap cleanup EXIT
 left="$("$RUNTIME" ps --format '{{.Names}}' | grep -E '^orrery-(world|chief|deputy)$' || true)"
 [ -z "$left" ] || { echo "check_cam_snap: yard busy: $left" >&2; exit 1; }
 
-# The only law the scenario carries for this bench: the cadence door opens
-# a thousand captures away. Everything else - capacity, orbit, eye - is the
-# record scenario's, already flown.
-sed -e "s/^record_rate = .*/record_rate = 1000          # bench: the cadence never opens; only pulses land/" \
-    "$REPO/sim/scenarios/camera_record.toml" > "$BENCH"
+# The only law the scenario carries for this bench: the outlet door is
+# declared pulse-only (record_mode = "snap") - the declaration the yard
+# used to fake with record_rate 1000. Everything else - capacity, orbit,
+# eye - is the record scenario's, already flown.
+cp "$REPO/sim/scenarios/camera_snap.toml" "$BENCH"
 rm -rf "$HOST_IMG"
 
-echo "=== bench world up (${BENCH_NAME}, ${SIM_DURATION} sim-s, cadence door pinned shut) ==="
+echo "=== bench world up (${BENCH_NAME}, ${SIM_DURATION} sim-s, cadence door closed by declaration) ==="
 DURATION="$SIM_DURATION" bash "$REPO/scripts/fleet.sh" up "sim/scenarios/$BENCH_NAME" 2>&1 |
     tail -3 | tee "$WORK/up.log"
 
@@ -116,28 +117,28 @@ echo "=== the next-frame law: the pulse pays with what came AFTER the ask ==="
 # line is the device's captured count as the ground last saw it. Wire lag
 # (one render) means the delivered ordinal is +1 or +2, never +0 (an old
 # file handed over) and never more (a frame the ask did not buy).
-D1="$(grep '(shutter pulse)' "$WORK/world.log" | head -1 | grep -oE 'capture [0-9]+' | grep -oE '[0-9]+')"
-D2="$(grep '(shutter pulse)' "$WORK/world.log" | tail -1 | grep -oE 'capture [0-9]+' | grep -oE '[0-9]+')"
+DELIVERED_1="$(grep '(shutter pulse)' "$WORK/world.log" | head -1 | grep -oE 'capture [0-9]+' | grep -oE '[0-9]+')"
+DELIVERED_2="$(grep '(shutter pulse)' "$WORK/world.log" | tail -1 | grep -oE 'capture [0-9]+' | grep -oE '[0-9]+')"
 C1="$(grep 'SNAP (pulse-open-leg)' "$WORK/probe.log" | grep -oE 'captured=[0-9]+' | grep -oE '[0-9]+')"
 C2="$(grep 'SNAP (pulse-closed-leg)' "$WORK/probe.log" | grep -oE 'captured=[0-9]+' | grep -oE '[0-9]+')"
-[ "$D2" -gt "$D1" ] || {
+[ "$DELIVERED_2" -gt "$DELIVERED_1" ] || {
     echo "check_cam_snap: the closed-shutter pulse did not force a frame the stream had not already made" >&2
     exit 1
 }
-if [ "$D1" -le "$C1" ] || [ $((D1 - C1)) -gt 2 ]; then
-    echo "check_cam_snap: pulse 1 delivered capture $D1 from a device at captured=$C1 (want the next frame)" >&2
+if [ "$DELIVERED_1" -le "$C1" ] || [ $((DELIVERED_1 - C1)) -gt 2 ]; then
+    echo "check_cam_snap: pulse 1 delivered capture $DELIVERED_1 from a device at captured=$C1 (want the next frame)" >&2
     exit 1
 fi
-if [ "$D2" -le "$C2" ] || [ $((D2 - C2)) -gt 2 ]; then
-    echo "check_cam_snap: pulse 2 delivered capture $D2 from a device at captured=$C2 (want the next frame)" >&2
+if [ "$DELIVERED_2" -le "$C2" ] || [ $((DELIVERED_2 - C2)) -gt 2 ]; then
+    echo "check_cam_snap: pulse 2 delivered capture $DELIVERED_2 from a device at captured=$C2 (want the next frame)" >&2
     exit 1
 fi
 
 echo "=== the store: exactly two files, named by their captures ==="
 LANDED="$(find "$HOST_IMG" -name 'frame_*.png' -printf '%f\n' | sort)"
-EXPECT="$(printf 'frame_1_%s.png\nframe_1_%s.png' "$D1" "$D2" | sort)"
+EXPECT="$(printf 'frame_1_%s.png\nframe_1_%s.png' "$DELIVERED_1" "$DELIVERED_2" | sort)"
 if [ "$LANDED" != "$EXPECT" ]; then
-    echo "check_cam_snap: /cf/img holds [$(tr '\n' ' ' <<<"$LANDED")], want the two pulse captures $D1 and $D2" >&2
+    echo "check_cam_snap: /cf/img holds [$(tr '\n' ' ' <<<"$LANDED")], want the two pulse captures $DELIVERED_1 and $DELIVERED_2" >&2
     exit 1
 fi
 if grep -q "refused: recorder full" "$WORK/chief.log"; then

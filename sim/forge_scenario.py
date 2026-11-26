@@ -545,11 +545,13 @@ class ForgeBody:
             # zero PNGs; absence stays visible on disk as well as on the wire.
             store: dict[str, Any] | None = None
             record_rate = int(getattr(cam, "record_rate", 0))
-            if record_rate > 0:
+            record_mode = str(getattr(cam, "record_mode", "cadence"))
+            if record_rate > 0 or record_mode == "snap":
                 store_dir = Path(tempfile.mkdtemp(prefix=f"cam_store_{cam.camera_id}_"))
                 cam_module.saveImages = 1
                 cam_module.saveDir = f"{store_dir}/"
                 store = {
+                    "mode": record_mode,
                     "rate": record_rate,
                     "dir": store_dir,
                     "sent": [],
@@ -564,10 +566,12 @@ class ForgeBody:
                     "snaps": 0,
                     "steady_shutter": 1,
                 }
-                print(
-                    f"{self.name}: camera{cam.camera_id} store outlet ON "
-                    f"(every {record_rate}th capture -> {store_dir})"
+                door = (
+                    f"every {record_rate}th capture"
+                    if record_mode == "cadence"
+                    else "pulse deliveries only"
                 )
+                print(f"{self.name}: camera{cam.camera_id} store outlet ON ({door} -> {store_dir})")
             eyes.append(
                 (int(cam.camera_id), cam_module, horizon, att_msg, recorder, image_recorder, store)
             )
@@ -819,7 +823,7 @@ class ForgeBody:
 
     @property
     def store_active(self) -> bool:
-        """True when any eye on this body has a store outlet (record_rate > 0)."""
+        """True when any eye on this body has a store outlet (cadence or snap door)."""
         return any(eye[6] is not None for eye in self._eyes)
 
     def _send_capture(
@@ -870,10 +874,17 @@ class ForgeBody:
         capture is not recorded). Eyes pump in their own provider's pass, so
         one capture's parts leave contiguously on the socket - the store's
         reassembler names files by (camera, capture) and never interleaves.
+
+        A pulse-only outlet ("mode": "snap") has NO cadence door: steady
+        captures never ship here by declaration, and the pulse pump owns
+        every send. The check sits before the modulo on purpose - snap mode
+        carries rate 0, and modulo would ask what divides by it.
         """
         camera_id, _, _, _, _, _, store = eye
         if store is None or self._store_emit is None:
             return 0
+        if store["mode"] == "snap":
+            return int(store["count"])
         rate = store["rate"]
         for ordinal, t in enumerate(capture_times, start=1):
             if ordinal % rate != 0:

@@ -165,6 +165,7 @@ def test_the_store_outlet_streams_every_nth_capture_and_only_once(tmp_path: Path
     store_dir = tmp_path / "store"
     store_dir.mkdir()
     eye[6] = {
+        "mode": "cadence",
         "rate": 2,
         "dir": store_dir,
         "sent": [],
@@ -509,7 +510,7 @@ def test_every_recording_vehicle_declares_its_recorder() -> None:
         recording = {
             str(cam["parent"])
             for cam in doc.get("camera", [])
-            if int(cam.get("record_rate", 0)) > 0
+            if int(cam.get("record_rate", 0)) > 0 or cam.get("record_mode") == "snap"
         }
         if not recording:
             continue
