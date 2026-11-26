@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # Acknowledged-transfer acceptance: the receipt, the refusal to forget
-# without one, and the recycling one receipt unlocks.
+# without one, and the recycling a receipt triggers on the spot.
 #
-# The recorder recycles only what an ACKNOWLEDGED transfer proved the
-# ground holds: CF was handed a class 2 transaction, and CF's own
-# end-of-transaction report for that exact path closed clean. This bench
-# flies all three edges of that law against a six-file recorder:
+# The recorder obeys the queue law: a frame's life ends at delivery. The
+# proof of delivery is the vehicle's own witness - CF was handed a class 2
+# transaction, and CF's end-of-transaction report for that exact path
+# closed clean - and when that witness speaks, the frame is recycled
+# immediately, pressure or not. This bench flies all three edges of that
+# law against a six-file recorder:
 #
 #   receipt   frame A crosses under class 2, CF's EOT says TX/NO_ERROR -
-#             and the craft's ledger must notice: TransfersAcked moves,
-#             and the next capture at a full recorder RECYCLES A, the
-#             oldest proven frame, to make room.
+#             and the ledger reacts on the spot: FilesEvicted moves within
+#             ~2.5 s of the EOT (the next capture is ~4 s away, so the
+#             clock itself says it was the receipt, not a capture), the
+#             count stands one file below the cap with nobody asking, and
+#             the recycled line names A, the oldest proven frame.
 #
 #   dead pass frame B is requested while the engine's link is cut. The
 #             transaction cannot complete - ground never answers - so B
@@ -19,17 +23,17 @@
 #             names B, now or at the end of the flight.
 #
 #   recovery  the link re-forms with no craft restart, frame C crosses,
-#             acked moves again, C earns recycling too.
+#             acked and evicted move again, same signature, same moment.
 #
 #   inventory the manifest lists exactly the files standing under /cf/img
-#             at request time - not A, not C (recycled), B still there -
-#             and the camera app rewrote it on its own more times than
-#             the ground asked for it, because the store kept moving.
+#             at request time - B still there, A and C not - and the
+#             camera app rewrote it on its own more times than the ground
+#             asked for it, because the store kept moving.
 #
 # The six-file recorder (bytes slack: the FILE bound is what binds, so the
 # bench is frame-size independent) fills unprompted a few seconds into the
-# flight; every later capture is refused until a receipt says it may
-# forget. Usage: scripts/check_cam_ack.sh   (SIM_DURATION= default 240)
+# flight; every capture after that is refused until a receipt frees a
+# place. Usage: scripts/check_cam_ack.sh   (SIM_DURATION= default 240)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -141,12 +145,45 @@ def main() -> int:
             # the acknowledged one; the receipt is what this bench is for.
             payload = struct.pack("<IB3x", 23, 1) + src.ljust(64, b"\0") + dst.ljust(64, b"\0")
             client.send_packet(build_cmd(0x18D6, 0, payload))
+            evicted_before = None  # cumulative counters, tracked relative
             deadline = time.time() + EOT_WAIT_S
-            packet = wait_mid(client, EOT_MID, dst, deadline)
+            packet = None
+            # Same wait as the archive era, but sniffing CamStorage on the
+            # way: the evictions standing BEFORE this receipt are the
+            # baseline the queue's reaction is measured against.
+            while time.time() < deadline:
+                p = client.recv_packet(deadline)
+                if p and len(p) >= 16 + struct.calcsize(STORE_FMT) and mid_of(p) == STORE_MID:
+                    f = struct.unpack(STORE_FMT, p[16 : 16 + struct.calcsize(STORE_FMT)])
+                    if evicted_before is None:
+                        evicted_before = f[9]
+                elif p and len(p) > 16 and mid_of(p) == EOT_MID and dst in p:
+                    packet = p
+                    break
             if not packet:
                 print(json.dumps({"error": f"no EOT for {dst.decode()}"}))
                 return 1
             words = struct.unpack("<9I", packet[16:52])
+            # The queue-law witness: stay on THIS connection after the EOT.
+            # A receipt must move FilesEvicted within milliseconds (bsk_link
+            # recycles in the EOT handler); the old archive law would not
+            # evict until the next capture, ~4 s away on this bench. The
+            # gap plus the files_now dip are what only the queue produces.
+            t_eot = time.monotonic()
+            evicted_after = evicted_before
+            min_files = None
+            t_evict = None
+            while time.monotonic() - t_eot < 3.0:
+                p = client.recv_packet(time.monotonic() + 0.5)
+                if p and len(p) >= 16 + struct.calcsize(STORE_FMT) and mid_of(p) == STORE_MID:
+                    f = struct.unpack(STORE_FMT, p[16 : 16 + struct.calcsize(STORE_FMT)])
+                    files_now, evicted = f[6], f[9]
+                    if min_files is None or files_now < min_files:
+                        min_files = files_now
+                    if evicted_after is None or evicted > evicted_after:
+                        evicted_after = evicted
+                        if t_evict is None:
+                            t_evict = time.monotonic() - t_eot
             print(
                 json.dumps(
                     {
@@ -155,6 +192,10 @@ def main() -> int:
                         "state": words[3],
                         "txn_stat": words[4],
                         "fsize": words[7],
+                        "evicted_before": evicted_before,
+                        "evicted_after": evicted_after,
+                        "evict_gap_s": round(t_evict, 2) if t_evict is not None else None,
+                        "min_files_after": min_files,
                     }
                 )
             )
@@ -191,6 +232,29 @@ dl() { PYTHONPATH="$REPO" uv run python "$WORK/dl.py" "$@"; }
 request() { dl request "$BEACON" "$UPLINK" "$1" "$2"; }
 storage() { dl storage "$BEACON" "$UPLINK" "${1:-12}"; }
 field() { grep -o "\"$1\": [0-9-]*" <<<"$2" | head -1 | grep -o '[0-9-]*$'; }
+num() { grep -o "\"$1\": [0-9.]*" <<<"$2" | head -1 | grep -o '[0-9.]*$'; }
+
+receipt_proves_queue() { # <json> <want-evicted-after> <slack-files>
+    # The queue law's signature, three ways: the eviction count moved
+    # (the receipt was spent), it moved WITHIN 2.5 s of the EOT (the next
+    # capture is ~4 s away, so NOT a capture forced it), and the ledger
+    # showed one frame standing below the cap that nobody asked to free.
+    local json="$1" want="$2" slack="$3" gap
+    [ "$(field evicted_after "$json")" = "$want" ] || {
+        echo "the receipt did not recycle on the spot (evicted_after=$(field evicted_after "$json"), want $want): $json"
+        return 1
+    }
+    gap="$(num evict_gap_s "$json")"
+    [ -n "$gap" ] || { echo "no eviction frame seen after the EOT at all: $json"; return 1; }
+    awk -v g="$gap" 'BEGIN{exit !(g < 2.5)}' || {
+        echo "the eviction came $g s after the receipt - that is a capture, not a queue: $json"
+        return 1
+    }
+    [ "$(field min_files_after "$json")" = "$slack" ] || {
+        echo "the ledger never showed ${slack} files (the moment of slack the queue creates): $json"
+        return 1
+    }
+}
 
 dl_expect() { # <src> <dst> -> EOT verdict on stdout, gated on txn_stat
     local json
@@ -310,14 +374,16 @@ PICK_C="$(sed -n '4p' "$WORK/manifest0.csv" | cut -d, -f1)"
 }
 echo "A=$PICK_A  B=$PICK_B  C=$PICK_C"
 
-echo "=== LEG receipt: A crosses under class 2; the ledger must notice ==="
-dl_expect "$PICK_A" "${PREFIX}A.png" >/dev/null
+echo "=== LEG receipt: A crosses under class 2; the receipt IS the recycle ==="
+A_JSON="$(dl_expect "$PICK_A" "${PREFIX}A.png")"
+echo "receipt reaction: $A_JSON"
+receipt_proves_queue "$A_JSON" 1 $((CAP_FILES - 1)) || exit 1
 ACKED_A="$(storage 12)"
 [ "$(field transfers_acked "$ACKED_A")" -ge 1 ] || {
     echo "A arrived byte-exact but TransfersAcked stayed $(field transfers_acked "$ACKED_A")"; exit 1;
 }
 craft_wait "recycled" 30 1 || {
-    echo "a receipt existed, the recorder was full, and nothing was recycled"; exit 1;
+    echo "the wire said recycled and the event bus never spoke it"; exit 1;
 }
 
 echo "=== LEG dead pass: B is asked of a link that is not there ==="
@@ -357,7 +423,9 @@ else:
     raise SystemExit("CFDP_INT never re-connected")
 PY
 craft_wait "engine connected" 60 $((TOTAL_BEFORE + 1))
-dl_expect "$PICK_C" "${PREFIX}C.png" >/dev/null
+C_JSON="$(dl_expect "$PICK_C" "${PREFIX}C.png")"
+echo "recovery reaction: $C_JSON"
+receipt_proves_queue "$C_JSON" 2 $((CAP_FILES - 1)) || exit 1
 craft_wait "recycled" 30 2 || {
     echo "C was received and proven, yet the recorder never spent that receipt"; exit 1;
 }

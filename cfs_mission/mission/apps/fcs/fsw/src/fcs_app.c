@@ -357,7 +357,9 @@ static void FCS_HandleCfdpDown(const CFE_SB_Buffer_t *BufPtr)
     CFE_MSG_Init(CFE_MSG_PTR(Tx.CommandHeader), CFE_SB_ValueToMsgId(CF_CMD_MID), sizeof(Tx));
     CFE_MSG_SetFcnCode(CFE_MSG_PTR(Tx.CommandHeader), CF_TX_FILE_CC);
     Tx.Payload.CfdpClass = Cmd->Payload.CfdpClass;
-    Tx.Payload.Keep      = 1; /* the craft keeps its own files: always */
+    Tx.Payload.Keep      = 1; /* the transport never deletes: the recorder owns
+                               * every byte that leaves the store, and under
+                               * the queue law it owns the moment too */
     Tx.Payload.ChanNum   = 0;
     Tx.Payload.Priority  = 0;
     Tx.Payload.DestId    = Cmd->Payload.DestEntityId;

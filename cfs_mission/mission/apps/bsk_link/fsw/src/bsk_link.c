@@ -1039,25 +1039,29 @@ static bool BSK_Link_DecodeFitFrame(const void *Payload, size_t Size)
  * behaviour, and the telemetry says so as state 3 rather than pretending.
  *
  * Occupancy lives in a RAM ledger of the files standing under /cf/img now,
- * seeded at boot by a directory walk. The ledger is deliberately NOT the
- * boot's history (FilesStored/BytesStored above keep that): a file that
- * leaves the store must not rewrite what happened. After a restart the
- * files are real but their transfer standing is not - receipts were held by
- * a task that no longer exists - so every seeded file starts UNPROVEN and
- * nothing on the vehicle may touch it. That is the conservative direction:
- * a store that cannot recycle refuses new captures before it guesses.
+ * restored at boot from the store's own catalog - /cf/img/.catalog, a file
+ * the recorder rewrites whenever the store changes: path, size, creation,
+ * and whether an acknowledged transfer PROVED the ground holds that path.
+ * The catalog is the ledger's memory across restarts; the ledger is its
+ * working set. Boot nets are one-directional and conservative: a standing
+ * file the catalog never heard of joins UNPROVEN (it may be occupancy, it
+ * may never be deleted on the strength of a receipt it never earned), and
+ * a catalog line whose file is gone is dropped with an event. The catalog
+ * can be wrong, but never dangerous.
  *
- * The law has two edges and one witness that opens the second one:
- * a capture is admitted when the recorder has headroom; otherwise the
- * oldest file whose RECEIPT the ground has proven is recycled, or the
- * capture is refused and the event bus says so. Receipt is proven only when
- * CF was handed an acknowledged (class 2) transfer - witnessed on CF's own
- * command MID, not on a relayer's intention - and CF's end-of-transaction
- * report for that exact path closes clean, TX and NO_ERROR. A class 1
- * completion says "we sent it"; ground never answered; it proves nothing
- * and evicts nothing. Until an acknowledged transfer closes on this bus,
- * nothing here is recyclable: a full recorder refuses, and only after a
- * receipt does it start making room with the oldest proven frame.
+ * The law has three lanes and one witness that opens the second:
+ * a capture is admitted when the recorder has headroom; a PROVEN frame is
+ * recycled the moment its receipt lands - the queue law, a frame's life
+ * ends at delivery, with or without pressure; and a recorder that is full
+ * with nothing proven refuses new captures and says so on the event bus.
+ * (Admission still recycles on the spot when it can: a receipt whose
+ * delete failed - disk busy, file stuck - waits for the next admission
+ * to finish the job.) Receipt is proven only when CF was handed an
+ * acknowledged (class 2) transfer - witnessed on CF's own command MID,
+ * not on a relayer's intention - and CF's end-of-transaction report for
+ * that exact path closes clean, TX and NO_ERROR. A class 1 completion
+ * says "we sent it"; ground never answered; it proves nothing and
+ * recycles nothing.
  * -------------------------------------------------------------------------- */
 static void BSK_Link_EmitCamStorage(void); /* defined with the outlet below     */
 
@@ -1071,6 +1075,8 @@ typedef struct
     uint64 Size;
     int64  When;   /* mtime seconds: the file's own creation stamp */
     uint8  Proven; /* 1: an acknowledged transfer for this path was witnessed */
+    uint8  Seen;   /* boot scratch: the standing file behind a catalog line is
+                    * really there; a line the walk does not see is dropped */
 } BskStoreEntry_t;
 
 static BskStoreEntry_t BskStoreLedger[BSK_LINK_STORE_LEDGER_MAX];
@@ -1078,6 +1084,221 @@ static uint32          BskStoreLedgerCount;
 static uint8           BskStoreUntrackedWarned;
 static char            BskStorePending[BSK_LINK_STORE_PENDING_MAX][BSK_LINK_STORE_PATH_MAX];
 static uint32          BskStorePendingCount;
+
+/* The store's memory across restarts: one CSV line per standing file -
+ * path, size, creation, proven - rewritten whole on every mutation of the
+ * store. The rewrite lands as .catalog.part and is OS_mv'd into place, so
+ * a restart mid-write leaves the previous catalog intact rather than a
+ * half-line that could point at nothing. A dot name keeps the catalog
+ * invisible to both the boot walk and the ground's inventory: the index
+ * is never its own file. Nothing here is trusted on read - boot matches
+ * every line against the real file and resolves disagreement in the
+ * conservative direction (a line may prove at most what it itself says
+ * it proved, and only for a file that is really standing). */
+static void BSK_Link_CatalogWrite(void)
+{
+    char      Line[BSK_LINK_STORE_PATH_MAX + 64];
+    osal_id_t Fd;
+    bool      Ok;
+
+    if (OS_OpenCreate(&Fd, BSK_LINK_STORE_CATALOG_PART, OS_FILE_FLAG_CREATE | OS_FILE_FLAG_TRUNCATE,
+                      OS_WRITE_ONLY) != OS_SUCCESS)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "catalog unwriteable: receipts will not survive a restart");
+        return;
+    }
+    Ok = true;
+    if (OS_write(Fd, "path,size_bytes,created_utc,proven\n", strlen("path,size_bytes,created_utc,proven\n")) < 0)
+    {
+        Ok = false;
+    }
+    for (uint32 At = 0; At < BskStoreLedgerCount && Ok; ++At)
+    {
+        snprintf(Line, sizeof(Line), "%s,%llu,%lld,%u\n", BskStoreLedger[At].Path,
+                 (unsigned long long)BskStoreLedger[At].Size, (long long)BskStoreLedger[At].When,
+                 (unsigned int)BskStoreLedger[At].Proven);
+        if (OS_write(Fd, Line, strlen(Line)) != (int32)strlen(Line))
+        {
+            Ok = false;
+        }
+    }
+    OS_close(Fd);
+    if (!Ok || OS_mv(BSK_LINK_STORE_CATALOG_PART, BSK_LINK_STORE_CATALOG) != OS_SUCCESS)
+    {
+        OS_remove(BSK_LINK_STORE_CATALOG_PART); /* the old catalog, if any, stays valid */
+        CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "catalog write failed: receipts stand for this boot only");
+    }
+}
+
+static uint64 BskCatalogNumber(const char **At, int64 *Signed) /* digits, optional sign */
+{
+    uint64 Acc = 0;
+    bool   Neg = false;
+
+    if (**At == '-')
+    {
+        Neg = true;
+        (*At)++;
+    }
+    if (**At < '0' || **At > '9')
+    {
+        return 0xFFFFFFFFFFFFFFFFull; /* marker: not a number */
+    }
+    while (**At >= '0' && **At <= '9')
+    {
+        Acc = Acc * 10ull + (uint64)(**At - '0');
+        (*At)++;
+    }
+    if (Signed != NULL)
+    {
+        *Signed = Neg ? -(int64)Acc : (int64)Acc;
+    }
+    return Acc;
+}
+
+static bool BskCatalogParseLine(char *Line, char *Path, uint64 *Size, int64 *When, uint32 *Proven)
+{
+    const char *At;
+    char       *Comma = strchr(Line, ',');
+    uint64      Value;
+
+    if (Comma == NULL || Comma == Line || strlen(Line) >= BSK_LINK_STORE_PATH_MAX)
+    {
+        return false; /* header and garbage take the same path: no claim */
+    }
+    *Comma = '\0';
+    snprintf(Path, BSK_LINK_STORE_PATH_MAX, "%s", Line);
+    At = Comma + 1;
+    Value = BskCatalogNumber(&At, NULL);
+    if (Value == 0xFFFFFFFFFFFFFFFFull || *At != ',')
+    {
+        return false;
+    }
+    *Size = Value;
+    At++;
+    Value = BskCatalogNumber(&At, When);
+    if (Value == 0xFFFFFFFFFFFFFFFFull || *At != ',')
+    {
+        return false;
+    }
+    At++;
+    Value = BskCatalogNumber(&At, NULL);
+    if (Value == 0xFFFFFFFFFFFFFFFFull || Value > 1u || *At != '\0')
+    {
+        return false;
+    }
+    *Proven = (uint32)Value;
+    return true;
+}
+
+/* Boot, first half: read what the last boot left standing, receipts and
+ * all. Entries arrive Seen=0 and only a real file on disk lets a line keep
+ * its place in the ledger (the walk below marks Seen). */
+static void BSK_Link_CatalogLoad(void)
+{
+    char      Line[BSK_LINK_STORE_PATH_MAX + 64];
+    char      Chunk[256];
+    osal_id_t Fd;
+    int32     Got;
+    uint32    Len = 0;
+    uint32    Garbage = 0;
+    uint32    Skipped = 0;
+    bool      Poison = false;
+
+    os_fstat_t Probe;
+
+    if (OS_stat(BSK_LINK_STORE_CATALOG, &Probe) != OS_SUCCESS)
+    {
+        return; /* first boot of this store: nothing to remember */
+    }
+    if (OS_OpenCreate(&Fd, BSK_LINK_STORE_CATALOG, OS_FILE_FLAG_NONE, OS_READ_ONLY) != OS_SUCCESS)
+    {
+        return; /* it stood a heartbeat ago and cannot be opened: still no claims */
+    }
+    while ((Got = OS_read(Fd, Chunk, sizeof(Chunk))) > 0)
+    {
+        for (int32 At = 0; At < Got; ++At)
+        {
+            if (Chunk[At] == '\n')
+            {
+                char   Path[BSK_LINK_STORE_PATH_MAX];
+                uint64 Size;
+                int64  When;
+                uint32 Proven;
+
+                Line[Len] = '\0';
+                Len = 0;
+                if (Poison)
+                {
+                    /* line too long to be a path: it makes no claim */
+                }
+                else if (BskStoreLedgerCount >= BSK_LINK_STORE_LEDGER_MAX)
+                {
+                    Skipped++;
+                }
+                else if (BskCatalogParseLine(Line, Path, &Size, &When, &Proven))
+                {
+                    snprintf(BskStoreLedger[BskStoreLedgerCount].Path,
+                             sizeof(BskStoreLedger[BskStoreLedgerCount].Path), "%s", Path);
+                    BskStoreLedger[BskStoreLedgerCount].Size   = 0; /* stat decides */
+                    BskStoreLedger[BskStoreLedgerCount].When   = 0;
+                    BskStoreLedger[BskStoreLedgerCount].Proven = (uint8)Proven;
+                    BskStoreLedger[BskStoreLedgerCount].Seen   = 0;
+                    BskStoreLedgerCount++;
+                }
+                else
+                {
+                    Garbage++; /* header, or a line that does not parse */
+                }
+                Poison = false;
+                continue;
+            }
+            if (Len + 1u < sizeof(Line))
+            {
+                Line[Len++] = Chunk[At];
+            }
+            else
+            {
+                Poison = true; /* a line longer than the ledger's path: not a claim */
+            }
+        }
+    }
+    if (Len > 0) /* trailing line without its newline: still a line */
+    {
+        Line[Len] = '\0';
+        if (!Poison && BskStoreLedgerCount < BSK_LINK_STORE_LEDGER_MAX)
+        {
+            char   Path[BSK_LINK_STORE_PATH_MAX];
+            uint64 Size;
+            int64  When;
+            uint32 Proven;
+
+            if (BskCatalogParseLine(Line, Path, &Size, &When, &Proven))
+            {
+                snprintf(BskStoreLedger[BskStoreLedgerCount].Path,
+                         sizeof(BskStoreLedger[BskStoreLedgerCount].Path), "%s", Path);
+                BskStoreLedger[BskStoreLedgerCount].Size   = 0;
+                BskStoreLedger[BskStoreLedgerCount].When   = 0;
+                BskStoreLedger[BskStoreLedgerCount].Proven = (uint8)Proven;
+                BskStoreLedger[BskStoreLedgerCount].Seen   = 0;
+                BskStoreLedgerCount++;
+            }
+            else
+            {
+                Garbage++;
+            }
+        }
+    }
+    OS_close(Fd);
+    if (Garbage != 0u || Skipped != 0u)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "catalog: %u lines unreadable, %u refused for reach - no claims taken from them",
+                          (unsigned int)Garbage, (unsigned int)Skipped);
+    }
+}
 
 /* The seeded ledger is in filesystem order, which is hash order, not age.
  * "Oldest" therefore asks the files themselves - their mtimes - and ties
@@ -1113,14 +1334,21 @@ static void BSK_Link_StoreLedgerDrop(uint32 At)
 
 static void BSK_Link_StoreUpdateState(void)
 {
-    uint64 PctBytes = (uint64)((BSK_LinkAppData.StoreUsedBytes * 100u) / BSK_LinkAppData.StoreCapacityBytes);
-    uint64 PctFiles = ((uint64)BSK_LinkAppData.StoreFilesNow * 100u) / BSK_LinkAppData.StoreCapacityFiles;
-    uint64 Pct      = PctBytes > PctFiles ? PctBytes : PctFiles;
-    uint8  State    = BSK_LINK_STORE_NOMINAL;
+    uint64 Pct;
+    uint8  State = BSK_LINK_STORE_NOMINAL;
 
     if (!BSK_LinkAppData.StoreClaimed)
     {
-        return;
+        return; /* an unclaimed recorder has no denominator: no percentages,
+                 * no transitions - and no divide by zero. This guard lives
+                 * BEFORE the arithmetic, forever: the record bench is the
+                 * witness of what the other order ends in (integer divide
+                 * by zero at boot, app dead before it dials the world). */
+    }
+    Pct = (BSK_LinkAppData.StoreUsedBytes * 100u) / BSK_LinkAppData.StoreCapacityBytes;
+    if (((uint64)BSK_LinkAppData.StoreFilesNow * 100u) / BSK_LinkAppData.StoreCapacityFiles > Pct)
+    {
+        Pct = ((uint64)BSK_LinkAppData.StoreFilesNow * 100u) / BSK_LinkAppData.StoreCapacityFiles;
     }
     if (Pct >= 100u)
     {
@@ -1154,10 +1382,14 @@ static void BSK_Link_StoreUpdateState(void)
     }
 }
 
-/* One file, the oldest the ground has proven, recycled to make room. The
- * byte-side can still refuse (a vanished or busy file): then this entry stops
- * offering itself - occupancy stands, the file stays - and the loop that
- * called simply finds no further room. */
+/* One file, the oldest the ground has proven, recycled. Under the queue
+ * law this runs the moment a receipt lands; the admission loop keeps
+ * calling it for whatever else stands proven (a receipt carried across a
+ * restart, or a second proven frame whose turn was not yet first). A
+ * failed delete SPENDS the receipt - the entry stops offering itself, and
+ * the file would need a fresh acknowledged transfer to become recyclable
+ * again: a byte the disk refused to give up is not a byte to keep poking.
+ * The byte-side can still refuse: occupancy stands. */
 static void BSK_Link_StoreEvictOne(void)
 {
     int At = BSK_Link_StoreOldestProven();
@@ -1169,6 +1401,7 @@ static void BSK_Link_StoreEvictOne(void)
     if (OS_remove(BskStoreLedger[At].Path) != OS_SUCCESS)
     {
         BskStoreLedger[At].Proven = 0;
+        BSK_Link_CatalogWrite(); /* the catalog must not remember a claim it lost */
         CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
                           "recycle failed on %s: bytes stay, occupancy stands", BskStoreLedger[At].Path);
         return;
@@ -1183,6 +1416,7 @@ static void BSK_Link_StoreEvictOne(void)
                       (unsigned)BSK_LinkAppData.StoreFilesNow,
                       (unsigned long long)BSK_LinkAppData.StoreUsedBytes);
     BSK_Link_StoreLedgerDrop((uint32)At);
+    BSK_Link_CatalogWrite();
     BSK_Link_StoreUpdateState();
     BSK_Link_EmitCamStorage(); /* the manifest's turn to follow the store's */
 }
@@ -1224,7 +1458,10 @@ static void BSK_Link_StoreLand(const char *Path, uint64 Size)
         BskStoreLedger[BskStoreLedgerCount].Size   = Size;
         BskStoreLedger[BskStoreLedgerCount].When   = When;
         BskStoreLedger[BskStoreLedgerCount].Proven = 0;
+        BskStoreLedger[BskStoreLedgerCount].Seen   = 1;
         BskStoreLedgerCount++;
+        BSK_Link_CatalogWrite(); /* a landing the catalog forgot is a landing
+                                  * that comes back unproven after restart */
     }
     else if (!BskStoreUntrackedWarned)
     {
@@ -1239,14 +1476,21 @@ static void BSK_Link_StoreLand(const char *Path, uint64 Size)
     BSK_Link_StoreUpdateState();
 }
 
-/* Boot: what stands under /cf/img occupies the recorder. None of it is
- * recyclable - the receipts for anything downlinked lived in a task that
- * has not existed since. */
+/* Boot: the catalog speaks first (paths and receipts the last boot earned),
+ * then the directory walk decides what is real. A file the catalog knows
+ * keeps its receipt; a file it never heard of joins UNPROVEN; a line whose
+ * file is gone is dropped with an event - the catalog can be wrong but
+ * never dangerous. Proven frames carried this way wait for the next
+ * admission to be recycled: boot is not a capture. */
 static void BSK_Link_StoreSeed(void)
 {
     osal_id_t   DirId;
     os_dirent_t Entry;
     os_fstat_t  Stats;
+    uint32      Dropped = 0;
+    uint32      Carried = 0;
+
+    BSK_Link_CatalogLoad();
 
     if (OS_DirectoryOpen(&DirId, BSK_LINK_STORE_DIR) != OS_SUCCESS)
     {
@@ -1258,10 +1502,11 @@ static void BSK_Link_StoreSeed(void)
     {
         char        Path[BSK_LINK_STORE_PATH_MAX];
         const char *Name = OS_DIRENTRY_NAME(Entry);
+        uint32      At;
 
         if (Name[0] == '\0' || Name[0] == '.')
         {
-            continue; /* store internals: .part corpses are not inventory */
+            continue; /* store internals: .part corpses and the catalog itself */
         }
         snprintf(Path, sizeof(Path), "%s/%s", BSK_LINK_STORE_DIR, Name);
         if (OS_stat(Path, &Stats) != OS_SUCCESS)
@@ -1270,16 +1515,27 @@ static void BSK_Link_StoreSeed(void)
         }
         BSK_LinkAppData.StoreFilesNow++;
         BSK_LinkAppData.StoreUsedBytes += (uint64)OS_FILESTAT_SIZE(Stats);
-        if (BskStoreLedgerCount < BSK_LINK_STORE_LEDGER_MAX)
+        for (At = 0; At < BskStoreLedgerCount; ++At)
+        {
+            if (strcmp(BskStoreLedger[At].Path, Path) == 0)
+            {
+                BskStoreLedger[At].Size = (uint64)OS_FILESTAT_SIZE(Stats);
+                BskStoreLedger[At].When = (int64)OS_FILESTAT_TIME(Stats);
+                BskStoreLedger[At].Seen = 1; /* the receipt's file is really here */
+                break;
+            }
+        }
+        if (At == BskStoreLedgerCount && BskStoreLedgerCount < BSK_LINK_STORE_LEDGER_MAX)
         {
             snprintf(BskStoreLedger[BskStoreLedgerCount].Path, sizeof(BskStoreLedger[BskStoreLedgerCount].Path),
                      "%s", Path);
             BskStoreLedger[BskStoreLedgerCount].Size = (uint64)OS_FILESTAT_SIZE(Stats);
             BskStoreLedger[BskStoreLedgerCount].When = (int64)OS_FILESTAT_TIME(Stats);
-            BskStoreLedger[BskStoreLedgerCount].Proven = 0;
+            BskStoreLedger[BskStoreLedgerCount].Proven = 0; /* no line, no claim */
+            BskStoreLedger[BskStoreLedgerCount].Seen = 1;
             BskStoreLedgerCount++;
         }
-        else if (!BskStoreUntrackedWarned)
+        else if (At == BskStoreLedgerCount && !BskStoreUntrackedWarned)
         {
             BskStoreUntrackedWarned = 1;
             CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
@@ -1288,9 +1544,31 @@ static void BSK_Link_StoreSeed(void)
         }
     }
     OS_DirectoryClose(DirId);
+
+    for (uint32 At = BskStoreLedgerCount; At > 0; --At)
+    {
+        if (!BskStoreLedger[At - 1u].Seen)
+        {
+            BSK_Link_StoreLedgerDrop(At - 1u);
+            Dropped++;
+        }
+    }
+    for (uint32 At = 0; At < BskStoreLedgerCount; ++At)
+    {
+        if (BskStoreLedger[At].Proven)
+        {
+            Carried++;
+        }
+    }
+    if (Dropped != 0u)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "catalog held %u paths no longer standing: dropped", (unsigned int)Dropped);
+    }
     CFE_EVS_SendEvent(BSK_LINK_STORE_INF_EID, CFE_EVS_EventType_INFORMATION,
-                      "recorder seeded: files=%u bytes=%llu, none proven after restart",
-                      (unsigned)BSK_LinkAppData.StoreFilesNow, (unsigned long long)BSK_LinkAppData.StoreUsedBytes);
+                      "recorder restored: files=%u bytes=%llu proven=%u carried",
+                      (unsigned)BSK_LinkAppData.StoreFilesNow, (unsigned long long)BSK_LinkAppData.StoreUsedBytes,
+                      (unsigned int)Carried);
     BSK_Link_StoreUpdateState();
 }
 
@@ -1417,9 +1695,14 @@ static void BSK_Link_WitnessEot(const CFE_SB_Buffer_t *BufPtr, size_t Size)
             {
                 BskStoreLedger[At].Proven = 1;
                 BSK_LinkAppData.TransfersAcked++;
-                /* The receipt lands on the same bus the ground reads: a
-                 * recorder that just learned it may forget something should
-                 * not be the last to know it. */
+                BSK_Link_CatalogWrite(); /* the receipt lives next to the file:
+                                          * a restart may not un-know this */
+                /* The queue law: a frame's life ends at delivery. Recycle
+                 * now - oldest proven first, which this frame joins - with
+                 * or without pressure. Whatever does not get deleted this
+                 * instant (a failed delete spends the receipt, said on the
+                 * event bus) is still news the ground must see. */
+                BSK_Link_StoreEvictOne();
                 BSK_Link_EmitCamStorage();
             }
             return;

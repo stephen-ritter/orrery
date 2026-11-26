@@ -275,27 +275,25 @@ before flown: the ledger is a map, not a wish."""
 name = "store"
 status = "used"
 why = """The recorder a store outlet writes into, sized before flight:
-`capacity_bytes` bounds the volume and `capacity_files` bounds the catalog's
-reach, because frame size follows the scene (1.6 KB of empty sky, 230 KB with
-a sister vehicle on the disc) and a byte-only law cannot say when its own
-index outgrows an honest listing. The flying scenario's rows are compiled
-into the plane (codegen/emit_store), and bsk_link obeys them: an occupancy
-ledger (seeded at boot by a walk, everything found unproven), an 80%
-watermark event, refusal of new captures at the bound, and housekeeping that
-carries capacity, headroom, state, and the recorded/stored/transferred/
-evicted/lost counters across the EDS to the ground. The inventory follows the
-store: the camera app rewrites the manifest on every store generation the bus
-reports.
-The witness that legalizes recycling flies too: bsk_link watches CF's own
-command bus for acknowledged (class 2) transfers and marks a file proven only
-when CF's end-of-transaction report closes that exact path clean - a class 1
-completion says "we sent it" and proves nothing. Flown end to end: a proven
-frame becomes the first one recycled when a full recorder needs room, while
-a pass interrupted mid-flight dies as CF's own ack-limit and leaves its file
-unproven, unrecycled, and still on the disk.
-What does not exist yet: receipts do not survive a restart - the index is
-RAM-only, so a boot walk seeds names and sizes with everything unproven,
-which is the conservative direction by law."""
+`capacity_bytes` bounds the volume and `capacity_files` bounds the index's
+reach, because frame size follows the scene and a byte-only law cannot say
+when its own listing outgrows an honest count. The flying scenario's rows
+are compiled into the plane (codegen/emit_store), and bsk_link obeys them
+under the queue law: a capture is admitted when the recorder has headroom;
+a frame whose receipt landed is recycled the moment the receipt lands,
+pressure or not; a full recorder with nothing proven refuses new captures
+and says so on the event bus. The receipt is the vehicle's own witness,
+never the ground's word: CF was handed an acknowledged (class 2) transfer,
+and CF's end-of-transaction report closed that exact path clean. The store
+remembers itself: /cf/img/.catalog carries path, size, creation, and the
+proven bit, rewritten atomically on every mutation and read back at boot
+with one-directional nets - a standing file no line vouches for joins
+UNPROVEN, a line whose file is gone is dropped with an event. The
+inventory follows the store: the camera app rewrites the manifest on every
+store generation the bus reports.
+What remains: the working index is still door-lawed to the manifest's sort
+budget (512 entries), and a receipt carried across a restart is spent by
+the next capture - boot records deliveries, it does not perform them."""
 
 [[area]]
 name = "custom"

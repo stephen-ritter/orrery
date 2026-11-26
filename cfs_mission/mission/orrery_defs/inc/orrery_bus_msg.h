@@ -347,7 +347,8 @@ typedef struct
     uint32  FilesNow;        /* files occupying the store right now       */
     uint64  UsedBytes;       /* bytes occupying the store right now       */
     uint64  Generation;      /* store mutations: landed or recycled       */
-    uint64  FilesEvicted;    /* proven-received files recycled for room   */
+    uint64  FilesEvicted;    /* proven-received files recycled - at receipt
+                              * under the queue law, at admission as fallback */
     uint64  CapturesLost;    /* captures refused at a full recorder       */
     uint64  TransfersAcked;  /* files an acknowledged transfer proved     */
     uint8   State;           /* BSK_LINK_STORE_{NOMINAL,NEAR,FULL,UNCL}   */

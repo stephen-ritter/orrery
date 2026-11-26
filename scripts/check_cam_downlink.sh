@@ -300,11 +300,17 @@ PICK="$(sed -n '2p' "$WORK/manifest.txt" | cut -d, -f1)"  # full path, earliest-
 
 echo "=== request $PICK by manifest path ==="
 FRAME_LAND="${PREFIX}frame.png"
+# Queue law: this delivery will delete the craft's copy seconds after its
+# EOT. Every witness of the SOURCE is therefore taken before the request,
+# and the byte law is a chain: store sha (pre-request) == landed bytes ==
+# ground sha == CF's own checksum recomputed over what crossed.
+PICK_SHA="$(sha256sum "$HOST_IMG/$(basename "$PICK")" | awk '{print $1}')"
 dl_expect "$PICK" "$FRAME_LAND" >"$WORK/eot_frame.json"
 FRAME_SHA="$(bucket_sha "$FRAME_LAND")"
+bucket_cat "$FRAME_LAND" >"$WORK/frame.landed"
 
 uv run python - "$WORK/eot_frame.json" "$WORK/manifest.txt" \
-    "$HOST_IMG/$(basename "$PICK")" "$FRAME_SHA" <<'PY'
+    "$(basename "$PICK")" "$FRAME_SHA" "$PICK_SHA" "$WORK/frame.landed" <<'PY'
 import csv
 import hashlib
 import json
@@ -318,8 +324,10 @@ reader = csv.DictReader(Path(sys.argv[2]).read_text().splitlines())
 assert reader.fieldnames == ["path", "size_bytes", "created_utc"], (
     f"manifest header is {reader.fieldnames}; the CSV contract says path,size_bytes,created_utc")
 rows = list(reader)
-store = Path(sys.argv[3])
+store_name = sys.argv[3]
 landed_sha = sys.argv[4]
+store_sha = sys.argv[5]
+raw = Path(sys.argv[6]).read_bytes()
 
 # The column laws, witnessed on every flight: the path is the FULL path (a
 # reader must not rebuild the store layout from a bare name), every line
@@ -335,10 +343,9 @@ assert all(re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", c) for c in cre
     f"created_utc is not ISO-8601 Z: {created[:3]}")
 assert all(int(r["size_bytes"]) > 0 for r in rows), "an inventory line lists a zero-byte file"
 
-row = next(r for r in rows if Path(r["path"]).name == store.name)
+row = next(r for r in rows if Path(r["path"]).name == store_name)
 size_listed = int(row["size_bytes"])
-raw = store.read_bytes()
-assert len(raw) == size_listed, f"manifest size {size_listed} disagrees with the file ({len(raw)})"
+assert len(raw) == size_listed, f"manifest size {size_listed} disagrees with what crossed ({len(raw)})"
 assert len(raw) == eot["fsize"], "EOT fsize disagrees with what crossed"
 
 
@@ -352,8 +359,9 @@ def cfdp_checksum(data: bytes) -> int:  # CF's transmit-time witness, recomputed
 
 
 assert eot["crc"] == cfdp_checksum(raw), "CF's own checksum disagrees with the landed bytes"
-assert hashlib.sha256(raw).hexdigest() == landed_sha, "landed file is not byte-identical to the store"
-print(f"byte law OK: {store.name} {len(raw)} B, sha256 {landed_sha[:16]}... across the airgap identical")
+assert hashlib.sha256(raw).hexdigest() == landed_sha, "landed bytes differ from the ground's own hash"
+assert landed_sha == store_sha, "landed file is not byte-identical to the store as it stood before the ask"
+print(f"byte law OK: {store_name} {len(raw)} B, sha256 {landed_sha[:16]}... store -> airgap -> ground identical")
 PY
 
 echo "=== CAM_HK: the four-number promise now includes a transfer ==="
@@ -368,7 +376,10 @@ import sys
 hk = json.loads(sys.argv[1])
 files = int(sys.argv[2])
 assert hk["recorded"] > 0 and hk["stored"] > 0, "no recording promise on a recording world"
-assert hk["stored"] == files, f"stored={hk['stored']} but the store holds {files}"
+# Queue law: a frame delivered under class 2 is recycled the moment its
+# receipt lands, so what STANDS under /cf/img can be fewer than what was
+# recorded since boot. It can never be more: bytes arrive before they leave.
+assert hk["stored"] >= files >= 1, f"standing files {files} outside (1, stored={hk['stored']})"
 assert hk["transferred"] >= 1, "a file crossed and FramesTransferred stayed silent"
 print(f"promise law OK: recorded={hk['recorded']} stored={hk['stored']} transferred={hk['transferred']}")
 PY

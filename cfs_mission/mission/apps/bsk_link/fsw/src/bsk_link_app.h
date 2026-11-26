@@ -61,6 +61,11 @@
  * holds right now. The watermark is the point where a full recorder is still
  * avoidable from the ground: warn there, refuse only at the bound. */
 #define BSK_LINK_STORE_DIR        "/cf/img"
+#define BSK_LINK_STORE_CATALOG     BSK_LINK_STORE_DIR "/.catalog"
+#define BSK_LINK_STORE_CATALOG_PART BSK_LINK_STORE_DIR "/.catalog.part"
+                                 /* dot names are store internals: the boot
+                                  * walk and the ground's inventory both skip
+                                  * them, so the index is never its own file */
 #define BSK_LINK_STORE_PATH_MAX   96 /* enough for the longest frame path + headroom */
 #define BSK_LINK_STORE_WATERMARK  80 /* percent of either bound that warns ground */
 #define BSK_LINK_STORE_NOMINAL    0

@@ -366,10 +366,17 @@ def main(argv: list[str] | None = None) -> int:
                     f"files_now={last_store.files_now} exceeds the declared cap "
                     f"{last_store.capacity_files}"
                 )
-            if last_store.files_evicted != 0:
+            if last_store.files_evicted > last_store.files_stored + last_store.files_now:
                 reasons.append(
-                    "bytes were recycled with no proven transfer on this bus: the law broke"
+                    f"recycled {last_store.files_evicted}, but only {last_store.files_stored} "
+                    f"landed and {last_store.files_now} stand: a deletion out of nothing"
                 )
+            # evicted > 0 alongside acked == 0 is no longer a violation by
+            # itself: receipts can be INHERITED (a catalog carried them from
+            # a previous boot), and the wire cannot tell inherited from
+            # invented. The bench scripts grade that law where it is
+            # observable: on the named recycled lines and the boot's
+            # "proven=N carried" event.
             if last_store.transfers_acked != 0:
                 reasons.append(
                     "a class 1 completion was counted as receipt: 'sent' is not 'received'"
