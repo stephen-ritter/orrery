@@ -164,9 +164,12 @@ scenario_up() {
 
     # and the image itself is a scenario fact: the build list is cut to this
     # world before compose builds it, so a scenario that never grew the eye
-    # compiles no eye to boot (codegen/emit_applist, rung two of the ladder).
-    # `down` sweeps the fragment: a quiet yard means the all-parts union.
+    # compiles no eye to boot (codegen/emit_applist). The recorders are cut
+    # the same way (codegen/emit_store): the binary that flies carries the
+    # sizes the flying scenario declared. `down` sweeps both fragments: a
+    # quiet yard means the all-parts union and no claimed recorder.
     uv run python -m codegen.emit_applist --scenario "$SCENARIO" || return 1
+    uv run python -m codegen.emit_store --scenario "$SCENARIO" || return 1
 
     # a cold machine builds both images and the mission inside `up` (the
     # compose init services; the mission install rewrites the image's own
@@ -249,13 +252,15 @@ fleet_down() {
         "$RUNTIME" rm -f "$name" >/dev/null 2>&1 || true
     done < <("$RUNTIME" ps -a --filter "name=orrery-" --format '{{.Names}}' 2>/dev/null || true)
     rm -f "$STATE_DIR"/fleet_*.compose.json 2>/dev/null || true
-    # the quiet yard means the union: sweep the scenario's build fragment and
+    # the quiet yard means the union: sweep the scenario's build fragments and
     # reinstall the plane it cut, so the next door finds the all-parts image
     # and the stamp moves with the tree it describes (a warm install costs
-    # seconds; the sweep is rung two's shape of rung one's swept tables - a
-    # dead scenario's list must never bias the next build).
-    if [ -f "cfs_mission/mission/orrery_defs/mission_applist.cmake" ]; then
+    # seconds; a dead scenario's list or its recorder sizes must never bias
+    # the next build).
+    if [ -f "cfs_mission/mission/orrery_defs/mission_applist.cmake" ] ||
+            [ -f "cfs_mission/mission/orrery_defs/inc/orrery_store.h" ]; then
         uv run python -m codegen.emit_applist --sweep || true
+        uv run python -m codegen.emit_store --sweep || true
         bash "$REPO/scripts/mission_build.sh" install >/dev/null 2>&1 ||
             echo "[down] union reinstall FAILED - the plane still carries a scenario's cuts" >&2
     fi

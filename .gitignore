@@ -37,6 +37,9 @@ edslink/dist/
 # the scenario's build fragment (codegen/emit_applist): it lands with the
 # yard and is swept when the yard goes quiet - never a tracked fact
 cfs_mission/mission/orrery_defs/mission_applist.cmake
+# the scenario's recorder sizes (codegen/emit_store): same life as the
+# applist fragment - landed with the yard, swept when the yard is quiet
+cfs_mission/mission/orrery_defs/inc/orrery_store.h
 cfs_mission/mission/last_build.log
 *.gem
 

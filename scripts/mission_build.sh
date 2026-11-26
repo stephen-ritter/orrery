@@ -70,6 +70,15 @@ if ! "$RUNTIME" image inspect "$CFS_IMAGE" >/dev/null 2>&1; then
     CFS_IMAGE="$CFS_IMAGE" bash "$REPO/scripts/image.sh" cfs
 fi
 
+# The recorder sizes the flying scenario declared must be on disk before cmake
+# sees the app that includes them (codegen/emit_store). A scenario's own header
+# is left exactly as the yard door landed it; an absent one lands as the union
+# default - no vehicle claims a recorder - because a quiet yard means the union,
+# and a build that failed for a missing generated file teaches nothing about
+# the flight software it never reached.
+[ -f "$REPO/cfs_mission/mission/orrery_defs/inc/orrery_store.h" ] ||
+    (cd "$REPO" && uv run python -m codegen.emit_store >/dev/null)
+
 exec "$RUNTIME" run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
     --hostname orrery-build -e USER=orrery-build \
     -v "$REPO":/work "$CFS_IMAGE" \
