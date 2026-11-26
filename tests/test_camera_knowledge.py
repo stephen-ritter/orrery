@@ -29,6 +29,7 @@ REPO = Path(__file__).resolve().parents[1]
 CAMERA_SCENARIO = REPO / "sim" / "scenarios" / "camera_ops.toml"
 TWIN_SCENARIO = REPO / "sim" / "scenarios" / "twin_ops.toml"
 TWO_EYES_SCENARIO = REPO / "sim" / "scenarios" / "two_eyes.toml"
+FORMATION_EYE_SCENARIO = REPO / "sim" / "scenarios" / "formation_eye.toml"
 
 
 def build_bodies(path: Path) -> list[fz.ForgeBody]:
@@ -420,3 +421,61 @@ def test_the_rig_is_wired_before_the_player_clock_starts() -> None:
         assert segment.index("rig = LockstepRig(") < segment.index(
             "ctx.sim.InitializeSimulation()"
         ), f"{name}: the loop's first tick must be the greeting, nothing before it"
+
+
+def test_the_formation_eye_holds_its_sister_on_the_boresight() -> None:
+    """The formation plant's pointing promise, as a law, not a flight.
+
+    scripts/check_formation_eye.sh measures that the blob rides the frame
+    center and crawls per ephemeris; this test is what must be TRUE of the
+    scenario for that measurement to mean anything:
+
+    * the deputy sits straight BELOW the chief (radial, 100 m), each on the
+      circular orbit of its own radius - the only relative motion is the
+      |v_d| - |v_c| along-track lead the pixel witness fits;
+    * the chief starts nadir-pointed (the camera_record MRP recipe): the eye
+      looks at the deputy from tick zero;
+    * the eye is narrow and records: a 0.2 rad FOV puts the 100 m frame 20 m
+      wide, so the true-size model (~2 m) is pixels, not dust, and every
+      capture is evidence;
+    * the deputy ships UNNAMED: Vizard's dictionary meshes are authored for
+      the planet view and render kilometers across at this range - a named
+      sister is a wall, not a witness.
+    """
+    import math
+    import tomllib
+
+    facts = tomllib.loads(FORMATION_EYE_SCENARIO.read_text())
+    chief, deputy = facts["spacecraft"]
+    mu = 398600.4418e9
+
+    rc = math.dist(chief["orbit"]["rv"]["position"], [0.0, 0.0, 0.0])
+    rd = math.dist(deputy["orbit"]["rv"]["position"], [0.0, 0.0, 0.0])
+    assert rc - rd == pytest.approx(100.0, abs=0.5), "the formation IS a 100 m hover"
+    for craft in (chief, deputy):
+        pos = craft["orbit"]["rv"]["position"]
+        vel = craft["orbit"]["rv"]["velocity"]
+        r = math.dist(pos, [0.0, 0.0, 0.0])
+        v = math.dist(vel, [0.0, 0.0, 0.0])
+        assert v == pytest.approx(math.sqrt(mu / r), rel=2e-3), f"{craft['name']} falls"
+        assert abs(sum(p * w for p, w in zip(pos, vel, strict=True))) / (r * v) < 2e-3
+
+    sigma = chief["attitude"]["initial"]["sigma_BN"]
+    assert sigma == pytest.approx([0.0, -math.tan(math.pi / 8), 0.0], abs=1e-4)
+    assert chief["attitude"]["initial"]["omega_BN_B"] == [0.0, 0.0, 0.0]
+
+    (cam,) = facts["camera"]
+    assert cam["parent"] == "chief" and cam["camera_id"] == 1
+    assert cam["field_of_view"] <= 0.3 and cam["record_rate"] == 1
+    assert "viz" not in deputy, "a named model mesh renders km-wide at this range"
+
+    px_per_m = cam["resolution"][0] / (2 * math.tan(cam["field_of_view"] / 2) * (rc - rd))
+    # Each craft carries its own circular speed; the lower sister is the
+    # faster one, and the line of sight leads at their difference -
+    # |v_d| - |v_c| ~ (1/2)*n*dr = 0.008 m/s, which reads as ~0.2 px/s
+    # across the 20 m frame. The flight software measures the same crawl
+    # (0.23 px/s) on the frame's along-track axis on the bench.
+    vc = math.dist(chief["orbit"]["rv"]["velocity"], [0.0, 0.0, 0.0])
+    vd = math.dist(deputy["orbit"]["rv"]["velocity"], [0.0, 0.0, 0.0])
+    crawl = (vd - vc) * px_per_m
+    assert 0.12 <= crawl <= 0.35, "the pixel witness expects a ~0.2 px/s crawl"

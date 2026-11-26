@@ -20,6 +20,7 @@ differs in — copy the nearest and edit, don't write from scratch:
 | `twin_ops.toml` | two vehicles in one world, mounted differently — the heterogeneity witness |
 | `camera_ops.toml` | the eye declared: a `[[camera]]` block and the part that brings it |
 | `camera_record.toml`, `camera_downlink.toml` | the eye with its file planes: store-to-ground and downlink acceptance |
+| `formation_eye.toml` | two vehicles where one's eye carries the other: a 100 m hover, its blob fitted against orbit geometry |
 
 Every plant opens with the same three sections — `[simulation]` (duration, the
 world tick), `[world]` (one sun), `[environment]` (one magnetic field) — and

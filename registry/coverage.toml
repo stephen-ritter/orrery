@@ -104,13 +104,19 @@ status = "landed"
 bskforge = "schema+builder"
 wire = "BSK_LINK/OpNavState -> 0x08D1"
 first_hop = ""
-scenarios = ["camera_ops.toml"]
+scenarios = ["camera_ops.toml", "twin_cam.toml", "formation_eye.toml"]
 owner = ""
 why = """Vizard paints the frame, the Basilisk camera module receives it, and the
 limb/horizon estimators turn pixels into a planet vector - the OPNAV frame
 carries that KNOWLEDGE (LOS + verdict flags), never the image. The exhibit
 grades the LOS against truth rotated into body, bounded by the declared FOV;
-the renderer itself is pinned by vizard.lock and mounts as a compose profile."""
+the renderer itself is pinned by vizard.lock and mounts as a compose profile.
+When the world carries a second vehicle the same capture PAINTS it:
+scripts/check_formation_eye.sh flies a 100 m hover and fits the blob's crawl
+to the orbit law. Measured scale law - the default model renders TRUE-size
+(~2 m, legible 50-500 m, sub-pixel by ~1 km); named model_key meshes are
+authored for the planet view and render kilometers across up close, so they
+are forbidden in formation plants."""
 
 # --- effectors --------------------------------------------------------------
 # An effector's telemetry is knowledge (and rides a row); its actuation is a

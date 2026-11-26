@@ -1,0 +1,280 @@
+# orrery formation-eye plant: ONE world, TWO vehicles - this file IS the
+# fleet. One Basilisk process, one clock, one sun; each [[spacecraft]] block
+# is an independently-flown vehicle with its own cFS container, its own
+# lockstep gate and its own port block (block INDEX = port slot, block NAME =
+# COSMOS target SAT_<name>/TRUTH_<name>). See twin_cam.toml for the fleet
+# fine print (shared RNG seed caveat included).
+#
+# The formation eye: chief's camera points straight DOWN and the deputy
+# hovers 100 m below it, so the sister vehicle rides the frame center while
+# the Earth fills the narrow FOV as the measuring cloth.
+#
+# Pointing laws, measured (scripts/check_formation_eye.sh re-verifies):
+#   * Vizard's capture camera renders the OTHER spacecraft - the default
+#     model at TRUE physical size (~2 m across). At 100 m through a 0.2 rad
+#     FOV that is a legible ~40-140 px blob; at 5 km it would be sub-pixel.
+#   * Named model_dictionaryKey meshes are authored for the planet-view
+#     scene and render kilometers across at this scale - forbidden here;
+#     the deputy therefore ships unnamed, like every honest bird.
+#   * A circular deputy below the chief carries its own circular speed:
+#     the line of sight leads at |v_d| - |v_c| = 0.008 m/s -> 0.2 px/s
+#     across the frame (on its Y - this eye puts along-track on Y):
+#     the blob's motion is itself an ephemeris witness (intercept 0 px =
+#     on the boresight).
+#   * Dayside +X start (sun at +X): the disc is full, the deputy is full-moon
+#     - the geometry where a rendered vehicle cannot hide in shadow.
+#
+# Launch:  scripts/check_formation_eye.sh (acceptance)   scripts/fly_fleet.sh this-file
+#
+[simulation]
+name = "orrery formation eye (sister vehicle in the chief's frame)"
+duration = 180.0
+
+[simulation.dt]
+dynamics = 0.1
+# The fleet's world tick (see chief.toml for the fine print): one number
+# for the whole world, every vehicle's frames and acks ride it.
+fsw = 1.0
+
+[world]
+central_body = "earth"
+
+[world.sun]
+# Dayside start: chief sits under the sun on +X, so the nadir eye looks at a
+# fully-lit disc and its deputy is fully-lit too (full-moon geometry).
+position = [1.496e11, 0.0, 0.0]
+
+[environment]
+
+[environment.magnetic_field]
+type = "centered_dipole"
+
+# --- vehicle 0: chief (block 0 = beacon 5050/5051, link 5580/5582, truth 5150) -
+
+[[spacecraft]]
+name = "chief"
+
+[spacecraft.hub]
+mass = 300.0
+
+[spacecraft.hub.inertia]
+ixx = 750.0
+iyy = 620.0
+izz = 540.0
+
+[spacecraft.orbit]
+type = "rv"
+
+[spacecraft.orbit.rv]
+# The camera_record orbit: circular at r = 25 000 km, where the eye's
+# estimators see a limb and the deputy's 100 m below reads as pixels.
+position = [2.5e7, 0.0, 0.0]
+velocity = [0.0, 3993.0, 0.0]
+
+[spacecraft.attitude.initial]
+# Nadir from tick zero (the camera_record recipe, MRP tan(45/4 deg) about -Y):
+# flight software only has to HOLD it, and the eye looks straight at the deputy.
+sigma_BN = [0.0, -0.41421356, 0.0]
+omega_BN_B = [0.0, 0.0, 0.0]
+
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.2
+
+[[spacecraft.effectors.wheels]]
+direction_B = [1.0, 0.0, 0.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 1.0, 0.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 0.0, 1.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.sensors]]
+type = "imuSensor"
+name = "imu"
+gyro_bias = [2.0e-5, -1.5e-5, 1.0e-5]
+gyro_walk = [1.0e-8, 1.0e-8, 1.0e-8]
+
+[[spacecraft.sensors]]
+type = "starTracker"
+name = "st"
+sigma_SB = [0.0, 0.0, 0.0]
+white_noise = 1.0e-4
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css1"
+boresight_B = [1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css2"
+boresight_B = [-1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css3"
+boresight_B = [0.0, 1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css4"
+boresight_B = [0.0, -1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "magnetometer"
+name = "mag"
+noise_sigma = 1.0e-8
+
+# The vehicle's own GNSS opinion - the manifest picks the part,
+# the plant builds a SimpleNav receiver from it. Delete this block and the
+# NavState stream (0x08CF) goes silent: absence declared, not zero-filled.
+[[spacecraft.sensors]]
+type = "gpsReceiver"
+name = "gnss"
+
+[spacecraft.logging.state]
+sample_time = 1.0
+
+# --- vehicle 1: deputy (block 1 = beacon 5052/5053, link 5600/5601, truth 5152) -
+# same blueprint, own world-body: 100 m straight below the chief on its own
+# circular orbit, its own slow tumble (attitude is its own business; only its
+# POSITION is the formation's promise).
+
+[[spacecraft]]
+name = "deputy"
+
+[spacecraft.hub]
+mass = 300.0
+
+[spacecraft.hub.inertia]
+ixx = 750.0
+iyy = 620.0
+izz = 540.0
+
+[spacecraft.orbit]
+type = "rv"
+
+[spacecraft.orbit.rv]
+# 100 m radially below chief, circular at its own radius (v = 3993.008):
+# the only relative motion is the 0.008 m/s along-track lead of a lower
+# circular orbit - the blob's measured crawl is the witness against it.
+position = [2.49999e7, 0.0, 0.0]
+velocity = [0.0, 3993.008, 0.0]
+
+[spacecraft.attitude.initial]
+sigma_BN = [0.02, 0.06, -0.09]
+omega_BN_B = [0.045, 0.05, -0.035]
+
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.2
+
+[[spacecraft.effectors.wheels]]
+direction_B = [1.0, 0.0, 0.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 1.0, 0.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 0.0, 1.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.sensors]]
+type = "imuSensor"
+name = "imu"
+gyro_bias = [2.0e-5, -1.5e-5, 1.0e-5]
+gyro_walk = [1.0e-8, 1e-8, 1e-8]
+
+[[spacecraft.sensors]]
+type = "starTracker"
+name = "st"
+sigma_SB = [0.0, 0.0, 0.0]
+white_noise = 1.0e-4
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css1"
+boresight_B = [1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css2"
+boresight_B = [-1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css3"
+boresight_B = [0.0, 1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css4"
+boresight_B = [0.0, -1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "magnetometer"
+name = "mag"
+noise_sigma = 1.0e-8
+
+[[spacecraft.sensors]]
+type = "gpsReceiver"
+name = "gnss"
+
+[spacecraft.logging.state]
+sample_time = 1.0
+
+# the rendered eye needs the interface; cameras render through it
+[visualization]
+enabled = true
+live_stream = false
+broadcast_stream = false
+no_display = true
+
+# --- the formation eye ------------------------------------------------------
+# Narrow by design: at 100 m a 0.2 rad FOV puts the frame at 20 m wide, so
+# the true-size deputy is tens of pixels and its drift is a third of a pixel
+# per second - geometry written in pixels. Every capture is recorded: the
+# store outlet (record_rate) is the pixel witness's ledger.
+[[camera]]
+parent = "chief"
+camera_id = 1
+render_rate = 2.0
+resolution = [512, 512]
+field_of_view = 0.2
+sky_box = "black"
+record_rate = 1
