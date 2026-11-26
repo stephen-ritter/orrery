@@ -9,11 +9,13 @@
 #   off the wire (CamStorage: capacity, occupancy, state, counters); the
 #   craft log attests the transitions; the store directory counts the files.
 #
-#   The loud absence is the acceptance too: only class 1 transfers have ever
-#   flown this yard, so no receipt has ever been PROVEN, and NOTHING may be
-#   recycled. One "recycled" line here would mean the craft deleted bytes
-#   it only hoped the ground held - the exact failure the recorder exists
-#   to make impossible.
+#   The loud absence is the acceptance too: nothing is REQUESTED on this
+#   bench, so no receipt was ever PROVEN and NOTHING may be recycled. One
+#   "recycled" line here would mean the craft deleted bytes it only hoped
+#   the ground held - the exact failure the recorder exists to make
+#   impossible. (The receipts that legalize recycling, and the recycling
+#   they unlock, are flown with the CFDP engine in the loop by
+#   scripts/check_cam_ack.sh.)
 #
 # Usage: scripts/check_cam_store.sh          (SIM_DURATION= seconds, default 90)
 set -euo pipefail

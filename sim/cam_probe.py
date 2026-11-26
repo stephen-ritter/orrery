@@ -335,9 +335,9 @@ def main(argv: list[str] | None = None) -> int:
         # tiny recorder (a few frames of empty sky), so the flight must show
         # the whole life: declared size arrived (never state 3), files landed,
         # the watermark passed, the bound refused - and the loud absence:
-        # only class 1 transfers have ever flown here, so no receipt was ever
-        # PROVEN, nothing was ever evictable, and the eviction counter stays
-        # zero. A store that recycles unproven bytes fails this leg by name.
+        # nothing is requested on this bench, so no receipt was ever PROVEN,
+        # nothing was evictable, and the eviction counter stays zero. A store
+        # that recycles unproven bytes fails this leg by name.
         if last_store is None:
             reasons.append("no CamStorage frame ever arrived: the ledger is deaf")
         else:

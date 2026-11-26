@@ -286,11 +286,16 @@ carries capacity, headroom, state, and the recorded/stored/transferred/
 evicted/lost counters across the EDS to the ground. The inventory follows the
 store: the camera app rewrites the manifest on every store generation the bus
 reports.
-What does not exist yet: the witness that makes recycling legal. Only class 1
-transfers fly - "we sent it", ground never answered - so nothing is proven
-received and the eviction path has never fired; proof arrives with CFDP
-class 2. And the index is RAM-only: a restart seeds it with names and sizes
-but no receipts, which is the conservative direction by law."""
+The witness that legalizes recycling flies too: bsk_link watches CF's own
+command bus for acknowledged (class 2) transfers and marks a file proven only
+when CF's end-of-transaction report closes that exact path clean - a class 1
+completion says "we sent it" and proves nothing. Flown end to end: a proven
+frame becomes the first one recycled when a full recorder needs room, while
+a pass interrupted mid-flight dies as CF's own ack-limit and leaves its file
+unproven, unrecycled, and still on the disk.
+What does not exist yet: receipts do not survive a restart - the index is
+RAM-only, so a boot walk seeds names and sizes with everything unproven,
+which is the conservative direction by law."""
 
 [[area]]
 name = "custom"

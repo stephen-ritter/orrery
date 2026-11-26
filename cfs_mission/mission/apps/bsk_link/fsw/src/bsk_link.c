@@ -1055,8 +1055,9 @@ static bool BSK_Link_DecodeFitFrame(const void *Payload, size_t Size)
  * command MID, not on a relayer's intention - and CF's end-of-transaction
  * report for that exact path closes clean, TX and NO_ERROR. A class 1
  * completion says "we sent it"; ground never answered; it proves nothing
- * and evicts nothing. While no acknowledged transfer has ever crossed this
- * bus, nothing here is recyclable, and a full recorder only refuses.
+ * and evicts nothing. Until an acknowledged transfer closes on this bus,
+ * nothing here is recyclable: a full recorder refuses, and only after a
+ * receipt does it start making room with the oldest proven frame.
  * -------------------------------------------------------------------------- */
 static void BSK_Link_EmitCamStorage(void); /* defined with the outlet below     */
 
@@ -1416,6 +1417,10 @@ static void BSK_Link_WitnessEot(const CFE_SB_Buffer_t *BufPtr, size_t Size)
             {
                 BskStoreLedger[At].Proven = 1;
                 BSK_LinkAppData.TransfersAcked++;
+                /* The receipt lands on the same bus the ground reads: a
+                 * recorder that just learned it may forget something should
+                 * not be the last to know it. */
+                BSK_Link_EmitCamStorage();
             }
             return;
         }
