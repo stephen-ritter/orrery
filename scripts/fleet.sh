@@ -84,20 +84,6 @@ export_env() {
     export ORRERY_SIM_EXTRA="$extra"
 }
 
-services_of() {
-    local fact name _x
-    local -a s=("sync")
-    for fact in "${FLEET[@]}"; do
-        read -r name _x <<<"$fact"
-        s+=("$name" "truth-$name")
-    done
-    s+=("world")
-    # the renderer joins only when the scenario's camera check exported its
-    # profile (scenario_up); an explicit service list must know it too
-    [ "${COMPOSE_PROFILES:-}" = "camera" ] && s+=("camera")
-    printf '%s\n' "${s[@]}"
-}
-
 scenario_up() {
     scenario_facts
     export_env
@@ -192,12 +178,23 @@ scenario_up() {
         echo "[${STEM}] cold yard: compose is building the images and the mission (once; minutes)"
         wait_max=2400
     fi
-    $COMPOSE up -d --remove-orphans $(services_of) >/dev/null
+    # The shared machinery first; craft last and ONE AT A TIME. A booting
+    # craft lands its wake list by copying cf/cfe_es_startup.<vehicle>.scr
+    # over the single cf/cfe_es_startup.scr the yard shares, and ES opens that
+    # file seconds into its own boot - so two craft booting together let the
+    # last copier decide who woke what (formation_eye 2026-11-25: the chief
+    # booted the deputy's table and lost its eye while the world kept
+    # rendering). Starting each craft only after the previous one has spoken
+    # its boot sentence makes the copy exclusive by construction.
+    local -a wave0=("sync" "world")
+    [ "${COMPOSE_PROFILES:-}" = "camera" ] && wave0+=("camera")
+    $COMPOSE up -d --remove-orphans "${wave0[@]}" >/dev/null
 
     local fact name instance beacon uplink _s _l
     for fact in "${FLEET[@]}"; do
         read -r name instance beacon uplink _s _l <<<"$fact"
         echo "--- [$name] instance $instance: beacon :$beacon uplink :$uplink ---"
+        $COMPOSE up -d "$name" "truth-$name" >/dev/null
         local booted=0 _ craft_log
         for _ in $(seq 1 "$wait_max"); do
             # capture-then-grep: pipefail + grep -q + SIGPIPE (cosmos_stack.sh).
