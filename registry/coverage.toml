@@ -272,6 +272,20 @@ printing unchanged with and without the trailing camera sections. Declared
 before flown: the ledger is a map, not a wish."""
 
 [[area]]
+name = "store"
+status = "used"
+why = """The recorder a store outlet writes into, sized before flight:
+`capacity_bytes` bounds the volume and `capacity_files` bounds the catalog's
+reach, because frame size follows the scene (1.6 KB of empty sky, 230 KB with
+a sister vehicle on the disc) and a byte-only law cannot say when its own
+index outgrows an honest listing. What exists today: the declaration, and the
+door refusing an outlet that writes bytes with no sized recorder, and refusing
+a recorder on a vehicle the scenario does not fly. What does not exist yet:
+the craft obeying the number - nothing on the wire evicts, refuses a frame, or
+alarms at a watermark. The scenario says how big the recorder is; the vehicle
+does not yet know."""
+
+[[area]]
 name = "custom"
 status = "banned"
 why = """Hardware is declared by naming a type, never wired in by hand. Fleets are

@@ -176,3 +176,15 @@ resolution = [256, 256]
 field_of_view = 0.8726646
 sky_box = "black"
 record_rate = 3              # its own outlet: every 3rd capture, its own files
+
+# The recorder the store outlet writes into, sized before flight. A store
+# with no declared capacity cannot say when it is full, and "full" is the
+# moment the craft needs a law instead of an improvisation. Both bounds are
+# declared because one is not enough: bytes bound the volume, files bound the
+# catalog's reach, and frame size follows the scene - 1.6 KB of empty sky,
+# 230 KB with a sister vehicle on the disc.
+[[store]]
+parent = "chief"
+payload = "cam"
+capacity_bytes = 67108864    # 64 MiB: a few hundred frames of a bright target
+capacity_files = 512         # the most files the manifest can list honestly today

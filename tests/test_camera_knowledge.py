@@ -479,3 +479,34 @@ def test_the_formation_eye_holds_its_sister_on_the_boresight() -> None:
     vd = math.dist(deputy["orbit"]["rv"]["velocity"], [0.0, 0.0, 0.0])
     crawl = (vd - vc) * px_per_m
     assert 0.12 <= crawl <= 0.35, "the pixel witness expects a ~0.2 px/s crawl"
+
+
+def test_every_recording_vehicle_declares_its_recorder() -> None:
+    """Bytes that run out stay a scenario decision, pinned on our side too.
+
+    The forge's door refuses an outlet that writes bytes with no sized
+    recorder, and that law lives upstream where a dependency bump could quietly
+    soften it. This reads the yard's own scenario files, so a recorder can only
+    vanish by an edit this test then refuses. One row per vehicle: two eyes
+    share the store, so they share its size.
+    """
+    import tomllib
+
+    for path in sorted((REPO / "sim" / "scenarios").glob("*.toml")):
+        doc = tomllib.loads(path.read_text())
+        recording = {
+            str(cam["parent"])
+            for cam in doc.get("camera", [])
+            if int(cam.get("record_rate", 0)) > 0
+        }
+        if not recording:
+            continue
+        sized = {
+            str(row["parent"])
+            for row in doc.get("store", [])
+            if int(row["capacity_bytes"]) > 0 and int(row["capacity_files"]) > 0
+        }
+        assert recording <= sized, (
+            f"{path.name}: outlets write bytes with no sized recorder for "
+            f"{sorted(recording - sized)}"
+        )

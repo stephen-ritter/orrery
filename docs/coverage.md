@@ -26,7 +26,7 @@ hardware that is *not* a registry part. The page is generated from the ledger;
 
 <!-- BEGIN GENERATED (registry/coverage.toml via sim/coverage.py) -->
 
-**7 of 12 part types are supported on the bus** (6 landed, 1 as the barrier tick); **4 of 11 scenario sections are used**. Everything upstream builds; every gap below is ours. The counts are computed from `registry/coverage.toml`, and a hand-edit inside this region fails the coverage check.
+**7 of 12 part types are supported on the bus** (6 landed, 1 as the barrier tick); **5 of 12 scenario sections are used**. Everything upstream builds; every gap below is ours. The counts are computed from `registry/coverage.toml`, and a hand-edit inside this region fails the coverage check.
 
 ## Sensors
 
@@ -75,6 +75,7 @@ which is exactly why they move every pinned trajectory.
 | `logging` | unused-with-reason | The harness records its own ledgers (trajectory digests, wire audits, truth gateways); bskforge's recorders would be a second, less audited copy of the same story. |
 | `visualization` | unused-with-reason | The operator's window is COSMOS, and it is graded: a viz path that no check reads is decoration, and decoration in this repo tends to become a claim. |
 | `camera` | unused-with-reason | the circuit landed (row, wire, firmware table, vizard.lock-pinned renderer), but this area measures YARD usage: it flips to `used` when camera_ops.toml has flown the pair check - the LOS exhibit on the live fleet and the anchored digest printing unchanged with and without the trailing camera sections. Declared before flown: the ledger is a map, not a wish. |
+| `store` | used | The recorder a store outlet writes into, sized before flight: `capacity_bytes` bounds the volume and `capacity_files` bounds the catalog's reach, because frame size follows the scene (1.6 KB of empty sky, 230 KB with a sister vehicle on the disc) and a byte-only law cannot say when its own index outgrows an honest listing. What exists today: the declaration, and the door refusing an outlet that writes bytes with no sized recorder, and refusing a recorder on a vehicle the scenario does not fly. What does not exist yet: the craft obeying the number - nothing on the wire evicts, refuses a frame, or alarms at a watermark. The scenario says how big the recorder is; the vehicle does not yet know. |
 | `custom` | banned | Hardware is declared by naming a type, never wired in by hand. Fleets are read through bskforge's audited profile, which sim/fleet_policy.py asks for, so this is refused at load rather than by omission. The reason is mechanical: hardware no schema type names cannot have a registry row, so the fit manifest never declares it, this ledger has no union to classify it under, no defs carry it, and no exhibit could judge its numbers - its readings would be a wire nothing grades. The route for hardware upstream cannot model yet is the one gpsReceiver took: grow the type upstream, with its own tests, and land a row here afterwards. This ledger is what makes that route survivable: it names every gap a hand-wired device would have papered over, and who owns each one. |
 | `monte_carlo` | unused-with-reason | Dispersion studies need per-configuration digests (a distribution is meaningless against one pinned trajectory), so this is the per-configuration digest round's customer rather than a gap today. |
 
