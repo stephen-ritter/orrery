@@ -290,7 +290,12 @@ proven bit, rewritten atomically on every mutation and read back at boot
 with one-directional nets - a standing file no line vouches for joins
 UNPROVEN, a line whose file is gone is dropped with an event. The
 inventory follows the store: the camera app rewrites the manifest on every
-store generation the bus reports.
+store generation the bus reports. The store also answers to the present
+tense: CAM_CMD FC 2 SNAP pulses the shutter - the sim door opens a closed
+eye, delivers the NEXT capture (never an old file) to the store outside the
+record cadence, and restores the ground's steady shutter; the ask and the
+delivery are separate witnesses (CAM_HK.SnapshotCmds vs CamState.Snapshots),
+and an unanswered pulse is dropped uncounted rather than counted falsely.
 What remains: the working index is still door-lawed to the manifest's sort
 budget (512 entries), and a receipt carried across a restart is spent by
 the next capture - boot records deliveries, it does not perform them."""

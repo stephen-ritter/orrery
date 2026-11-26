@@ -311,6 +311,7 @@ static const SpsCmdEntry_t SPS_CMD_TABLE[] = {
     {0x18D0, 0, 0, "SPS_SEND_HK"},
     {0x18D2, 0, 0, "CAM_CMD.NoopCmd"},
     {0x18D2, 1, 0, "CAM_CMD.ManifestCmd"},
+    {0x18D2, 2, 0, "CAM_CMD.SnapCmd"},
     {0x18D3, 0, 0, "CAM_SEND_HK"},
     {0x18D4, 0, 16, "CAM_SET_CONFIG"},
     {0x18D6, 0, 136, "FCS_CFDP_DOWN"},

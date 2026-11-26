@@ -298,6 +298,9 @@ typedef struct
     uint32 FramesRecorded;      /* sim store outlet sent (CamState)     */
     uint32 FramesStored;        /* bsk_link completed /cf/img files     */
     uint32 FramesTransferred;   /* CF EOT count: files CF closed clean, TX */
+    uint32 SnapshotCmds;        /* SNAP pulses accepted: asks for the shutter
+                                 * pulse, paired against CamState.Snapshots */
+    uint8  TailPad[4];          /* explicit EDS pad keeps the payload 8-aligned */
 } __attribute__((packed)) CamHkTlm_Payload_t;
 
 typedef struct
@@ -307,7 +310,11 @@ typedef struct
 } CamHkTlm_t;
 
 /* BSK_LINK/CamConfig: one accepted camera command, egressed by bsk_link to
- * the sim on the cmd channel under its own topic - never a barrier frame. */
+ * the sim on the cmd channel under its own topic - never a barrier frame.
+ * Pulse is the shutter-pulse edge (CAM_CMD FC 2): it rides ONE frame and
+ * asks the sim to deliver the next capture to the store outside the record
+ * cadence; steady config frames carry 0, so an old or re-sent frame can
+ * never buy a second snapshot. */
 typedef struct
 {
     double   SimTimeS;   /* sim time at the command [s]       */
@@ -315,6 +322,7 @@ typedef struct
     uint64   CameraId;   /* the [[camera]] to configure        */
     uint64   Shutter;    /* 1 open, 0 closed                   */
     double   RenderRateS;/* image interval [s], ground unit    */
+    uint64   Pulse;      /* 1: shutter pulse rides THIS frame  */
 } __attribute__((packed)) BskCamConfig_Payload_t;
 
 typedef struct
@@ -374,6 +382,7 @@ typedef struct
     double  RenderRateS;
     uint64  Captured;
     uint64  FramesRecorded; /* store outlet sends */
+    uint64  Snapshots;      /* shutter-pulse frames delivered (CAM_CMD FC 2) */
 } __attribute__((packed)) BskCamState_Payload_t;
 
 typedef struct
@@ -484,10 +493,10 @@ _Static_assert(sizeof(ObcHk_Payload_t) == 80, "OBC HK payload drift vs obc.xml")
 _Static_assert(sizeof(SpsSchedule_Payload_t) == 60, "Schedule payload drift vs sps.xml");
 _Static_assert(sizeof(SpsHkTlm_Payload_t) == 72, "SPS HK payload drift vs sps.xml");
 _Static_assert(sizeof(CamSetConfig_Payload_t) == 16, "SetConfig payload drift vs cam.xml");
-_Static_assert(sizeof(CamHkTlm_Payload_t) == 40, "CAM HK payload drift vs cam.xml");
-_Static_assert(sizeof(BskCamConfig_Payload_t) == 40, "CamConfig payload drift vs bsk_link.xml");
+_Static_assert(sizeof(CamHkTlm_Payload_t) == 48, "CAM HK payload drift vs cam.xml");
+_Static_assert(sizeof(BskCamConfig_Payload_t) == 48, "CamConfig payload drift vs bsk_link.xml");
 _Static_assert(sizeof(BskCamStorage_Payload_t) == 96, "CamStorage payload drift vs bsk_link.xml");
-_Static_assert(sizeof(BskCamState_Payload_t) == 56, "CamState payload drift vs bsk_link.xml row");
+_Static_assert(sizeof(BskCamState_Payload_t) == 64, "CamState payload drift vs bsk_link.xml row");
 _Static_assert(sizeof(BskImageChunkHeader_t) == 24, "IMG chunk header drift vs sim framing");
 
 #endif /* ORRERY_BUS_MSG_H */

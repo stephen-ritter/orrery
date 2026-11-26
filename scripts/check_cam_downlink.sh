@@ -124,8 +124,24 @@ def main() -> int:
             if not packet:
                 print(json.dumps({"error": "no CAM_HK"}))
                 return 1
-            recorded, stored, transferred = struct.unpack("<3I", packet[-12:])
-            print(json.dumps({"recorded": recorded, "stored": stored, "transferred": transferred}))
+            # The three promises sit third-from-tail inward: the payload ends
+            # SnapshotCmds + explicit pad (rung 5 grew the HK). The pad==0
+            # assertion is the drift tripwire - if the tail moves again, this
+            # read says so instead of reading a promise out of filler.
+            recorded, stored, transferred, snaps_cmd, tail_pad = struct.unpack("<5I", packet[-20:])
+            if tail_pad != 0:
+                print(json.dumps({"error": "CAM_HK tail drifted: pad nonzero"}))
+                return 1
+            print(
+                json.dumps(
+                    {
+                        "recorded": recorded,
+                        "stored": stored,
+                        "transferred": transferred,
+                        "snapshots_cmd": snaps_cmd,
+                    }
+                )
+            )
             return 0
         if action == "request":
             src, dst = sys.argv[4].encode(), sys.argv[5].encode()

@@ -91,9 +91,9 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
     ),
     # The camera's confirmed view is packed by the sim through
     # this same DB and read by a hand-written C twin (cam app subscribes it),
-    # so the layout needs a pin on this side too - 56 B is parts.toml's row.
+    # so the layout needs a pin on this side too - 64 B is parts.toml's row.
     "CamState": (
-        "<dQQQdQQ",
+        "<dQQQdQQQ",
         {
             "SimTimeS": 9.5,
             "Frame": 19,
@@ -102,6 +102,7 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
             "RenderRateS": 2.0,
             "Captured": 3,
             "FramesRecorded": 1,
+            "Snapshots": 2,
         },
     ),
     # The storage ledger: written by bsk_link's C struct, read on the ground via

@@ -32,6 +32,14 @@
  *   CAM_SET_CONFIG  upload shutter + camera id + render rate (own packet,
  *                   payload command per the SetGain law: arguments need a
  *                   real payload or codegen loses them)
+ *   CAM_CMD         FC 2 SNAP - the shutter pulse: forward one config frame
+ *                   with the Pulse edge set, so the sim opens the shutter
+ *                   (if closed), sends the NEXT capture to the store outside
+ *                   the record cadence, and restores. No arguments: the eye
+ *                   is the one already commanded, at the rate already set.
+ *                   Accepted only once an eye exists (CameraId >= 1); it
+ *                   counts SnapshotCmds, the ask half of the divergence pair
+ *                   beside CamState.Snapshots, the delivery half.
  *   CAM_SEND_HK     housekeeping on the scheduler tick
  *
  * Why the validation here is strict: an early spike proved the sim
@@ -92,6 +100,8 @@ typedef struct
     uint32 CommandErrorCounter;
     uint32 ConfigFramesForwarded;  /* accepted configs egressed to the sim  */
     uint32 ConfigFwdFailCount;     /* publishes that never reached bsk_link */
+    uint32 SnapshotsCmds;          /* SNAP pulses accepted: the ask half of the
+                                    * divergence pair with CamState.Snapshots */
 
     /* Pass-through witnesses (read-only): RECORDED is what the sim's
      * store outlet sent (CamState), STORED is what bsk_link reassembled into

@@ -452,7 +452,13 @@ class ForgeBody:
         # One chain per mounted eye, ascending camera id: the order the
         # CAMSTATE stream rides the wire (append-only, deterministic).
         self._eyes: list[Any] = []
-        self._cam_stats = {"applied": 0, "refused_id": 0, "refused_rate": 0}
+        self._cam_stats = {
+            "applied": 0,
+            "refused_id": 0,
+            "refused_rate": 0,
+            "refused_snap": 0,
+            "pulses": 0,
+        }
         # Store outlets (one per eye whose record_rate > 0, inside its eye):
         # rate, source dir, PNG filenames already chunked onto the wire,
         # and the FramesRecorded tally. The emitter is attached at rig wiring
@@ -543,7 +549,21 @@ class ForgeBody:
                 store_dir = Path(tempfile.mkdtemp(prefix=f"cam_store_{cam.camera_id}_"))
                 cam_module.saveImages = 1
                 cam_module.saveDir = f"{store_dir}/"
-                store = {"rate": record_rate, "dir": store_dir, "sent": [], "count": 0}
+                store = {
+                    "rate": record_rate,
+                    "dir": store_dir,
+                    "sent": [],
+                    "count": 0,
+                    # shutter-pulse state: outstanding SNAP asks (each
+                    # carries the capture count at its command instant),
+                    # the delivered total, and the shutter to restore
+                    # when the queue drains (the ground's last steady
+                    # command - a pulse owns the shutter, it does not
+                    # redefine it)
+                    "snap": [],
+                    "snaps": 0,
+                    "steady_shutter": 1,
+                }
                 print(
                     f"{self.name}: camera{cam.camera_id} store outlet ON "
                     f"(every {record_rate}th capture -> {store_dir})"
@@ -676,6 +696,10 @@ class ForgeBody:
         # capture's PNG bytes go out as IMG chunks before the state is packed,
         # so FramesRecorded in THIS frame counts sends made in THIS tick.
         frames_recorded = self._pump_store(eye, captures)
+        # A shutter pulse is served from the same capture list: any outstanding
+        # SNAP ask takes the NEXT capture outside the cadence, here, so the
+        # Snapshots count in THIS frame counts a pulse delivered THIS tick.
+        snapshots = self._pump_snap(eye, captures, sim_time_s)
         return encode_container(
             "BSK_LINK/CamState",
             {
@@ -686,6 +710,7 @@ class ForgeBody:
                 "RenderRateS": float(module.renderRate) / 1e9,
                 "Captured": captured,
                 "FramesRecorded": frames_recorded,
+                "Snapshots": snapshots,
             },
         )
 
@@ -713,7 +738,7 @@ class ForgeBody:
                 f"not fitted (bird has {fitted})"
             )
             return
-        camera_id, module, _, _, _, _, _ = eyes[cfg.camera_id]
+        camera_id, module, _, _, _, image_recorder, store = eyes[cfg.camera_id]
         if not math.isfinite(cfg.render_rate_s) or cfg.render_rate_s <= 0.0:
             self._cam_stats["refused_rate"] += 1
             print(f"[{self.name}] cam refused: rate {cfg.render_rate_s} must be > 0 (B1)")
@@ -724,6 +749,53 @@ class ForgeBody:
         print(
             f"[{self.name}] cam{camera_id}: shutter={'OPEN' if cfg.shutter else 'CLOSED'} "
             f"rate={cfg.render_rate_s:g}s (t={cfg.sim_time_s:.1f}s frame={cfg.frame})"
+        )
+        if store is not None:
+            # The shutter to restore when the pulse queue drains: this
+            # frame's OWN steady command. A pulse frame carries it too (the
+            # cam app forwards the current settings beside the edge), so the
+            # restore target can never be a state the ground never asked for.
+            store["steady_shutter"] = 1 if cfg.shutter else 0
+        if cfg.pulse:
+            self._arm_snap(camera_id, module, image_recorder, store)
+
+    def _arm_snap(
+        self,
+        camera_id: int,
+        module: Any,  # noqa: ANN401 - swig module handle
+        image_recorder: Any,  # noqa: ANN401 - swig recorder
+        store: dict | None,
+    ) -> None:
+        """The shutter-pulse door: one ask queued, the shutter opened for it.
+
+        A pulse owns the shutter until its frame leaves: closed stands open,
+        and the restore target is the ground's own last steady command
+        (stored on the same frame). The ask remembers how many captures had
+        already happened - its frame is the NEXT one, never a re-send of an
+        old file. An eye without a store outlet has nowhere for a snapshot
+        to go: refused by counter, printed, and above all NOT counted in
+        CamState.Snapshots, so the divergence with CAM_HK.SnapshotCmds names
+        the stall instead of a silent shrug.
+        """
+        if store is None or self._store_emit is None:
+            self._cam_stats["refused_snap"] += 1
+            print(
+                f"[{self.name}] cam{camera_id}: snap refused: no store outlet "
+                "on this eye (record_rate = 0)"
+            )
+            return
+        baseline = len({t for t in image_recorder.timeTag if t > 0.0})
+        # The frame must RENDER before it can leave: an open shutter meets
+        # vizInterface's rate modulo, so the deadline gives six render periods
+        # and a floor of eight seconds. A pulse that misses it is dropped and
+        # said so - it is not counted, and CamState will not pretend.
+        deadline = self.sim_time_s + max(6.0 * module.renderRate * 1e-9, 8.0)
+        store["snap"].append({"baseline": baseline, "deadline_s": deadline})
+        module.cameraIsOn = 1
+        self._cam_stats["pulses"] += 1
+        print(
+            f"[{self.name}] cam{camera_id}: shutter pulse armed (baseline={baseline}, "
+            f"restore={'OPEN' if store['steady_shutter'] else 'CLOSED'}, due by t={deadline:.1f}s)"
         )
 
     # -- the store outlet        -------------------------------------------------
@@ -750,6 +822,45 @@ class ForgeBody:
         """True when any eye on this body has a store outlet (record_rate > 0)."""
         return any(eye[6] is not None for eye in self._eyes)
 
+    def _send_capture(
+        self, camera_id: int, ordinal: int, t: float, store: dict, *, note: str = ""
+    ) -> str:
+        """Chunk one capture's PNG onto the wire, with one of three verdicts.
+
+        ``sent``      its last part left THIS call (the tally moved);
+        ``standing``  it was already sent - the cadence door or an earlier
+                      pass got here first, and a second send would duplicate;
+        ``absent``    the file is not on disk (or empty) yet - patience,
+                      the outlet retries rather than pretends.
+        """
+        name = f"{t:.6f}.png"  # camera.cpp: std::to_string(sim_s), 6 decimals
+        if name in store["sent"]:
+            return "standing"
+        path = store["dir"] / name
+        if not path.is_file():
+            return "absent"  # not on disk yet: patience, retry next tick
+        data = path.read_bytes()
+        if len(data) == 0:
+            return "absent"  # a writer that flushed nothing is not a capture
+        parts = [
+            data[i : i + self.IMG_CHUNK_BYTES] for i in range(0, len(data), self.IMG_CHUNK_BYTES)
+        ]
+        total = len(parts)
+        for index, part in enumerate(parts):
+            header = struct.pack(self.IMG_HEADER, camera_id, ordinal, index, total)
+            emit = self._store_emit
+            if emit is not None:  # the outlet has no voice before rig wiring
+                emit(header + part)
+        store["sent"].append(name)
+        store["count"] += 1
+        # The source file name is printed beside the ordinal on purpose: it is
+        # the outlet's own claim of WHICH render it read, so a byte-law bench
+        # binds the landed file to that exact source instead of guessing the
+        # ordinal's position in a directory that holds one file per RENDER.
+        tally = f"{total} part(s), {len(data)} B"
+        print(f"[{self.name}] store: capture {ordinal} [{name}] -> {tally}{note}")
+        return "sent"
+
     def _pump_store(self, eye: Any, capture_times: list[float]) -> int:  # noqa: ANN401 - eye tuple
         """Chunk one eye's every ``record_rate``-th capture's PNG onto the wire.
 
@@ -767,27 +878,64 @@ class ForgeBody:
         for ordinal, t in enumerate(capture_times, start=1):
             if ordinal % rate != 0:
                 continue
-            name = f"{t:.6f}.png"  # camera.cpp: std::to_string(sim_s), 6 decimals
-            if name in store["sent"]:
-                continue
-            path = store["dir"] / name
-            if not path.is_file():
-                continue  # not on disk yet: patience, retry next tick
-            data = path.read_bytes()
-            if len(data) == 0:
-                continue  # a writer that flushed nothing is not a capture
-            parts = [
-                data[i : i + self.IMG_CHUNK_BYTES]
-                for i in range(0, len(data), self.IMG_CHUNK_BYTES)
-            ]
-            total = len(parts)
-            for index, part in enumerate(parts):
-                header = struct.pack(self.IMG_HEADER, camera_id, ordinal, index, total)
-                self._store_emit(header + part)
-            store["sent"].append(name)
-            store["count"] += 1
-            print(f"[{self.name}] store: capture {ordinal} -> {total} part(s), {len(data)} B")
+            self._send_capture(camera_id, ordinal, t, store)
         return int(store["count"])
+
+    def _pump_snap(
+        self,
+        eye: Any,  # noqa: ANN401 - eye tuple
+        capture_times: list[float],
+        sim_time_s: float,
+    ) -> int:
+        """Serve outstanding shutter-pulse asks, each taking the NEXT capture.
+
+        Served outside the record cadence, the queue owns the shutter while full.
+
+        The ask remembers the capture count at its command instant, so its
+        frame is strictly newer than the ask - a snapshot is what the shutter
+        sees AFTER "look now", never an old file handed over early. An
+        already-standing send counts for the ask only if it happened after
+        the ask (captures past the baseline cannot have been sent before it),
+        which is what the baseline+1 walk keeps honest. An ask whose deadline
+        passes is dropped with a line and stays UNCOUNTED: CamState.Snapshots
+        below CAM_HK.SnapshotCmds is then the true story on the wire.
+
+        Returns the eye's cumulative delivered-snapshot count (CamState field).
+        """
+        camera_id, module, _, _, _, _, store = eye
+        if store is None or self._store_emit is None:
+            return 0
+        queue = store["snap"]
+        for ask in list(queue):
+            if sim_time_s >= ask["deadline_s"]:
+                queue.remove(ask)
+                print(
+                    f"[{self.name}] cam{camera_id}: snap deadline passed - pulse dropped, uncounted"
+                )
+                continue
+            delivered = False
+            first = ask["baseline"] + 1
+            if first <= len(capture_times):
+                # ONLY the capture right after the ask can pay for it. If its
+                # bytes already left (the cadence door opened on exactly this
+                # ordinal), the ask is satisfied - a capture past the baseline
+                # cannot have been sent BEFORE the ask, because it did not
+                # exist then. Handing the ask a later frame instead would
+                # sell one pulse twice.
+                status = self._send_capture(
+                    camera_id, first, capture_times[first - 1], store, note=" (shutter pulse)"
+                )
+                delivered = status != "absent"  # absent: patience, the ask keeps its turn
+            if delivered:
+                queue.remove(ask)
+                store["snaps"] += 1
+        # The queue owns the shutter while full: any ask needs an open eye,
+        # and the moment the last one is served the ground's steady command
+        # comes back. (This line re-asserts it every tick, so a SET_CONFIG
+        # landing mid-pulse updates the restore target without losing the
+        # pulse's claim on the shutter.)
+        module.cameraIsOn = 1 if queue else store["steady_shutter"]
+        return int(store["snaps"])
 
     @property
     def sim_time_s(self) -> float:

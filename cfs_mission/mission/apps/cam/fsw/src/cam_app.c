@@ -46,8 +46,13 @@ static void CAM_SendHk(void)
  * applies at the next frame boundary, so the stamp is attribution, not a
  * deadline - the command surface owns no delivery guarantee, and honesty about that is the
  * whole reason CamState exists as a separate witness.
+ *
+ * Pulse is the shutter-pulse edge: 1 rides ONE frame (the SNAP command's),
+ * never the steady state. There is no pending flag to clear, because the
+ * forward is edge-driven - SET_CONFIG forwards 0, SNAP forwards 1 - so a
+ * re-sent or re-transmitted config frame cannot conjure a second snapshot.
  */
-static void CAM_ForwardConfig(void)
+static void CAM_ForwardConfig(uint8 Pulse)
 {
     BskCamConfigTlm_t Config;
     CFE_Status_t      Status;
@@ -58,6 +63,7 @@ static void CAM_ForwardConfig(void)
     Config.Payload.CameraId   = CAM_AppData.CameraId;
     Config.Payload.Shutter    = CAM_AppData.Shutter;
     Config.Payload.RenderRateS = CAM_AppData.RenderRateCmd;
+    Config.Payload.Pulse       = Pulse;
 
     CFE_SB_TimeStampMsg(CFE_MSG_PTR(Config.TelemetryHeader));
     Status = CFE_SB_TransmitMsg(CFE_MSG_PTR(Config.TelemetryHeader), true);
@@ -130,7 +136,7 @@ static void CAM_HandleSetConfig(const CFE_SB_Buffer_t *BufPtr)
     CAM_AppData.HkTlm.Payload.RenderRateCmd = Rate;
     CAM_AppData.HkTlm.Payload.CommandCounter++;
 
-    CAM_ForwardConfig();
+    CAM_ForwardConfig(0);
 
     CFE_EVS_SendEvent(CAM_SET_CONFIG_INF_EID, CFE_EVS_EventType_INFORMATION,
                       "camera %u configured: shutter %s, render rate %.3f s (forwarded at t=%.1fs frame=%llu)",
@@ -360,6 +366,43 @@ static void CAM_HandleManifest(bool FromGround)
 
 /* -------------------------------------------------------------------------- */
 
+/**
+ * FC 2 SNAP - the shutter pulse: "look now" with no argument.
+ *
+ * The eye is the one this app already commands (CameraId), at the rate it
+ * already runs; only the Pulse edge is new. This side does not open anything
+ * or count any delivery - it forwards one config frame carrying the edge and
+ * tallies the ASK. The sim door owns the shutter, the out-of-cadence send,
+ * and the CamState.Snapshots counter that measures what actually left; a
+ * pulse with no delivery is CAM_HK saying one and CamState saying zero, which
+ * is exactly the divergence the ground was built to screen. Refused before
+ * any SET_CONFIG: CameraId 0 is a sentinel that no eye exists, and pulsing
+ * eye 0 would be the app guessing at TOML it never read.
+ */
+static void CAM_HandleSnap(void)
+{
+    if (CAM_AppData.CameraId == 0)
+    {
+        CAM_AppData.HkTlm.Payload.CommandErrorCounter++;
+        CFE_EVS_SendEvent(CAM_SNAP_INF_EID, CFE_EVS_EventType_ERROR,
+                          "SNAP refused: no eye commanded yet (CameraId 0) - configure first");
+        return;
+    }
+
+    CAM_AppData.HkTlm.Payload.CommandCounter++;
+    CAM_AppData.SnapshotsCmds++;
+    CAM_AppData.HkTlm.Payload.SnapshotCmds = CAM_AppData.SnapshotsCmds;
+
+    CAM_ForwardConfig(1);
+
+    CFE_EVS_SendEvent(CAM_SNAP_INF_EID, CFE_EVS_EventType_INFORMATION,
+                      "camera %u shutter pulse forwarded (t=%.1fs frame=%llu)",
+                      (unsigned int)CAM_AppData.CameraId, CAM_AppData.LastSimTimeS,
+                      (unsigned long long)CAM_AppData.LastFrame);
+}
+
+/* -------------------------------------------------------------------------- */
+
 static void CAM_HandleCmd(const CFE_SB_Buffer_t *BufPtr)
 {
     CFE_MSG_FcnCode_t FcnCode = 0;
@@ -391,6 +434,10 @@ static void CAM_HandleCmd(const CFE_SB_Buffer_t *BufPtr)
 
         case 1: /* MANIFEST */
             CAM_HandleManifest(true);
+            break;
+
+        case 2: /* SNAP - shutter pulse, forward one Pulse=1 config frame */
+            CAM_HandleSnap();
             break;
 
         default:

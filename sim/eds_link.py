@@ -349,7 +349,9 @@ class CamState:
     camera captured, as honesty demands. ``frames_recorded`` counts the
     frames the STORE OUTLET has sent: every ``record_rate``-th capture whose
     PNG bytes were chunked onto the wire. Zero means the camera is nav-only -
-    an absence, not a failure.
+    an absence, not a failure. ``snapshots`` counts shutter-pulse deliveries:
+    frames that left the shutter because the ground pulsed it, outside the
+    record cadence - the delivery half of the pair with CAM_HK.SnapshotCmds.
     """
 
     sim_time_s: float
@@ -359,6 +361,7 @@ class CamState:
     render_rate_s: float
     captured: int
     frames_recorded: int
+    snapshots: int = 0
 
 
 def decode_cam_state(payload: bytes) -> CamState:
@@ -373,6 +376,7 @@ def decode_cam_state(payload: bytes) -> CamState:
         render_rate_s=float(obj["RenderRateS"]()),
         captured=int(obj["Captured"]()),
         frames_recorded=int(obj["FramesRecorded"]()),
+        snapshots=int(obj["Snapshots"]()),
     )
 
 
@@ -383,6 +387,12 @@ class CamConfig:
     One accepted ``CAM_SET_CONFIG`` leaving the bus. Fire-and-forget: nothing
     on this frame is a barrier, and a sim that cannot honour it (no such eye,
     zero rate) refuses by counter, never by an ack the physics would wait on.
+
+    ``pulse`` is the shutter-pulse edge (FC 2 SNAP sets it for one frame):
+    the sim opens the shutter if closed, delivers the NEXT capture to the
+    store outside the record cadence, and restores. It rides the same frame
+    as the steady config because it IS a config - "look now, at the settings
+    you have" - and a one-frame edge needs no second MID.
     """
 
     sim_time_s: float
@@ -390,6 +400,7 @@ class CamConfig:
     camera_id: int
     shutter: int
     render_rate_s: float
+    pulse: int = 0
 
 
 def decode_cam_config(payload: bytes) -> CamConfig:
@@ -402,11 +413,17 @@ def decode_cam_config(payload: bytes) -> CamConfig:
         camera_id=int(obj["CameraId"]()),
         shutter=int(obj["Shutter"]()),
         render_rate_s=float(obj["RenderRateS"]()),
+        pulse=int(obj["Pulse"]()),
     )
 
 
 def encode_cam_config(
-    sim_time_s: float, frame: int, camera_id: int, shutter: int, render_rate_s: float
+    sim_time_s: float,
+    frame: int,
+    camera_id: int,
+    shutter: int,
+    render_rate_s: float,
+    pulse: int = 0,
 ) -> Any:  # noqa: ANN401 - stub-less C extension
     """Build a packed ``BSK_LINK/CamConfig``.
 
@@ -421,6 +438,7 @@ def encode_cam_config(
     obj["CameraId"] = camera_id
     obj["Shutter"] = shutter
     obj["RenderRateS"] = render_rate_s
+    obj["Pulse"] = pulse
     return lib.PackedObject(obj)
 
 

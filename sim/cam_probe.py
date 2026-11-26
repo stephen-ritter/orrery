@@ -70,13 +70,14 @@ class CamHk:
         self.recorded = u(".FramesRecorded")
         self.stored = u(".FramesStored")
         self.transferred = u(".FramesTransferred")
+        self.snapshots_cmd = u(".SnapshotCmds")
 
     def __str__(self) -> str:
         """One readable line for the acceptance log."""
         return (
             f"hk: cmds={self.cmds} errs={self.errs} camera={self.camera_id} "
             f"cmd(shutter={self.shutter} rate={self.rate_cmd:g}) fwd={self.forwarded} "
-            f"promises={self.recorded}/{self.stored}/{self.transferred}"
+            f"promises={self.recorded}/{self.stored}/{self.transferred} snaps={self.snapshots_cmd}"
         )
 
 
@@ -96,6 +97,7 @@ class CamState:
         self.rate = wire_float(pkt, model.byte_offset(".RenderRateS"))
         self.captured = u(".Captured")
         self.frames_recorded = u(".FramesRecorded")  # store outlet sends
+        self.snapshots = u(".Snapshots")  # shutter-pulse deliveries
 
     def key(self) -> tuple[int, float]:
         """The state identity: transitions are (shutter, rate) pairs."""
@@ -105,7 +107,8 @@ class CamState:
         """One readable line for the acceptance log."""
         return (
             f"camstate t={self.sim_time_s:6.1f}s shutter={self.shutter} "
-            f"rate={self.rate:g}s captured={self.captured} recorded={self.frames_recorded}"
+            f"rate={self.rate:g}s captured={self.captured} recorded={self.frames_recorded} "
+            f"snaps={self.snapshots}"
         )
 
 
@@ -149,12 +152,21 @@ def set_config(model: Packet, seq: int, shutter: int, camera_id: int, rate_s: fl
     return build_cmd(model.msgid, 0, payload, seq=seq)
 
 
+def snap(cmd_model: Packet, seq: int) -> bytes:
+    """Build a CAM_CMD FC 2 SNAP - the shutter pulse.
+
+    Header-only like NOOP and MANIFEST: "look now" takes no argument, the eye
+    is the one already commanded.
+    """
+    return build_cmd(cmd_model.msgid, 2, seq=seq)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Drive (or just watch) one camera flight; returns process exit code."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--instance", type=int, default=0, help="fleet port block")
     ap.add_argument(
-        "--mode", choices=("control", "spam", "record", "twins", "store"), default="spam"
+        "--mode", choices=("control", "spam", "record", "twins", "store", "snap"), default="spam"
     )
     ap.add_argument("--duration", type=float, default=56.0, help="wall seconds to watch")
     args = ap.parse_args(argv)
@@ -209,6 +221,16 @@ def main(argv: list[str] | None = None) -> int:
     }
     if args.mode == "twins":
         sends = sends_twins
+    # The pulse leg script: the record door is pinned shut by the bench
+    # scenario (record_rate above this leg's total captures), so the cadence
+    # never admits anything and every frame that lands is a pulse's doing.
+    # The first pulse fires while the eye streams; the second fires after
+    # the shutter closes - the true pulse: it opens the shutter, delivers
+    # one frame, and closes it again. The pre-pulse line records what the
+    # device had already captured, so the leg can prove the pulse's frame
+    # is newer than the ask, never an old file handed over early.
+    sends_snap = {8.0: ("stream-open", (1, 1, 1.0)), 48.0: ("shutter-close", (0, 1, 1.0))}
+    pulses = {30.0: "pulse-open-leg", 55.0: "pulse-closed-leg"}
     sent: list[str] = []
 
     t0 = time.monotonic()
@@ -239,7 +261,28 @@ def main(argv: list[str] | None = None) -> int:
                             f"t={now:5.1f}s sent CAM_SET_CONFIG shutter={shutter} "
                             f"camera={camera_id} rate={rate:g} ({label})"
                         )
-            if args.mode in ("spam", "record", "twins", "store") and now - last_poll >= 2.0:
+            if args.mode == "snap":
+                for at, (label, (shutter, camera_id, rate)) in sends_snap.items():
+                    if now >= at and label not in sent:
+                        client.send_packet(set_config(cfg_model, seq, shutter, camera_id, rate))
+                        seq += 1
+                        sent.append(label)
+                        print(
+                            f"t={now:5.1f}s sent CAM_SET_CONFIG shutter={shutter} "
+                            f"camera={camera_id} rate={rate:g} ({label})"
+                        )
+                for at, label in pulses.items():
+                    if now >= at and label not in sent:
+                        before = (
+                            f"captured={last_cs.captured} recorded={last_cs.frames_recorded}"
+                            if last_cs
+                            else "cold"
+                        )
+                        client.send_packet(snap(pkts["CAM_CMD"], seq))
+                        seq += 1
+                        sent.append(label)
+                        print(f"t={now:5.1f}s sent CAM_CMD SNAP ({label}) {before}")
+            if args.mode in ("spam", "record", "twins", "store", "snap") and now - last_poll >= 2.0:
                 client.send_packet(build_cmd(pkts["CAM_SEND_HK"].msgid, 0))
                 last_poll = now
 
@@ -269,6 +312,13 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"t={now:5.1f}s {state}")
                 if state.shutter == 0:
                     closed_window.append((state.sim_time_s, state.captured))
+                if args.mode == "snap" and (
+                    last_cs is None or state.snapshots != last_cs.snapshots
+                ):
+                    # The delivery moment, on its own line: the bench grades
+                    # the pulse's timing from here - a snapshot arriving late
+                    # is a cadence frame, not a pulse.
+                    print(f"t={now:5.1f}s pulse witness: {state}")
                 last_cs = state
             elif msgid == store_model.msgid:
                 store_seen += 1
@@ -411,6 +461,34 @@ def main(argv: list[str] | None = None) -> int:
                         f"divergence {diverged}: the loss is counted twice"
                     )
         verdict = "CAM STORE OK" if not reasons else "CAM STORE FAILED"
+    elif args.mode == "snap":
+        # The shutter-pulse law, read from the ground: two asks left the bus,
+        # two frames left the shutter, two files landed - and nothing else
+        # did, because this bench's record door is pinned shut. The HK/SimState
+        # pair must agree exactly: a pulse the sim swallowed silently is the
+        # defect this whole surface was built to make loud. And the leg that
+        # pulsed a CLOSED shutter must end CLOSED: a pulse borrows the shutter,
+        # it does not re-decide the ground's steady command.
+        if last_cs is None or last_store is None or last_hk is None:
+            reasons.append("the pulse leg went deaf on the device, ledger, or HK view")
+        else:
+            if last_hk.snapshots_cmd != 2:
+                reasons.append(f"the leg sent 2 pulses; CAM_HK counted {last_hk.snapshots_cmd}")
+            if last_cs.snapshots != 2:
+                reasons.append(
+                    f"the sim delivered {last_cs.snapshots} snapshots against "
+                    f"{last_hk.snapshots_cmd} asks: a pulse went uncounted or conjured"
+                )
+            if last_store.files_stored != 2:
+                reasons.append(
+                    f"only pulses may land on this bench: store holds "
+                    f"{last_store.files_stored} files, want exactly 2"
+                )
+            if last_cs.shutter != 0:
+                reasons.append(
+                    "the closed-leg pulse left the shutter open: the restore is law, not courtesy"
+                )
+        verdict = "CAM SNAP OK" if not reasons else "CAM SNAP FAILED"
     elif args.mode == "twins":
         # The two-eyed law, screened from the ground: both eyes confirm
         # themselves independently, the commanded pair follows the NAMED

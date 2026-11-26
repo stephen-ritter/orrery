@@ -166,10 +166,14 @@
            An early spike proved those fields are the truth (camera.cpp
            re-reads them every update, and vizInterface gates image requests
            on exactly them). uint64 fields throughout, the OpNavState law:
-           48 B, no padding question for the C twin. Captured counts image
+           64 B, no padding question for the C twin. Captured counts image
            RESPONSES received since boot: the firstPass boot stream (Basilisk
            streams 11 renders before the rate/shutter gates own the port) is
-           included, as honesty demands - it is what the camera captured. -->
+           included, as honesty demands - it is what the camera captured.
+           Snapshots is the sim's side of the shutter-pulse pair: frames
+           that left the shutter because the ground asked, outside the
+           record cadence - CAM_HK.SnapshotCmds counts the asks, this counts
+           the deliveries, and the gap between them is the defect. -->
       <ContainerDataType name="CamState" shortDescription="Camera device state for one sim instant (confirmed, not commanded)">
         <EntryList>
           <Entry name="SimTimeS" type="float64" shortDescription="sim time [s]" />
@@ -179,6 +183,7 @@
           <Entry name="RenderRateS" type="float64" shortDescription="image interval in use [s] (module nanoseconds converted)" />
           <Entry name="Captured" type="uint64" shortDescription="image responses received since boot (firstPass boot stream included)" />
           <Entry name="FramesRecorded" type="uint64" shortDescription="frames the store outlet has sent (0 until record_rate > 0)" />
+          <Entry name="Snapshots" type="uint64" shortDescription="shutter-pulse frames delivered to the store (0 until a SNAP lands)" />
         </EntryList>
       </ContainerDataType>
 
@@ -207,6 +212,16 @@
           <Entry name="CameraId" type="uint64" shortDescription="the [[camera]] to configure" />
           <Entry name="Shutter" type="uint64" shortDescription="1 open (request images), 0 closed" />
           <Entry name="RenderRateS" type="float64" shortDescription="image interval [s]; must be &gt; 0" />
+          <Entry name="Pulse" type="uint64" shortDescription="1: deliver the NEXT capture to the store out of cadence, then restore the shutter; 0: steady config">
+            <Constraints>
+              <EnumeratedValueConstraint>
+                <EnumerationList>
+                  <Enumeration label="STEADY" value="0" />
+                  <Enumeration label="PULSE" value="1" />
+                </EnumerationList>
+              </EnumeratedValueConstraint>
+            </Constraints>
+          </Entry>
         </EntryList>
       </ContainerDataType>
 

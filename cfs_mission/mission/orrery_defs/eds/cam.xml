@@ -49,6 +49,21 @@
         </ConstraintSet>
       </ContainerDataType>
 
+      <!-- The shutter pulse: header-only like MANIFEST. "Look now" needs no
+           argument - the eye is the one this app already commands, at the
+           rate it already runs. What the pulse does lives on the sim side
+           of the airgap (CamConfig.Pulse): open the shutter if it stands
+           closed, deliver the NEXT capture to the store outside the record
+           cadence, and restore. CAM_HK.SnapshotCmds counts the asks;
+           CamState.Snapshots counts the frames that actually left the
+           shutter - the divergence pair again, because the app that
+           forwards cannot grade the delivery. -->
+      <ContainerDataType name="SnapCmd" baseType="CommandBase">
+        <ConstraintSet>
+          <ValueConstraint entry="Sec.FunctionCode" value="2" />
+        </ConstraintSet>
+      </ContainerDataType>
+
       <!-- Payload-bearing commands ride their OWN interface (own MsgId), the
            SetGainPkt law: the payloadless FC-subtype pattern loses argument
            fields in codegen (CFE FCS_SET_GAIN precedent, pinned by
@@ -116,6 +131,8 @@
           <Entry name="FramesRecorded" type="BASE_TYPES/uint32" shortDescription="frames written to onboard storage" />
           <Entry name="FramesStored" type="BASE_TYPES/uint32" shortDescription="frames acknowledged into storage" />
           <Entry name="FramesTransferred" type="BASE_TYPES/uint32" shortDescription="frames CFDP-delivered to the ground" />
+          <Entry name="SnapshotCmds" type="BASE_TYPES/uint32" shortDescription="shutter-pulse SNAP commands accepted" />
+          <PaddingEntry sizeInBits="32" shortDescription="64-bit alignment padding" />
         </EntryList>
       </ContainerDataType>
 

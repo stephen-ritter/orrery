@@ -192,7 +192,7 @@ grep -q "cam stored" "$CONTROL_LOG" && { echo "EVS recorded a file the outlet ne
 # CAM_HK is request-only telemetry and the control leg sends no uplink, so
 # the absence is sworn by the DEVICE side: the one CamState view the probe
 # prints must say recorded=0 (a store tally with no outlet is impossible).
-grep -qE "camstate .*recorded=0$" "$WORK/probe_control.log" || {
+grep -qE "camstate .*recorded=0 snaps=0$" "$WORK/probe_control.log" || {
     echo "control CamState shows no honest recorded=0"; exit 1;
 }
 

@@ -14,5 +14,7 @@
 #define CAM_PIPE_ERR_EID        7 /* pipe/subscribe failure at init        */
 #define CAM_MANIFEST_INF_EID    8 /* manifest written                      */
 #define CAM_MANIFEST_ERR_EID    9 /* manifest refused or failed mid-write  */
+#define CAM_SNAP_INF_EID        10 /* shutter pulse accepted and forwarded  */
+#define CAM_SNAP_ERR_EID        11 /* shutter pulse refused (no eye yet)    */
 
 #endif /* CAM_EVENTS_H */

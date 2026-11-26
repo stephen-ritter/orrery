@@ -126,10 +126,11 @@ def test_the_camstate_frame_reports_the_device_as_built() -> None:
     payloads = camera_body.cam_state_bytes(1.0, 1)
     assert len(payloads) == 1, "one eye streams one frame per tick"
     payload = payloads[0]
-    assert len(payload) == 56, "the provider packs what the row declares"
+    assert len(payload) == 64, "the provider packs what the row declares"
     frame = decode_cam_state(payload)
     assert (frame.sim_time_s, frame.frame) == (1.0, 1)
     assert frame.camera_id == 1
+    assert frame.snapshots == 0, "no pulse was ever asked; the delivery witness must sit at zero"
     assert camera_body._eyes
     module = camera_body._eyes[0][1]
     assert frame.shutter == int(module.cameraIsOn), "the frame is the module, not an opinion"
@@ -163,7 +164,17 @@ def test_the_store_outlet_streams_every_nth_capture_and_only_once(tmp_path: Path
     eye[5] = fake  # the captured witness: scripted, no renderer
     store_dir = tmp_path / "store"
     store_dir.mkdir()
-    eye[6] = {"rate": 2, "dir": store_dir, "sent": [], "count": 0}  # the outlet
+    eye[6] = {
+        "rate": 2,
+        "dir": store_dir,
+        "sent": [],
+        "count": 0,
+        # the shutter-pulse trio: this outlet is flown cadence-only, but a
+        # store without the pulse state is no longer a well-formed store
+        "snap": [],
+        "snaps": 0,
+        "steady_shutter": 1,
+    }  # the outlet
     camera_body._eyes = [tuple(eye)]
     sent: list[bytes] = []
     camera_body.attach_store_emitter(sent.append)
@@ -287,10 +298,11 @@ def test_the_cam_config_frame_round_trips_through_the_schema() -> None:
     from sim.eds_link import decode_cam_config, encode_cam_config
 
     payload = bytes(encode_cam_config(3.5, 42, 1, 0, 4.25))
-    assert len(payload) == 40, "the CamConfig row declares 40 B"
+    assert len(payload) == 48, "the CamConfig row declares 48 B (Pulse included)"
     cfg = decode_cam_config(payload)
     assert (cfg.sim_time_s, cfg.frame, cfg.camera_id) == (3.5, 42, 1)
     assert cfg.shutter == 0 and cfg.render_rate_s == pytest.approx(4.25)
+    assert cfg.pulse == 0, "steady config must not smuggle a shutter pulse"
 
 
 def test_cam_frames_apply_between_ticks_and_never_open_the_barrier() -> None:
