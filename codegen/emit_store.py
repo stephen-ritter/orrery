@@ -76,6 +76,12 @@ class StoreDoorError(ValueError):
     """The scenario cannot be built: its store law does not hold."""
 
 
+#: The file cap the flight ledger can actually index (bsk_link's
+#: BSK_LINK_STORE_LEDGER_MAX, and cam's manifest walk budget before it).
+#: A scenario may claim less; more would be a bound nothing enforces.
+LEDGER_REACH = 512
+
+
 def store_rows(scenario: Path) -> list[tuple[str, str, int, int]]:
     """The scenario's ``[[store]]`` rows, with the yard's law checked.
 
@@ -97,6 +103,12 @@ def store_rows(scenario: Path) -> list[tuple[str, str, int, int]]:
             raise StoreDoorError(
                 f"{scenario.name}: store {vehicle}/{payload} is not sized "
                 f"({nbytes} bytes, {nfiles} files)"
+            )
+        if nfiles > LEDGER_REACH:
+            raise StoreDoorError(
+                f"{scenario.name}: store {vehicle}/{payload} claims {nfiles} "
+                f"files; the onboard ledger indexes {LEDGER_REACH} - a recorder "
+                "beyond its own index cannot honor its bounds"
             )
         rows.append((vehicle, payload, nbytes, nfiles))
 

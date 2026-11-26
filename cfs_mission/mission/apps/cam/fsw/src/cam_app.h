@@ -19,7 +19,11 @@
  *                   the FULL path and its creation time, ordered by creation
  *                   (a directory walk returns filesystem hash order, which
  *                   reads as random; capture order is the order a reader
- *                   can act on). The ground
+ *                   can act on). Once written this boot, the inventory
+ *                   rewrites itself on every store mutation bsk_link
+ *                   reports - a landed frame or a recycled one moves the
+ *                   generation, and an inventory that keeps listing
+ *                   yesterday's files makes liars of both. The ground
  *                   then requests the manifest through FCS_CFDP_DOWN like
  *                   any other file: inventory is a file too, so the file
  *                   path stays the only data plane. No arguments, so it
@@ -96,6 +100,10 @@ typedef struct
     uint64 FramesRecorded;
     uint64 FilesStored;
     uint64 FilesTransferred; /* CF EOT count: files CF closed clean, TX */
+    uint64 ManifestWrites;   /* inventories written: asked for, or following the store */
+    uint64 StoreGeneration;  /* last store mutation heard from bsk_link        */
+    uint8  ManifestWritten;  /* 1: an inventory exists this boot, so the store's
+                              * moves must not leave it telling yesterday      */
 
     /* Read-only stamping from the sensor feed (never a law input). */
     double LastSimTimeS;

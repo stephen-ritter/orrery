@@ -235,7 +235,7 @@ static void CAM_ManifestInsert(uint32 *Count, const char *Path, uint64 Size, int
  * The draft-and-swap is not ceremony: a CFDP read already in flight holds
  * the OLD file whole while the new manifest lands, so a manifest rewrite
  * mid-downlink corrupts neither generation. */
-static void CAM_HandleManifest(void)
+static void CAM_HandleManifest(bool FromGround)
 {
     osal_id_t   DirId;
     os_dirent_t Entry;
@@ -348,7 +348,12 @@ static void CAM_HandleManifest(void)
         return;
     }
 
-    CAM_AppData.HkTlm.Payload.CommandCounter++;
+    CAM_AppData.ManifestWrites++;
+    CAM_AppData.ManifestWritten = 1; /* the inventory now exists: the store owes it news */
+    if (FromGround)
+    {
+        CAM_AppData.HkTlm.Payload.CommandCounter++;
+    }
     CFE_EVS_SendEvent(CAM_MANIFEST_INF_EID, CFE_EVS_EventType_INFORMATION, "manifest written: %s - %lu files, %llu bytes",
                       CAM_MANIFEST_PATH, (unsigned long)Files, (unsigned long long)Bytes);
 }
@@ -385,7 +390,7 @@ static void CAM_HandleCmd(const CFE_SB_Buffer_t *BufPtr)
             break;
 
         case 1: /* MANIFEST */
-            CAM_HandleManifest();
+            CAM_HandleManifest(true);
             break;
 
         default:
@@ -521,11 +526,24 @@ void CAM_AppMain(void)
 
                 case BSK_LINK_CAM_STORAGE_TLM_MID:
                     /* STORED witness: bsk_link emits its ledger on every
-                     * completed file; this app only repeats what it heard. */
+                     * store mutation - a file landed, or a proven one was
+                     * recycled. The inventory law lives here: once a
+                     * manifest exists this boot, every mutation re-derives
+                     * it from the directory. A store that moves while the
+                     * inventory keeps listing yesterday's files makes
+                     * liars of both. */
                     if (Size == sizeof(BskCamStorageTlm_t))
                     {
-                        CAM_AppData.FilesStored =
-                            ((const BskCamStorageTlm_t *)BufPtr)->Payload.FilesStored;
+                        const BskCamStorageTlm_t *Storage = (const BskCamStorageTlm_t *)BufPtr;
+                        CAM_AppData.FilesStored = Storage->Payload.FilesStored;
+                        if (Storage->Payload.Generation != CAM_AppData.StoreGeneration)
+                        {
+                            CAM_AppData.StoreGeneration = Storage->Payload.Generation;
+                            if (CAM_AppData.ManifestWritten)
+                            {
+                                CAM_HandleManifest(false);
+                            }
+                        }
                     }
                     break;
 

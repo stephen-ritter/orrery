@@ -278,13 +278,19 @@ why = """The recorder a store outlet writes into, sized before flight:
 `capacity_bytes` bounds the volume and `capacity_files` bounds the catalog's
 reach, because frame size follows the scene (1.6 KB of empty sky, 230 KB with
 a sister vehicle on the disc) and a byte-only law cannot say when its own
-index outgrows an honest listing. The flying scenario's rows are compiled into
-the plane by codegen/emit_store, landed by the yard door and swept when it goes
-quiet, so changing a capacity moves the firmware stamp rather than drifting
-from the binary that flies. What does not exist yet: the craft obeying the
-number - nothing on the wire evicts, refuses a frame, or alarms at a watermark.
-The scenario says how big the recorder is and the build carries it; the
-vehicle does not yet act on it."""
+index outgrows an honest listing. The flying scenario's rows are compiled
+into the plane (codegen/emit_store), and bsk_link obeys them: an occupancy
+ledger (seeded at boot by a walk, everything found unproven), an 80%
+watermark event, refusal of new captures at the bound, and housekeeping that
+carries capacity, headroom, state, and the recorded/stored/transferred/
+evicted/lost counters across the EDS to the ground. The inventory follows the
+store: the camera app rewrites the manifest on every store generation the bus
+reports.
+What does not exist yet: the witness that makes recycling legal. Only class 1
+transfers fly - "we sent it", ground never answered - so nothing is proven
+received and the eviction path has never fired; proof arrives with CFDP
+class 2. And the index is RAM-only: a restart seeds it with names and sizes
+but no receipts, which is the conservative direction by law."""
 
 [[area]]
 name = "custom"

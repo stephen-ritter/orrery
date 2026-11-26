@@ -326,13 +326,32 @@ typedef struct
 /* BSK_LINK/CamStorage: the onboard image ledger. bsk_link owns
  * this truth - it is the one that reassembles bytes into /cf/img files -
  * and cam app merely reports it. Divergence from CamState.FramesRecorded
- * (what the sim's outlet sent) is the airgap eating a frame. */
+ * (what the sim's outlet sent) is the airgap eating a frame.
+ *
+ * The recorder half (capacity down) is the flying scenario's [[store]] row
+ * compiled in (codegen/emit_store): what the store holds now, what it may
+ * hold, and what the vehicle has done about the difference - recycled
+ * (FilesEvicted), refused (CapturesLost), proven received (TransfersAcked).
+ * State: 0 nominal, 1 past the watermark, 2 at the bound, 3 no recorder
+ * declared. Generation counts store mutations, so a reader can tell two
+ * identical-looking snapshots apart. The Pad is a field, not a compiler
+ * decision: the wire is sequential (the hk.xml idiom). */
 typedef struct
 {
-    double  SimTimeS;    /* sim time of the newest sensor frame [s] */
-    uint64  Frame;       /* sim frame at that stamp                 */
-    uint64  FilesStored; /* complete files under /cf/img since boot  */
-    uint64  BytesStored; /* payload bytes across those files         */
+    double  SimTimeS;        /* sim time of the newest sensor frame [s]  */
+    uint64  Frame;           /* sim frame at that stamp                  */
+    uint64  FilesStored;     /* complete files under /cf/img since boot   */
+    uint64  BytesStored;     /* payload bytes across those files          */
+    uint64  CapacityBytes;   /* the recorder's volume bound               */
+    uint32  CapacityFiles;   /* the recorder's file-count bound           */
+    uint32  FilesNow;        /* files occupying the store right now       */
+    uint64  UsedBytes;       /* bytes occupying the store right now       */
+    uint64  Generation;      /* store mutations: landed or recycled       */
+    uint64  FilesEvicted;    /* proven-received files recycled for room   */
+    uint64  CapturesLost;    /* captures refused at a full recorder       */
+    uint64  TransfersAcked;  /* files an acknowledged transfer proved     */
+    uint8   State;           /* BSK_LINK_STORE_{NOMINAL,NEAR,FULL,UNCL}   */
+    uint8   Pad[7];          /* explicit filler, the EDS declares it too  */
 } __attribute__((packed)) BskCamStorage_Payload_t;
 
 typedef struct
@@ -466,7 +485,7 @@ _Static_assert(sizeof(SpsHkTlm_Payload_t) == 72, "SPS HK payload drift vs sps.xm
 _Static_assert(sizeof(CamSetConfig_Payload_t) == 16, "SetConfig payload drift vs cam.xml");
 _Static_assert(sizeof(CamHkTlm_Payload_t) == 40, "CAM HK payload drift vs cam.xml");
 _Static_assert(sizeof(BskCamConfig_Payload_t) == 40, "CamConfig payload drift vs bsk_link.xml");
-_Static_assert(sizeof(BskCamStorage_Payload_t) == 32, "CamStorage payload drift vs bsk_link.xml");
+_Static_assert(sizeof(BskCamStorage_Payload_t) == 96, "CamStorage payload drift vs bsk_link.xml");
 _Static_assert(sizeof(BskCamState_Payload_t) == 56, "CamState payload drift vs bsk_link.xml row");
 _Static_assert(sizeof(BskImageChunkHeader_t) == 24, "IMG chunk header drift vs sim framing");
 

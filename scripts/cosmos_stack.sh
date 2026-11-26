@@ -74,7 +74,7 @@ run_cli setpassword >/dev/null 2>&1 || true
 # 0.1.9: CAM_CMD FC 1 ManifestCmd - the store inventory has a ground name.
 # 0.1.10: target descriptions tell the mission, not the working plan; the
 #         screens and defs a reader opens now read as the mission speaks.
-GEM_VERSION=0.1.10
+GEM_VERSION=0.1.11
 rm -f "$REPO/cosmos_plugin"/openc3-cosmos-orrery-*.gem \
       # a stale gem in here gets bundled as DATA and re-extracts as a nested plugin on load
 docker run --rm -v "$REPO/cosmos_plugin:/p" --user "$(id -u):$(id -g)" ruby:3.4-slim \

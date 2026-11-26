@@ -80,6 +80,16 @@ def test_one_recorder_per_vehicle(tmp_path: Path) -> None:
         store_rows(broken)
 
 
+def test_a_recorder_beyond_the_ledgers_reach_is_refused(tmp_path: Path) -> None:
+    """A bound nothing can index is a bound nothing enforces."""
+    broken = tmp_path / "wide.toml"
+    broken.write_text(
+        FORMATION_EYE.read_text().replace("capacity_files = 512", "capacity_files = 4096")
+    )
+    with pytest.raises(StoreDoorError, match="cannot honor its bounds"):
+        store_rows(broken)
+
+
 def test_the_union_default_claims_no_recorder() -> None:
     """A quiet yard invents no hardware it did not declare."""
     header = render([], None)

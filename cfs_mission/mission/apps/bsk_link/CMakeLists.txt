@@ -48,6 +48,13 @@ target_include_directories(bsk_link PRIVATE
     "${ORRERY_EDSLINK_BUILD}/inc"
     "${ORRERY_EDSLIB_ROOT}/fsw/inc"
 )
+# The recorder's witnesses subscribe CF's command and EOT MIDs
+# (cf_msgids.h); like cam and cf_tcp, that header's expansion reaches into
+# CF's fsw/inc (same pattern, same reason). Message layout stays on the
+# mission mirrors in orrery_bus_msg.h.
+target_include_directories(bsk_link PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../cFS/apps/cf/fsw/inc"
+)
 
 # plain (non-keyword) signature: add_cfe_app itself links the app target
 # without keywords, and CMake forbids mixing the two on one target.

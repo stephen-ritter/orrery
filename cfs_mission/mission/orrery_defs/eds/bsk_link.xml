@@ -56,6 +56,12 @@
         </DimensionList>
       </ArrayDataType>
 
+      <ArrayDataType dataTypeRef="uint8" name="Bytes7" shortDescription="explicit filler: the wire is sequential">
+        <DimensionList>
+          <Dimension size="7" />
+        </DimensionList>
+      </ArrayDataType>
+
       <ArrayDataType dataTypeRef="float64" name="Quaternion" shortDescription="MRP attitude (euler axis times tan(phi/4))">
         <DimensionList>
           <Dimension size="4" />
@@ -335,14 +341,30 @@
       </ContainerDataType>
 
       <!-- The store ledger: what bsk_link actually reassembled
-           into /cf/img files. The sim's CamState.FramesRecorded is what
-           the outlet SENT; their divergence is the airgap eating frames. -->
+           into /cf/img files, and what the vehicle's recorder does about it.
+           The sim's CamState.FramesRecorded is what the outlet SENT; their
+           divergence is the airgap eating frames. The capacity pair is the
+           flying scenario's [[store]] row compiled into the binary
+           (codegen/emit_store); State reads 0 nominal / 1 past the watermark
+           / 2 at the bound / 3 no recorder declared. A file may be recycled
+           only when an acknowledged transfer proved ground holds it, so
+           FilesEvicted can never out-run what a pass actually delivered. -->
       <ContainerDataType name="CamStorage" shortDescription="Onboard image storage ledger">
         <EntryList>
           <Entry name="SimTimeS" type="float64" shortDescription="sim time of the newest sensor frame [s]" />
           <Entry name="Frame" type="uint64" shortDescription="sim frame counter at that stamp" />
           <Entry name="FilesStored" type="uint64" shortDescription="complete files reassembled under /cf/img since boot" />
           <Entry name="BytesStored" type="uint64" shortDescription="payload bytes across those files" />
+          <Entry name="CapacityBytes" type="uint64" shortDescription="recorder volume bound [bytes], 0 with no recorder" />
+          <Entry name="CapacityFiles" type="uint32" shortDescription="recorder file bound, 0 with no recorder" />
+          <Entry name="FilesNow" type="uint32" shortDescription="files occupying the store right now" />
+          <Entry name="UsedBytes" type="uint64" shortDescription="bytes occupying the store right now" />
+          <Entry name="Generation" type="uint64" shortDescription="store mutations: files landed or were recycled" />
+          <Entry name="FilesEvicted" type="uint64" shortDescription="proven-received files recycled to make room" />
+          <Entry name="CapturesLost" type="uint64" shortDescription="captures refused at a full recorder" />
+          <Entry name="TransfersAcked" type="uint64" shortDescription="files an acknowledged transfer proved received" />
+          <Entry name="State" type="uint8" shortDescription="0 nominal, 1 near full, 2 full, 3 unclaimed" />
+          <Entry name="Pad" type="Bytes7" shortDescription="explicit filler: the wire is sequential" />
         </EntryList>
       </ContainerDataType>
       <ContainerDataType name="CamStorageTlm" baseType="CFE_HDR/TelemetryHeader">

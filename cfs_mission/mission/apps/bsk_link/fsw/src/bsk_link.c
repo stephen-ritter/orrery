@@ -28,6 +28,14 @@
 #include "edslib_displaydb.h"
 #include "orrery_bus_msg.h"
 #include "orrery_msgids.h"
+/* The store witness rides CF's MIDs (CF_CMD_MID, CF_EOT_TLM_MID): like cam
+ * app's EOT witness, the header of MID constants reaches into CF's fsw/inc
+ * (same pattern, same reason, see cam/CMakeLists.txt). Message layout stays
+ * on the mission mirrors in orrery_bus_msg.h, never on CF's private structs. */
+#include "cf_msgids.h"
+/* The recorders this build ships, landed from the flying scenario's
+ * [[store]] rows by codegen/emit_store. Empty table = no vehicle claims one. */
+#include "orrery_store.h"
 
 /* The compiled mission database, linked in whole-archive by this app's CMakeLists
  * (orrery_eds_db.a, produced by edslink/). Declared by name rather than included:
@@ -1022,6 +1030,400 @@ static bool BSK_Link_DecodeFitFrame(const void *Payload, size_t Size)
     return true;
 }
 
+/* --------------------------------------------------------------------------
+ * The recorder: obeying the [[store]] row the scenario compiled in.
+ *
+ * The bounds arrive via codegen/emit_store (orrery_store.h): this vehicle
+ * looks up its own name (ORRERY_VEHICLE) and either owns a recorder or flies
+ * unclaimed - unclaimed means bytes land unbounded, exactly the pre-recorder
+ * behaviour, and the telemetry says so as state 3 rather than pretending.
+ *
+ * Occupancy lives in a RAM ledger of the files standing under /cf/img now,
+ * seeded at boot by a directory walk. The ledger is deliberately NOT the
+ * boot's history (FilesStored/BytesStored above keep that): a file that
+ * leaves the store must not rewrite what happened. After a restart the
+ * files are real but their transfer standing is not - receipts were held by
+ * a task that no longer exists - so every seeded file starts UNPROVEN and
+ * nothing on the vehicle may touch it. That is the conservative direction:
+ * a store that cannot recycle refuses new captures before it guesses.
+ *
+ * The law has two edges and one witness that opens the second one:
+ * a capture is admitted when the recorder has headroom; otherwise the
+ * oldest file whose RECEIPT the ground has proven is recycled, or the
+ * capture is refused and the event bus says so. Receipt is proven only when
+ * CF was handed an acknowledged (class 2) transfer - witnessed on CF's own
+ * command MID, not on a relayer's intention - and CF's end-of-transaction
+ * report for that exact path closes clean, TX and NO_ERROR. A class 1
+ * completion says "we sent it"; ground never answered; it proves nothing
+ * and evicts nothing. While no acknowledged transfer has ever crossed this
+ * bus, nothing here is recyclable, and a full recorder only refuses.
+ * -------------------------------------------------------------------------- */
+static void BSK_Link_EmitCamStorage(void); /* defined with the outlet below     */
+
+#define BSK_LINK_STORE_LEDGER_MAX   512 /* same RAM budget as cam's manifest walk;
+                                         * the build door keeps capacity_files <= this */
+#define BSK_LINK_STORE_PENDING_MAX  8   /* in-flight acknowledged transfers        */
+
+typedef struct
+{
+    char   Path[BSK_LINK_STORE_PATH_MAX];
+    uint64 Size;
+    int64  When;   /* mtime seconds: the file's own creation stamp */
+    uint8  Proven; /* 1: an acknowledged transfer for this path was witnessed */
+} BskStoreEntry_t;
+
+static BskStoreEntry_t BskStoreLedger[BSK_LINK_STORE_LEDGER_MAX];
+static uint32          BskStoreLedgerCount;
+static uint8           BskStoreUntrackedWarned;
+static char            BskStorePending[BSK_LINK_STORE_PENDING_MAX][BSK_LINK_STORE_PATH_MAX];
+static uint32          BskStorePendingCount;
+
+/* The seeded ledger is in filesystem order, which is hash order, not age.
+ * "Oldest" therefore asks the files themselves - their mtimes - and ties
+ * break on the path so every scan picks the same victim. */
+static int BSK_Link_StoreOldestProven(void)
+{
+    int Pick = -1;
+
+    for (uint32 At = 0; At < BskStoreLedgerCount; ++At)
+    {
+        if (!BskStoreLedger[At].Proven)
+        {
+            continue;
+        }
+        if (Pick < 0 || BskStoreLedger[At].When < BskStoreLedger[Pick].When ||
+            (BskStoreLedger[At].When == BskStoreLedger[Pick].When &&
+             strcmp(BskStoreLedger[At].Path, BskStoreLedger[Pick].Path) < 0))
+        {
+            Pick = (int)At;
+        }
+    }
+    return Pick;
+}
+
+static void BSK_Link_StoreLedgerDrop(uint32 At)
+{
+    for (uint32 Shift = At; Shift + 1u < BskStoreLedgerCount; ++Shift)
+    {
+        BskStoreLedger[Shift] = BskStoreLedger[Shift + 1u];
+    }
+    BskStoreLedgerCount--;
+}
+
+static void BSK_Link_StoreUpdateState(void)
+{
+    uint64 PctBytes = (uint64)((BSK_LinkAppData.StoreUsedBytes * 100u) / BSK_LinkAppData.StoreCapacityBytes);
+    uint64 PctFiles = ((uint64)BSK_LinkAppData.StoreFilesNow * 100u) / BSK_LinkAppData.StoreCapacityFiles;
+    uint64 Pct      = PctBytes > PctFiles ? PctBytes : PctFiles;
+    uint8  State    = BSK_LINK_STORE_NOMINAL;
+
+    if (!BSK_LinkAppData.StoreClaimed)
+    {
+        return;
+    }
+    if (Pct >= 100u)
+    {
+        State = BSK_LINK_STORE_FULL;
+    }
+    else if (Pct >= (uint64)BSK_LINK_STORE_WATERMARK)
+    {
+        State = BSK_LINK_STORE_NEAR_FULL;
+    }
+    if (State == BSK_LinkAppData.StoreState)
+    {
+        return; /* events mark transitions; the ledger rides every emit */
+    }
+    BSK_LinkAppData.StoreState = State;
+    if (State == BSK_LINK_STORE_NEAR_FULL)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_STORE_WATERMARK_INF_EID, CFE_EVS_EventType_INFORMATION,
+                          "recorder %llu%% full (WARN): files=%u/%u bytes=%llu/%llu - a pass is the time to transfer",
+                          (unsigned long long)Pct, (unsigned)BSK_LinkAppData.StoreFilesNow,
+                          (unsigned)BSK_LinkAppData.StoreCapacityFiles,
+                          (unsigned long long)BSK_LinkAppData.StoreUsedBytes,
+                          (unsigned long long)BSK_LinkAppData.StoreCapacityBytes);
+    }
+    else if (State == BSK_LINK_STORE_FULL)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_STORE_FULL_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "recorder FULL: files=%u/%u bytes=%llu/%llu - new captures refused until room is proven",
+                          (unsigned)BSK_LinkAppData.StoreFilesNow, (unsigned)BSK_LinkAppData.StoreCapacityFiles,
+                          (unsigned long long)BSK_LinkAppData.StoreUsedBytes,
+                          (unsigned long long)BSK_LinkAppData.StoreCapacityBytes);
+    }
+}
+
+/* One file, the oldest the ground has proven, recycled to make room. The
+ * byte-side can still refuse (a vanished or busy file): then this entry stops
+ * offering itself - occupancy stands, the file stays - and the loop that
+ * called simply finds no further room. */
+static void BSK_Link_StoreEvictOne(void)
+{
+    int At = BSK_Link_StoreOldestProven();
+
+    if (At < 0)
+    {
+        return;
+    }
+    if (OS_remove(BskStoreLedger[At].Path) != OS_SUCCESS)
+    {
+        BskStoreLedger[At].Proven = 0;
+        CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "recycle failed on %s: bytes stay, occupancy stands", BskStoreLedger[At].Path);
+        return;
+    }
+    BSK_LinkAppData.StoreUsedBytes -= BskStoreLedger[At].Size;
+    BSK_LinkAppData.StoreFilesNow--;
+    BSK_LinkAppData.FilesEvicted++;
+    BSK_LinkAppData.StoreGeneration++;
+    CFE_EVS_SendEvent(BSK_LINK_STORE_EVICT_INF_EID, CFE_EVS_EventType_INFORMATION,
+                      "recycled %s (%llu B): ground holds it - files=%u bytes=%llu",
+                      BskStoreLedger[At].Path, (unsigned long long)BskStoreLedger[At].Size,
+                      (unsigned)BSK_LinkAppData.StoreFilesNow,
+                      (unsigned long long)BSK_LinkAppData.StoreUsedBytes);
+    BSK_Link_StoreLedgerDrop((uint32)At);
+    BSK_Link_StoreUpdateState();
+    BSK_Link_EmitCamStorage(); /* the manifest's turn to follow the store's */
+}
+
+/* Room for one more capture, making it if the recorder can honestly say it
+ * may forget. False means: at the bound, and every byte in here is a byte
+ * the ground has not been proven to hold. */
+static bool BSK_Link_StoreHasRoom(void)
+{
+    uint32 Guard = 0;
+
+    while ((BSK_LinkAppData.StoreFilesNow >= BSK_LinkAppData.StoreCapacityFiles ||
+            BSK_LinkAppData.StoreUsedBytes >= BSK_LinkAppData.StoreCapacityBytes) &&
+           Guard++ < BSK_LINK_STORE_LEDGER_MAX)
+    {
+        BSK_Link_StoreEvictOne();
+    }
+    return !(BSK_LinkAppData.StoreFilesNow >= BSK_LinkAppData.StoreCapacityFiles ||
+             BSK_LinkAppData.StoreUsedBytes >= BSK_LinkAppData.StoreCapacityBytes);
+}
+
+/* A file just landed: count it, index it, and let the bounds notice. */
+static void BSK_Link_StoreLand(const char *Path, uint64 Size)
+{
+    os_fstat_t Stats;
+    int64      When = 0;
+
+    if (OS_stat(Path, &Stats) == OS_SUCCESS)
+    {
+        When = (int64)OS_FILESTAT_TIME(Stats);
+    }
+    BSK_LinkAppData.StoreFilesNow++;
+    BSK_LinkAppData.StoreUsedBytes += Size;
+    BSK_LinkAppData.StoreGeneration++;
+    if (BskStoreLedgerCount < BSK_LINK_STORE_LEDGER_MAX)
+    {
+        snprintf(BskStoreLedger[BskStoreLedgerCount].Path, sizeof(BskStoreLedger[BskStoreLedgerCount].Path),
+                 "%s", Path);
+        BskStoreLedger[BskStoreLedgerCount].Size   = Size;
+        BskStoreLedger[BskStoreLedgerCount].When   = When;
+        BskStoreLedger[BskStoreLedgerCount].Proven = 0;
+        BskStoreLedgerCount++;
+    }
+    else if (!BskStoreUntrackedWarned)
+    {
+        /* Unreachable while the build door keeps capacity_files within the
+         * ledger; if a store ever arrives past it, those files occupy the
+         * recorder without ever becoming recyclable - said once, loudly. */
+        BskStoreUntrackedWarned = 1;
+        CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "ledger full at %u entries: further files occupy the store but cannot be recycled",
+                          (unsigned)BSK_LINK_STORE_LEDGER_MAX);
+    }
+    BSK_Link_StoreUpdateState();
+}
+
+/* Boot: what stands under /cf/img occupies the recorder. None of it is
+ * recyclable - the receipts for anything downlinked lived in a task that
+ * has not existed since. */
+static void BSK_Link_StoreSeed(void)
+{
+    osal_id_t   DirId;
+    os_dirent_t Entry;
+    os_fstat_t  Stats;
+
+    if (OS_DirectoryOpen(&DirId, BSK_LINK_STORE_DIR) != OS_SUCCESS)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_STORE_INF_EID, CFE_EVS_EventType_INFORMATION,
+                          "recorder seeded empty: %s unreadable yet", BSK_LINK_STORE_DIR);
+        return;
+    }
+    while (OS_DirectoryRead(DirId, &Entry) == OS_SUCCESS)
+    {
+        char        Path[BSK_LINK_STORE_PATH_MAX];
+        const char *Name = OS_DIRENTRY_NAME(Entry);
+
+        if (Name[0] == '\0' || Name[0] == '.')
+        {
+            continue; /* store internals: .part corpses are not inventory */
+        }
+        snprintf(Path, sizeof(Path), "%s/%s", BSK_LINK_STORE_DIR, Name);
+        if (OS_stat(Path, &Stats) != OS_SUCCESS)
+        {
+            continue;
+        }
+        BSK_LinkAppData.StoreFilesNow++;
+        BSK_LinkAppData.StoreUsedBytes += (uint64)OS_FILESTAT_SIZE(Stats);
+        if (BskStoreLedgerCount < BSK_LINK_STORE_LEDGER_MAX)
+        {
+            snprintf(BskStoreLedger[BskStoreLedgerCount].Path, sizeof(BskStoreLedger[BskStoreLedgerCount].Path),
+                     "%s", Path);
+            BskStoreLedger[BskStoreLedgerCount].Size = (uint64)OS_FILESTAT_SIZE(Stats);
+            BskStoreLedger[BskStoreLedgerCount].When = (int64)OS_FILESTAT_TIME(Stats);
+            BskStoreLedger[BskStoreLedgerCount].Proven = 0;
+            BskStoreLedgerCount++;
+        }
+        else if (!BskStoreUntrackedWarned)
+        {
+            BskStoreUntrackedWarned = 1;
+            CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                              "seed hit the ledger's reach (%u entries): the rest is occupancy without an index",
+                              (unsigned)BSK_LINK_STORE_LEDGER_MAX);
+        }
+    }
+    OS_DirectoryClose(DirId);
+    CFE_EVS_SendEvent(BSK_LINK_STORE_INF_EID, CFE_EVS_EventType_INFORMATION,
+                      "recorder seeded: files=%u bytes=%llu, none proven after restart",
+                      (unsigned)BSK_LinkAppData.StoreFilesNow, (unsigned long long)BSK_LinkAppData.StoreUsedBytes);
+    BSK_Link_StoreUpdateState();
+}
+
+/* Which row, if any, is this craft's recorder? No vehicle name means no
+ * claim: the build default is the union, which claims nothing. */
+static void BSK_Link_StoreResolve(void)
+{
+    const char *Vehicle = getenv("ORRERY_VEHICLE");
+
+    if (Vehicle == NULL)
+    {
+        Vehicle = "";
+    }
+    for (size_t At = 0; At < ORRERY_STORE_ROW_COUNT; ++At)
+    {
+        if (strcmp(OrreryStore_Rows[At].Vehicle, Vehicle) != 0 ||
+            strcmp(OrreryStore_Rows[At].Payload, "cam") != 0)
+        {
+            continue;
+        }
+        if (OrreryStore_Rows[At].CapacityFiles > BSK_LINK_STORE_LEDGER_MAX)
+        {
+            CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                              "recorder %s/cam claims %u files, the ledger reaches %u: unenforced",
+                              Vehicle, (unsigned)OrreryStore_Rows[At].CapacityFiles,
+                              (unsigned)BSK_LINK_STORE_LEDGER_MAX);
+            return;
+        }
+        BSK_LinkAppData.StoreClaimed       = 1;
+        BSK_LinkAppData.StoreCapacityBytes = OrreryStore_Rows[At].CapacityBytes;
+        BSK_LinkAppData.StoreCapacityFiles = OrreryStore_Rows[At].CapacityFiles;
+        CFE_EVS_SendEvent(BSK_LINK_STORE_INF_EID, CFE_EVS_EventType_INFORMATION,
+                          "recorder %s/cam: %llu B, %u files (compiled from the flying scenario)",
+                          Vehicle, (unsigned long long)BSK_LinkAppData.StoreCapacityBytes,
+                          (unsigned)BSK_LinkAppData.StoreCapacityFiles);
+        return;
+    }
+    CFE_EVS_SendEvent(BSK_LINK_STORE_INF_EID, CFE_EVS_EventType_INFORMATION,
+                      "no recorder declared for vehicle '%s': the store writes unenforced", Vehicle);
+}
+
+/* CF accepts a file for downlink on its own command MID, and the class the
+ * ground asked for rides in the payload. Only an acknowledged (class 2,
+ * CF's numbering 1) transfer can ever become proof, so only those get a
+ * pending line. The table is small on purpose: if it overflows, the dropped
+ * transfer can land safely and still prove nothing - forgetting is always
+ * in the conservative direction. */
+static void BSK_Link_WitnessCfCommand(const CFE_SB_Buffer_t *BufPtr, size_t Size)
+{
+    const CfTxFileCmd_t *Tx = (const CfTxFileCmd_t *)BufPtr;
+    CFE_MSG_FcnCode_t    FcnCode = 0;
+
+    if (Size != sizeof(CfTxFileCmd_t))
+    {
+        return; /* schema drift: no transfer is claimed by a frame nobody sized */
+    }
+    if (CFE_MSG_GetFcnCode(&BufPtr->Msg, &FcnCode) != CFE_SUCCESS || FcnCode != (CFE_MSG_FcnCode_t)CF_TX_FILE_CC)
+    {
+        return;
+    }
+    if (Tx->Payload.CfdpClass != 1u)
+    {
+        return; /* class 1 says "we sent it"; ground never answered */
+    }
+    if (BskStorePendingCount == BSK_LINK_STORE_PENDING_MAX)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_STORE_ACKWRN_INF_EID, CFE_EVS_EventType_INFORMATION,
+                          "ack-pending table full (NOTICE): dropped %s - its completion will prove nothing",
+                          BskStorePending[0]);
+        for (uint32 At = 1; At < BSK_LINK_STORE_PENDING_MAX; ++At)
+        {
+            memcpy(BskStorePending[At - 1u], BskStorePending[At], BSK_LINK_STORE_PATH_MAX);
+        }
+        BskStorePendingCount--;
+    }
+    snprintf(BskStorePending[BskStorePendingCount], BSK_LINK_STORE_PATH_MAX, "%s", Tx->Payload.SrcFilename);
+    BskStorePendingCount++;
+}
+
+/* CF's per-file closing statement. TX and NO_ERROR for a path this app put
+ * on the ack-pending table is the mission's definition of RECEIVED: the
+ * ground's answer came back through CFDP's handshake before CF wrote this
+ * packet. Anything else - failures, class 1 completions, files this store
+ * never held - proves nothing here. */
+static void BSK_Link_WitnessEot(const CFE_SB_Buffer_t *BufPtr, size_t Size)
+{
+    const CfEotTlm_t *Eot = (const CfEotTlm_t *)BufPtr;
+    uint32            Held = 0;
+    bool              Acked = false;
+
+    if (Size != sizeof(CfEotTlm_t))
+    {
+        return;
+    }
+    if (Eot->Payload.Direction != 1u || Eot->Payload.TxnStat != 0u)
+    {
+        return;
+    }
+    for (uint32 At = 0; At < BskStorePendingCount; ++At)
+    {
+        if (!Acked && strcmp(BskStorePending[At], Eot->Payload.SrcFile) == 0)
+        {
+            Acked = true; /* this line retires below */
+        }
+        else if (Held < BSK_LINK_STORE_PENDING_MAX)
+        {
+            if (Held != At)
+            {
+                memcpy(BskStorePending[Held], BskStorePending[At], BSK_LINK_STORE_PATH_MAX);
+            }
+            Held++;
+        }
+    }
+    BskStorePendingCount = Held;
+    if (!Acked)
+    {
+        return; /* never an acknowledged transfer: the file stays unproven */
+    }
+    for (uint32 At = 0; At < BskStoreLedgerCount; ++At)
+    {
+        if (strcmp(BskStoreLedger[At].Path, Eot->Payload.SrcFile) == 0)
+        {
+            if (!BskStoreLedger[At].Proven)
+            {
+                BskStoreLedger[At].Proven = 1;
+                BSK_LinkAppData.TransfersAcked++;
+            }
+            return;
+        }
+    }
+    /* A proven file this ledger never held - the manifest, a ground upload -
+     * leaves no claim behind: the store can only forget its own frames. */
+}
+
 /* Store outlet: the sim's IMG chunks become /cf/img files.
  *
  * The framing is orrery's own and deliberately OUTSIDE the EDS model (the
@@ -1037,6 +1439,16 @@ static void BSK_Link_EmitCamStorage(void)
     BSK_LinkAppData.CamStorageTlm.Payload.Frame       = BSK_LinkAppData.LastFrame;
     BSK_LinkAppData.CamStorageTlm.Payload.FilesStored = BSK_LinkAppData.FilesStored;
     BSK_LinkAppData.CamStorageTlm.Payload.BytesStored = BSK_LinkAppData.BytesStored;
+    BSK_LinkAppData.CamStorageTlm.Payload.CapacityBytes = BSK_LinkAppData.StoreCapacityBytes;
+    BSK_LinkAppData.CamStorageTlm.Payload.CapacityFiles = BSK_LinkAppData.StoreCapacityFiles;
+    BSK_LinkAppData.CamStorageTlm.Payload.FilesNow      = BSK_LinkAppData.StoreFilesNow;
+    BSK_LinkAppData.CamStorageTlm.Payload.UsedBytes     = BSK_LinkAppData.StoreUsedBytes;
+    BSK_LinkAppData.CamStorageTlm.Payload.Generation    = BSK_LinkAppData.StoreGeneration;
+    BSK_LinkAppData.CamStorageTlm.Payload.FilesEvicted  = BSK_LinkAppData.FilesEvicted;
+    BSK_LinkAppData.CamStorageTlm.Payload.CapturesLost  = BSK_LinkAppData.CapturesLost;
+    BSK_LinkAppData.CamStorageTlm.Payload.TransfersAcked = BSK_LinkAppData.TransfersAcked;
+    BSK_LinkAppData.CamStorageTlm.Payload.State =
+        BSK_LinkAppData.StoreClaimed ? BSK_LinkAppData.StoreState : (uint8)BSK_LINK_STORE_UNCLAIMED;
     CFE_SB_TimeStampMsg(CFE_MSG_PTR(BSK_LinkAppData.CamStorageTlm.TelemetryHeader));
     if (CFE_SB_TransmitMsg(CFE_MSG_PTR(BSK_LinkAppData.CamStorageTlm.TelemetryHeader), true) != CFE_SUCCESS)
     {
@@ -1067,6 +1479,16 @@ static void BSK_Link_IngestImageChunk(const void* Data, size_t Size)
     memcpy(&Header, Data, sizeof(Header));
     SliceLen = Size - sizeof(Header);
 
+    if (BSK_LinkAppData.RefusedActive && Header.CamId == BSK_LinkAppData.RefusedCam &&
+        Header.Capture == BSK_LinkAppData.RefusedCapture)
+    {
+        /* A refused capture stays refused, slice by slice: the recorder said
+         * no to these bytes when it still could, and half a file would
+         * re-ask the question at rename time with worse options. */
+        BSK_LinkAppData.ImgDropCount++;
+        return;
+    }
+
     if (Header.Part == 0)
     {
         /* a new capture: any still-open stream is a dropped corpse; close
@@ -1076,6 +1498,38 @@ static void BSK_Link_IngestImageChunk(const void* Data, size_t Size)
             OS_close(BSK_LinkAppData.StoreFd);
             BSK_LinkAppData.StoreFd = OS_OBJECT_ID_UNDEFINED;
         }
+        if (BSK_LinkAppData.StoreClaimed && !BSK_Link_StoreHasRoom())
+        {
+            /* Full, and every byte in here is a byte the ground has not been
+             * proven to hold. Refuse the capture, count the loss, and name
+             * the bind the first time and every hundredth after. */
+            BSK_LinkAppData.CapturesLost++;
+            BSK_LinkAppData.RefusedActive   = 1;
+            BSK_LinkAppData.RefusedCam      = Header.CamId;
+            BSK_LinkAppData.RefusedCapture  = Header.Capture;
+            BSK_LinkAppData.ImgDropCount++;
+            if (BSK_LinkAppData.CapturesLost == 1 ||
+                BSK_LinkAppData.CapturesLost % BSK_LINK_SENSOR_EVENT_EVERY == 0)
+            {
+                CFE_EVS_SendEvent(BSK_LINK_STORE_FULL_ERR_EID, CFE_EVS_EventType_ERROR,
+                                  "capture %llu/%llu refused: recorder full, nothing proven to recycle "
+                                  "(lost=%llu files=%u/%u bytes=%llu/%llu)",
+                                  (unsigned long long)Header.CamId, (unsigned long long)Header.Capture,
+                                  (unsigned long long)BSK_LinkAppData.CapturesLost,
+                                  (unsigned)BSK_LinkAppData.StoreFilesNow,
+                                  (unsigned)BSK_LinkAppData.StoreCapacityFiles,
+                                  (unsigned long long)BSK_LinkAppData.StoreUsedBytes,
+                                  (unsigned long long)BSK_LinkAppData.StoreCapacityBytes);
+            }
+            /* The ledger rides EVERY refusal, unthrottled like the events are
+             * not: a ground that stopped seeing updates would read a frozen
+             * CapturesLost as "only one frame lost" while the recorder kept
+             * eating captures. One packet per refused capture is the price of
+             * a counter that is never behind its own story. */
+            BSK_Link_EmitCamStorage();
+            return;
+        }
+        BSK_LinkAppData.RefusedActive = 0;
         snprintf(PartPath, sizeof(PartPath), "/cf/img/.%llu_%llu.part",
                  (unsigned long long)Header.CamId, (unsigned long long)Header.Capture);
         OsStatus = OS_OpenCreate(&BSK_LinkAppData.StoreFd, PartPath,
@@ -1146,6 +1600,10 @@ static void BSK_Link_IngestImageChunk(const void* Data, size_t Size)
     }
     BSK_LinkAppData.FilesStored++;
     BSK_LinkAppData.BytesStored += BSK_LinkAppData.StoreBytes;
+    if (BSK_LinkAppData.StoreClaimed)
+    {
+        BSK_Link_StoreLand(FinalPath, BSK_LinkAppData.StoreBytes);
+    }
     BSK_Link_EmitCamStorage();
     if (BSK_LinkAppData.FilesStored == 1 ||
         BSK_LinkAppData.FilesStored % BSK_LINK_SENSOR_EVENT_EVERY == 0)
@@ -1425,6 +1883,29 @@ static int32 BSK_Link_AppInit(void)
                           "cam config subscribe failed, status=%08x; camera command surface DEAD",
                           (unsigned int)Status);
     }
+    /* The recorder's witnesses, both on CF's own MIDs: what CF was asked to
+     * transfer (with the class the ground chose) and how CF closed each
+     * transaction. A failed subscribe costs the store its ability to forget
+     * - frames still land, nothing recycles - so: loud, not fatal. */
+    Status = CFE_SB_Subscribe(CFE_SB_ValueToMsgId(CF_CMD_MID), BSK_LinkAppData.CmdPipe);
+    if (Status != CFE_SUCCESS)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_SUBSCRIBE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "cf command witness subscribe failed, status=%08x; recorder cannot recycle",
+                          (unsigned int)Status);
+    }
+    Status = CFE_SB_Subscribe(CFE_SB_ValueToMsgId(CF_EOT_TLM_MID), BSK_LinkAppData.CmdPipe);
+    if (Status != CFE_SUCCESS)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_SUBSCRIBE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "eot witness subscribe failed, status=%08x; recorder cannot recycle",
+                          (unsigned int)Status);
+    }
+
+    /* The recorder, before any byte can land: claim the scenario's row, then
+     * take stock of what the store already holds. */
+    BSK_Link_StoreResolve();
+    BSK_Link_StoreSeed();
 
     /* Resolve the linked-in database before accepting any traffic: if the schema is
      * not there, every frame would otherwise count as malformed. Looking the type
@@ -1681,8 +2162,10 @@ void BSK_LINK_AppMain(void)
             {
                 CFE_SB_MsgId_t MsgId = CFE_SB_INVALID_MSG_ID;
                 CFE_SB_MsgId_Atom_t MsgIdValue;
+                size_t          MsgSize = 0;
 
                 CFE_MSG_GetMsgId(&BufPtr->Msg, &MsgId);
+                CFE_MSG_GetSize(&BufPtr->Msg, &MsgSize);
                 MsgIdValue = CFE_SB_MsgIdToValue(MsgId);
                 if (MsgIdValue == (CFE_SB_MsgId_Atom_t)BSK_LINK_TORQUE_COMMAND_TLM_MID)
                 {
@@ -1695,6 +2178,14 @@ void BSK_LINK_AppMain(void)
                 else if (MsgIdValue == (CFE_SB_MsgId_Atom_t)BSK_LINK_CAM_CONFIG_TLM_MID)
                 {
                     BSK_Link_ForwardCamConfig(BufPtr);
+                }
+                else if (MsgIdValue == (CFE_SB_MsgId_Atom_t)CF_CMD_MID)
+                {
+                    BSK_Link_WitnessCfCommand(BufPtr, MsgSize);
+                }
+                else if (MsgIdValue == (CFE_SB_MsgId_Atom_t)CF_EOT_TLM_MID)
+                {
+                    BSK_Link_WitnessEot(BufPtr, MsgSize);
                 }
                 /* Any other MsgId (e.g. future ground commands) is accounted in
                  * MsgRecvCount only; there is no second consumer to surprise. */

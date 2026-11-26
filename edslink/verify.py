@@ -105,10 +105,27 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
         },
     ),
     # The storage ledger: written by bsk_link's C struct, read on the ground via
-    # the generated defs. 32 B, the orrery_bus_msg.h assert's other half.
+    # the generated defs. 96 B, the orrery_bus_msg.h assert's other half: the
+    # recorder half (capacity down) carries the scenario's [[store]] row and
+    # what the vehicle did about the difference.
     "CamStorage": (
-        "<dQQQ",
-        {"SimTimeS": 10.5, "Frame": 21, "FilesStored": 4, "BytesStored": 8192},
+        "<dQQQQIIQQQQQBBBBBBBB",
+        {
+            "SimTimeS": 10.5,
+            "Frame": 21,
+            "FilesStored": 4,
+            "BytesStored": 8192,
+            "CapacityBytes": 67108864,
+            "CapacityFiles": 512,
+            "FilesNow": 4,
+            "UsedBytes": 8192,
+            "Generation": 5,
+            "FilesEvicted": 0,
+            "CapturesLost": 1,
+            "TransfersAcked": 2,
+            "State": 1,
+            "Pad": (0, 0, 0, 0, 0, 0, 0),
+        },
     ),
     "TruthState": (
         "<14d",

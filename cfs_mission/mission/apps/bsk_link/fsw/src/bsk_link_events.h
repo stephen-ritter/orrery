@@ -29,5 +29,10 @@
 #define BSK_LINK_CAM_INF_EID           22 /* cam config forwarded to sim         */
 #define BSK_LINK_STORE_INF_EID         23 /* image file completed under /cf/img  */
 #define BSK_LINK_STORE_ERR_EID         24 /* store open/write/rename refused     */
+#define BSK_LINK_STORE_WATERMARK_INF_EID 25 /* recorder crossed the warn line    */
+#define BSK_LINK_STORE_FULL_ERR_EID      26 /* capture refused: store at its bound */
+#define BSK_LINK_STORE_EVICT_INF_EID     27 /* proven-received file recycled       */
+#define BSK_LINK_STORE_ACKWRN_INF_EID    28 /* ack-pending overflow: proof         */
+                                            /* capacity, not transfer capacity     */
 
 #endif /* BSK_LINK_EVENTS_H */

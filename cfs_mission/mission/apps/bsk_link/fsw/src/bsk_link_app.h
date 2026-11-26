@@ -55,6 +55,20 @@
 #define BSK_LINK_IMG_TOPIC      "IMG"
 #define BSK_LINK_IMG_SLICE_MAX  16384
 
+/* The recorder (the scenario's [[store]] row for this vehicle).
+ *
+ * The bound is compiled in, so the only flight-time question is what the store
+ * holds right now. The watermark is the point where a full recorder is still
+ * avoidable from the ground: warn there, refuse only at the bound. */
+#define BSK_LINK_STORE_DIR        "/cf/img"
+#define BSK_LINK_STORE_PATH_MAX   96 /* enough for the longest frame path + headroom */
+#define BSK_LINK_STORE_WATERMARK  80 /* percent of either bound that warns ground */
+#define BSK_LINK_STORE_NOMINAL    0
+#define BSK_LINK_STORE_NEAR_FULL  1
+#define BSK_LINK_STORE_FULL       2
+#define BSK_LINK_STORE_UNCLAIMED  3 /* this vehicle declares no recorder: the
+                                     * store is written, never enforced          */
+
 /**
  * Sensor frame to decode off the link.
  *
@@ -184,6 +198,25 @@ typedef struct
     uint32 StorePublishFail;   /* CamStorage TLM rejected (reported once)        */
     uint64 FilesStored;        /* complete files under /cf/img since boot        */
     uint64 BytesStored;        /* payload bytes across those files               */
+    /* The recorder's bound, compiled in from the flying scenario's [[store]]
+     * rows (codegen/emit_store). Occupancy is deliberately SEPARATE from
+     * FilesStored/BytesStored above: those are the boot's history, and a file
+     * that leaves the store - recycled or refused - must not rewrite it. */
+    uint8  StoreClaimed;       /* 1: this vehicle ships a declared recorder      */
+    uint64 StoreCapacityBytes;
+    uint32 StoreCapacityFiles;
+    uint32 StoreFilesNow;      /* complete files occupying the store right now   */
+    uint64 StoreUsedBytes;
+    uint64 StoreGeneration;    /* store mutations (landed or recycled): the
+                                * manifest's turn to follow the store's          */
+    uint64 FilesEvicted;       /* proven-received files recycled to make room    */
+    uint64 CapturesLost;       /* captures refused because the store was full    */
+    uint64 TransfersAcked;     /* files an acknowledged transfer proved received */
+    uint8  StoreState;         /* BSK_LINK_STORE_{NOMINAL,NEAR,FULL}             */
+    uint8  RefusedActive;      /* 1 while the stream below is refused: the slices
+                                * of a refused capture must not sneak back       */
+    uint64 RefusedCam;         /* in through the out-of-order branch             */
+    uint64 RefusedCapture;
     BskCamStorageTlm_t CamStorageTlm; /* the ledger as the bus sees it           */
     uint32 TimeSyncCount;      /* SET_MET sent: mission clock slaved to the sim  */
     uint32 WorldFrameCounts[BSK_LINK_FRAME_ROWS];      /* per registry row      */

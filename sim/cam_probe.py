@@ -117,11 +117,29 @@ class CamStorage:
         self.sim_time_s = wire_float(pkt, model.byte_offset(".SimTimeS"))
         self.files_stored = model.wire_get(pkt, ".FilesStored")
         self.bytes_stored = model.wire_get(pkt, ".BytesStored")
+        self.capacity_bytes = model.wire_get(pkt, ".CapacityBytes")
+        self.capacity_files = model.wire_get(pkt, ".CapacityFiles")
+        self.files_now = model.wire_get(pkt, ".FilesNow")
+        self.used_bytes = model.wire_get(pkt, ".UsedBytes")
+        self.generation = model.wire_get(pkt, ".Generation")
+        self.files_evicted = model.wire_get(pkt, ".FilesEvicted")
+        self.captures_lost = model.wire_get(pkt, ".CapturesLost")
+        self.transfers_acked = model.wire_get(pkt, ".TransfersAcked")
+        self.state = model.wire_get(pkt, ".State")
 
     def __str__(self) -> str:
         """One readable line for the acceptance log."""
         return (
             f"storage t={self.sim_time_s:6.1f}s files={self.files_stored} bytes={self.bytes_stored}"
+        )
+
+    def recorder_str(self) -> str:
+        """The recorder half on one line: the bound and what did about it."""
+        return (
+            f"capacity={self.capacity_bytes}B/{self.capacity_files} files "
+            f"now={self.files_now}/{self.capacity_files} used={self.used_bytes}B "
+            f"gen={self.generation} evicted={self.files_evicted} "
+            f"lost={self.captures_lost} acked={self.transfers_acked} state={self.state}"
         )
 
 
@@ -135,7 +153,9 @@ def main(argv: list[str] | None = None) -> int:
     """Drive (or just watch) one camera flight; returns process exit code."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--instance", type=int, default=0, help="fleet port block")
-    ap.add_argument("--mode", choices=("control", "spam", "record", "twins"), default="spam")
+    ap.add_argument(
+        "--mode", choices=("control", "spam", "record", "twins", "store"), default="spam"
+    )
     ap.add_argument("--duration", type=float, default=56.0, help="wall seconds to watch")
     args = ap.parse_args(argv)
     block = ports(args.instance)
@@ -219,7 +239,7 @@ def main(argv: list[str] | None = None) -> int:
                             f"t={now:5.1f}s sent CAM_SET_CONFIG shutter={shutter} "
                             f"camera={camera_id} rate={rate:g} ({label})"
                         )
-            if args.mode in ("spam", "record", "twins") and now - last_poll >= 2.0:
+            if args.mode in ("spam", "record", "twins", "store") and now - last_poll >= 2.0:
                 client.send_packet(build_cmd(pkts["CAM_SEND_HK"].msgid, 0))
                 last_poll = now
 
@@ -253,7 +273,11 @@ def main(argv: list[str] | None = None) -> int:
             elif msgid == store_model.msgid:
                 store_seen += 1
                 ledger = CamStorage(pkt, store_model)
-                if last_store is None or ledger.files_stored != last_store.files_stored:
+                if last_store is None or (
+                    ledger.files_stored,
+                    ledger.captures_lost,
+                    ledger.files_evicted,
+                ) != (last_store.files_stored, last_store.captures_lost, last_store.files_evicted):
                     print(f"t={now:5.1f}s {ledger}")
                 last_store = ledger
     finally:
@@ -306,6 +330,80 @@ def main(argv: list[str] | None = None) -> int:
                     "FramesTransferred moved without a transfer: that is a lie, not a feature"
                 )
         verdict = "CAM RECORD OK" if not reasons else "CAM RECORD FAILED"
+    elif args.mode == "store":
+        # The recorder law, read off the wire. The bench scenario sizes a
+        # tiny recorder (a few frames of empty sky), so the flight must show
+        # the whole life: declared size arrived (never state 3), files landed,
+        # the watermark passed, the bound refused - and the loud absence:
+        # only class 1 transfers have ever flown here, so no receipt was ever
+        # PROVEN, nothing was ever evictable, and the eviction counter stays
+        # zero. A store that recycles unproven bytes fails this leg by name.
+        if last_store is None:
+            reasons.append("no CamStorage frame ever arrived: the ledger is deaf")
+        else:
+            print(f"final recorder: {last_store.recorder_str()}")
+            if last_store.state == 3:
+                reasons.append(
+                    "state 3: the craft ran unclaimed - the scenario's size "
+                    "never reached the binary"
+                )
+            if last_store.capacity_bytes <= 0 or last_store.capacity_files <= 0:
+                reasons.append(
+                    f"capacity {last_store.capacity_bytes}B/{last_store.capacity_files}: "
+                    "the declared recorder did not arrive on the wire"
+                )
+            if last_store.files_stored < 1:
+                reasons.append(
+                    "not one file landed: the outlet was closed, the law was never tested"
+                )
+            if last_store.captures_lost < 1:
+                reasons.append(
+                    f"a recorder bounded at {last_store.capacity_files} files refused nothing "
+                    "in the whole flight: the bound is decoration"
+                )
+            if last_store.files_now > last_store.capacity_files:
+                reasons.append(
+                    f"files_now={last_store.files_now} exceeds the declared cap "
+                    f"{last_store.capacity_files}"
+                )
+            if last_store.files_evicted != 0:
+                reasons.append(
+                    "bytes were recycled with no proven transfer on this bus: the law broke"
+                )
+            if last_store.transfers_acked != 0:
+                reasons.append(
+                    "a class 1 completion was counted as receipt: 'sent' is not 'received'"
+                )
+            if last_store.state != 2:
+                reasons.append(
+                    f"state ended at {last_store.state}, want 2: a refused recorder reports FULL"
+                )
+            if last_hk is None:
+                reasons.append(
+                    "no CAM_HK ever arrived: no housekeeping to cross-check the ledger against"
+                )
+            elif last_store is not None:
+                if last_hk.stored != last_store.files_stored:
+                    reasons.append(
+                        f"CAM_HK stored={last_hk.stored} disagrees with the ledger "
+                        f"{last_store.files_stored}"
+                    )
+                if last_hk.transferred != 0:
+                    reasons.append(
+                        "FramesTransferred moved with no request flown: a lie, not a feature"
+                    )
+            if last_cs is not None:
+                # Refusals are a SUBSET of the recorded-vs-stored divergence:
+                # the airgap can eat frames too. More refusals than divergence
+                # would mean the same loss counted twice, or a counter inventing
+                # captures nobody sent.
+                diverged = last_cs.frames_recorded - last_store.files_stored
+                if last_store.captures_lost > diverged:
+                    reasons.append(
+                        f"CapturesLost={last_store.captures_lost} exceeds the recorded-vs-stored "
+                        f"divergence {diverged}: the loss is counted twice"
+                    )
+        verdict = "CAM STORE OK" if not reasons else "CAM STORE FAILED"
     elif args.mode == "twins":
         # The two-eyed law, screened from the ground: both eyes confirm
         # themselves independently, the commanded pair follows the NAMED
