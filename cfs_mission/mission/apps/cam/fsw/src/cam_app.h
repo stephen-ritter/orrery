@@ -14,7 +14,12 @@
  * Commands:
  *   CAM_CMD         FC 0 NOOP
  *                   FC 1 MANIFEST - write /cf/manifest.txt, the store's
- *                   requestable inventory (name,size per file). The ground
+ *                   requestable inventory, as CSV: header
+ *                   path,size_bytes,created_utc, then one line per file with
+ *                   the FULL path and its creation time, ordered by creation
+ *                   (a directory walk returns filesystem hash order, which
+ *                   reads as random; capture order is the order a reader
+ *                   can act on). The ground
  *                   then requests the manifest through FCS_CFDP_DOWN like
  *                   any other file: inventory is a file too, so the file
  *                   path stays the only data plane. No arguments, so it

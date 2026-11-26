@@ -86,6 +86,15 @@ from sim.ground_probe import GroundClient, build_cmd
 
 EOT_MID, HK_MID = 0x08B3, 0x08D2
 
+# Patience is the engine's law, not a hope. CF notices a peer that died
+# mid-transaction only when the channel's inactivity timer expires
+# (cFS/apps/cf/fsw/tables/cf_def_config.c: 30 s), and a request that queues
+# behind that stalled transaction cannot answer before it recycles. So the
+# wait is that limit plus margin: the heals leg then tests "the craft heals
+# on its own, inside its own limits" instead of "the craft got lucky inside
+# 20 s" - which is how a healthy engine once read as a broken one here.
+EOT_WAIT_S = 45
+
 
 def mid_of(packet: bytes) -> int:
     return ((packet[0] & 0x3F) << 8) | packet[1]
@@ -122,7 +131,7 @@ def main() -> int:
             src, dst = sys.argv[4].encode(), sys.argv[5].encode()
             payload = struct.pack("<IB3x", 23, 1) + src.ljust(64, b"\0") + dst.ljust(64, b"\0")
             client.send_packet(build_cmd(0x18D6, 0, payload))
-            deadline = time.time() + 20
+            deadline = time.time() + EOT_WAIT_S
             packet = wait_mid(client, EOT_MID, dst, deadline)
             if not packet:
                 print(json.dumps({"error": f"no EOT for {dst.decode()}"}))
@@ -286,29 +295,48 @@ sleep 2  # the inventory is written on CAM's task tick, not in the command call
 MANIFEST="${PREFIX}manifest.txt"
 dl_expect /cf/manifest.txt "$MANIFEST" >/dev/null
 bucket_cat "$MANIFEST" | tee "$WORK/manifest.txt"
-PICK="$(grep -oE 'frame_[0-9_]+\.png' "$WORK/manifest.txt" | head -1)"
+PICK="$(sed -n '2p' "$WORK/manifest.txt" | cut -d, -f1)"  # full path, earliest-created frame
 [ -n "$PICK" ] || { echo "manifest lists no frame: $(head -3 "$WORK/manifest.txt")"; exit 1; }
 
-echo "=== request $PICK by manifest name ==="
+echo "=== request $PICK by manifest path ==="
 FRAME_LAND="${PREFIX}frame.png"
-dl_expect "/cf/img/$PICK" "$FRAME_LAND" >"$WORK/eot_frame.json"
+dl_expect "$PICK" "$FRAME_LAND" >"$WORK/eot_frame.json"
 FRAME_SHA="$(bucket_sha "$FRAME_LAND")"
 
 uv run python - "$WORK/eot_frame.json" "$WORK/manifest.txt" \
-    "$HOST_IMG/$PICK" "$FRAME_SHA" <<'PY'
+    "$HOST_IMG/$(basename "$PICK")" "$FRAME_SHA" <<'PY'
+import csv
 import hashlib
 import json
+import re
 import struct
 import sys
 from pathlib import Path
 
 eot = json.loads(Path(sys.argv[1]).read_text())
-manifest = Path(sys.argv[2]).read_text()
+reader = csv.DictReader(Path(sys.argv[2]).read_text().splitlines())
+assert reader.fieldnames == ["path", "size_bytes", "created_utc"], (
+    f"manifest header is {reader.fieldnames}; the CSV contract says path,size_bytes,created_utc")
+rows = list(reader)
 store = Path(sys.argv[3])
 landed_sha = sys.argv[4]
 
-line = next(l for l in manifest.splitlines() if l.startswith(store.name + ","))
-size_listed = int(line.split(",")[1])
+# The column laws, witnessed on every flight: the path is the FULL path (a
+# reader must not rebuild the store layout from a bare name), every line
+# carries an ISO-8601 UTC creation stamp, the lines run in creation order
+# (a directory walk answers in filesystem hash order - the old listing read
+# as random; capture order is the order a reader can act on), and no line
+# lists an empty file.
+assert rows, "manifest lists no files"
+assert all(r["path"].startswith("/cf/img/") for r in rows), "the path column is not the full path"
+created = [r["created_utc"] for r in rows]
+assert created == sorted(created), "manifest lines are not in creation order"
+assert all(re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", c) for c in created), (
+    f"created_utc is not ISO-8601 Z: {created[:3]}")
+assert all(int(r["size_bytes"]) > 0 for r in rows), "an inventory line lists a zero-byte file"
+
+row = next(r for r in rows if Path(r["path"]).name == store.name)
+size_listed = int(row["size_bytes"])
 raw = store.read_bytes()
 assert len(raw) == size_listed, f"manifest size {size_listed} disagrees with the file ({len(raw)})"
 assert len(raw) == eot["fsize"], "EOT fsize disagrees with what crossed"
@@ -359,7 +387,7 @@ sleep 2  # CAM regenerates on its 1 Hz task: ask WHAT exists only once it answer
 MANIFEST2="${PREFIX}manifest2.txt"
 dl_expect /cf/manifest.txt "$MANIFEST2" >/dev/null
 MANIFEST2_TEXT="$(bucket_cat "$MANIFEST2")"
-grep -q "^$CRAFT_NAME,7777$" <<<"$MANIFEST2_TEXT" || {
+grep -q "^/cf/img/$CRAFT_NAME,7777," <<<"$MANIFEST2_TEXT" || {
     echo "rebuilt manifest does not list the mid-flight file"; exit 1;
 }
 CARGO_LAND="${PREFIX}cargo.bin"

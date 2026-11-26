@@ -8,7 +8,7 @@
  */
 
 #include <math.h>
-#include <stdio.h> /* snprintf, for the manifest's name,size lines */
+#include <stdio.h> /* snprintf, for the manifest's CSV lines */
 #include <string.h>
 
 #include "cfe.h"
@@ -140,15 +140,97 @@ static void CAM_HandleSetConfig(const CFE_SB_Buffer_t *BufPtr)
 
 /* -------------------------------------------------------------------------- */
 
+/* One inventory line waiting to be sorted: the stat we already paid for,
+ * and the path to print. Static, not stack - the store can legitimately
+ * hold hundreds of frames, and a CFE task stack has no such room. */
+#define CAM_MANIFEST_MAX_FILES 512
+
+typedef struct
+{
+    char   Path[OS_MAX_PATH_LEN];
+    uint64 Size;
+    int64  When; /* mtime seconds since the Unix epoch; ties broken by Path */
+} CamStoreEntry;
+
+static CamStoreEntry CamManifestWalk[CAM_MANIFEST_MAX_FILES];
+
+/* Seconds since the Unix epoch -> "YYYY-MM-DDTHH:MM:SSZ". Hand-rolled civil
+ * calendar arithmetic (the days-from-civil algorithm) instead of libc's
+ * gmtime(): flight code has no business consulting the host's timezone
+ * table, and the integer form is exact. The clock this names is the
+ * container's wall clock - on the bench, the host's - not mission time:
+ * it records when the store PHYSICALLY gained a file. */
+static void CAM_FormatUtc(int64 Seconds, char *Buf, size_t Len)
+{
+    int64 Days  = Seconds / 86400;
+    int64 Secs  = Seconds % 86400;
+    int64 Era, Doe, Yoe, Year, Doy, Mp, Day, Month;
+
+    if (Secs < 0)
+    {
+        Secs += 86400;
+        Days -= 1; /* floor, so a pre-1970 stamp still names its true day */
+    }
+    Days += 719468;
+    Era   = (Days >= 0 ? Days : Days - 146096) / 146097;
+    Doe   = Days - Era * 146097;                     /* day of era  [0,146096] */
+    Yoe   = (Doe - Doe / 1460 + Doe / 36524 - Doe / 146096) / 365;
+    Year  = Yoe + Era * 400;
+    Doy   = Doe - (365 * Yoe + Yoe / 4 - Yoe / 100); /* day of year   [0,365] */
+    Mp    = (5 * Doy + 2) / 153;                     /* month probe   [0,11]  */
+    Day   = Doy - (153 * Mp + 2) / 5 + 1;
+    Month = Mp < 10 ? Mp + 3 : Mp - 9;
+    Year += (Month <= 2);
+    snprintf(Buf, Len, "%04llu-%02llu-%02lluT%02llu:%02llu:%02lluZ",
+             (unsigned long long)Year, (unsigned long long)Month, (unsigned long long)Day,
+             (unsigned long long)(Secs / 3600), (unsigned long long)((Secs / 60) % 60),
+             (unsigned long long)(Secs % 60));
+}
+
+/* Insert one entry keeping CamManifestWalk ordered by creation time, so a
+ * reader meets the frames in the order the vehicle captured them. A directory
+ * walk answers in filesystem hash order - tmpfs and ext4 return entries in
+ * whatever order their internal tables hold, which is why the old manifest
+ * listed frame_1_50 above frame_1_2 and read as random. Mtimes carry one
+ * second of resolution, and a multi-eye bird captures several files inside
+ * one second, so equal timestamps order by path: ties resolve to the same
+ * list on every walk, and a table a reader can diff is worth more than a
+ * table that merely looks sorted. */
+static void CAM_ManifestInsert(uint32 *Count, const char *Path, uint64 Size, int64 When)
+{
+    uint32 At = *Count;
+
+    while (At > 0 && (CamManifestWalk[At - 1].When > When ||
+                      (CamManifestWalk[At - 1].When == When && strcmp(CamManifestWalk[At - 1].Path, Path) > 0)))
+    {
+        CamManifestWalk[At] = CamManifestWalk[At - 1];
+        At--;
+    }
+    snprintf(CamManifestWalk[At].Path, sizeof(CamManifestWalk[At].Path), "%s", Path);
+    CamManifestWalk[At].Size = Size;
+    CamManifestWalk[At].When = When;
+    *Count += 1;
+}
+
 /* The inventory: walk the store, draft the manifest whole, swap it in.
+ *
+ * The file is CSV - header path,size_bytes,created_utc, then one line per
+ * stored file, FULL path first: a reader parsing this should not have to
+ * reconstruct where the file lives from a bare name, and a name shaped like
+ * frame_<camera>_<capture>.png is bsk_link's storage convention, not a table
+ * of columns to segment. No comment lines: they are exactly the character a
+ * strict CSV reader chokes on, and the totals they used to carry are already
+ * on EVS in the completion event, loud where a machine will not trip.
  *
  * Names starting with '.' are store internals (bsk_link's .part files): the
  * inventory lists what the ground may ask for, and a half-written part is
- * not that. Sizes come from OS_stat per name - this OSAL's dirent carries a
- * name only. A file that cannot be stat-ed - vanished between the read and
- * the stat, or a name over the store's path budget - is skipped and named
- * in an event: an inventory line for a file nobody can request is the kind
- * of line that makes liars of good tables.
+ * not that. Sizes and times come from OS_stat per name - this OSAL's dirent
+ * carries a name only. A file that cannot be stat-ed - vanished between the
+ * read and the stat, or a name over the store's path budget - is skipped and
+ * named in an event: an inventory line for a file nobody can request is the
+ * kind of line that makes liars of good tables. A store larger than the
+ * sort budget refuses the manifest whole rather than print a truncated
+ * inventory dressed as a complete one.
  *
  * The draft-and-swap is not ceremony: a CFDP read already in flight holds
  * the OLD file whole while the new manifest lands, so a manifest rewrite
@@ -160,9 +242,10 @@ static void CAM_HandleManifest(void)
     os_fstat_t  Stats;
     int32       Status;
     osal_id_t   Fd;
-    uint32      Files    = 0;
-    uint64      Bytes    = 0;
-    bool        WriteOk  = true;
+    uint32      Files   = 0;
+    uint64      Bytes   = 0;
+    uint32      Walked  = 0;
+    bool        WriteOk = true;
     char        Line[160];
 
     Status = OS_DirectoryOpen(&DirId, CAM_IMG_DIR);
@@ -185,7 +268,7 @@ static void CAM_HandleManifest(void)
         return;
     }
 
-    snprintf(Line, sizeof(Line), "# orrery cam manifest dir=%s\n", CAM_IMG_DIR);
+    snprintf(Line, sizeof(Line), "path,size_bytes,created_utc\n");
     if (OS_write(Fd, Line, strlen(Line)) < 0)
     {
         WriteOk = false;
@@ -193,7 +276,7 @@ static void CAM_HandleManifest(void)
 
     while (WriteOk && OS_DirectoryRead(DirId, &Entry) == OS_SUCCESS)
     {
-        char Path[OS_MAX_PATH_LEN];
+        char        Path[OS_MAX_PATH_LEN];
         const char *Name = OS_DIRENTRY_NAME(Entry);
 
         if (Name[0] == '\0' || Name[0] == '.')
@@ -210,22 +293,39 @@ static void CAM_HandleManifest(void)
                               "manifest skipped %s: status %d", Name, (int)Status);
             continue;
         }
-        snprintf(Line, sizeof(Line), "%s,%llu\n", Name, (unsigned long long)OS_FILESTAT_SIZE(Stats));
+        if (Walked >= CAM_MANIFEST_MAX_FILES)
+        {
+            /* The sort budget is the store's size in files; a fuller store
+             * gets a refusal, never a shorter list pretending to be all. */
+            OS_DirectoryClose(DirId);
+            OS_close(Fd);
+            OS_remove(CAM_MANIFEST_TMP);
+            CAM_AppData.HkTlm.Payload.CommandErrorCounter++;
+            CFE_EVS_SendEvent(CAM_MANIFEST_ERR_EID, CFE_EVS_EventType_ERROR,
+                              "manifest refused: store holds over %d files (sort budget) - previous manifest kept",
+                              CAM_MANIFEST_MAX_FILES);
+            return;
+        }
+        CAM_ManifestInsert(&Walked, Path, (uint64)OS_FILESTAT_SIZE(Stats), (int64)OS_FILESTAT_TIME(Stats));
+    }
+    OS_DirectoryClose(DirId);
+
+    for (uint32 At = 0; WriteOk && At < Walked; At++)
+    {
+        char When[32];
+
+        CAM_FormatUtc(CamManifestWalk[At].When, When, sizeof(When));
+        snprintf(Line, sizeof(Line), "%s,%llu,%s\n", CamManifestWalk[At].Path,
+                 (unsigned long long)CamManifestWalk[At].Size, When);
         if (OS_write(Fd, Line, strlen(Line)) != (int32)strlen(Line))
         {
             WriteOk = false; /* a partial line is worse than no manifest */
             break;
         }
         Files++;
-        Bytes += (uint64)OS_FILESTAT_SIZE(Stats);
+        Bytes += CamManifestWalk[At].Size;
     }
-    OS_DirectoryClose(DirId);
 
-    if (WriteOk)
-    {
-        snprintf(Line, sizeof(Line), "# %lu files, %llu bytes\n", (unsigned long)Files, (unsigned long long)Bytes);
-        WriteOk = OS_write(Fd, Line, strlen(Line)) == (int32)strlen(Line);
-    }
     OS_close(Fd);
 
     if (!WriteOk)
