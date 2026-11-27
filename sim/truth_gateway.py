@@ -4,7 +4,7 @@ Subscribes the sim's ZMQ TRUTH channel (``:5590+20N``, instance-aware) and
 serves it as a length-framed TCP stream on the vehicle's truth port
 (``5150+2N``) for COSMOS's truth interface to dial. The payload is
 **opaque**: the gateway stamps the ground-owned 4-byte header and forwards
-the EDS-encoded 112 B container without decoding it - the generated defs
+the EDS-encoded 144 B container without decoding it - the generated defs
 stay the single source of layout truth, exactly like the beacon path.
 
 The boundary is the link idiom, mirrored: truth is TELEMETRY-ONLY by

@@ -27,7 +27,7 @@
 /** \brief lockstep step ack (fcs -> bsk_link -> sim; bus-internal, never beacon) */
 #define BSK_LINK_STEP_ACK_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_STEP_ACK_TLM_TOPICID)
 
-/** \brief fcs ground commands: NOOP / ENABLE / DISABLE */
+/** \brief fcs ground commands: NOOP / ENABLE / DISABLE / BURNSTOP */
 #define FCS_CMD_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_FCS_CMD_TOPICID)
 
 /** \brief fcs housekeeping request (scheduler) */
@@ -41,6 +41,10 @@
 
 /** \brief file downlink request with payload (ground only) */
 #define FCS_CFDP_DOWN_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_FCS_CFDP_DOWN_TOPICID)
+
+/** \brief fcs burn command with payload (ground only; own packet per the
+ * SetGain law - an argument-bearing command is its own interface) */
+#define FCS_BURN_MID (SAMPLE_CPU1_CMD_MID_BASE + CFE_MISSION_FCS_BURN_TOPICID)
 
 /** \brief OBC housekeeping telemetry (hk_app -> beacon) */
 #define OBC_HK_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_OBC_HK_TLM_TOPICID)
@@ -83,6 +87,10 @@
 /** \brief accepted camera config (cam -> bsk_link -> sim, never gates) */
 #define BSK_LINK_CAM_CONFIG_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_CAM_CONFIG_TLM_TOPICID)
 #define BSK_LINK_CAM_STORAGE_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_CAM_STORAGE_TLM_TOPICID)
+
+/** \brief one tick of an accepted burn (fcs -> bsk_link -> sim, never gates;
+ * apply-once, so a silent craft stops thrusting - see bsk_link.xml) */
+#define BSK_LINK_BURN_COMMAND_TLM_MID (SAMPLE_CPU1_TLM_MID_BASE + CFE_MISSION_BSK_LINK_BURN_COMMAND_TLM_TOPICID)
 
 /** \brief cFS TIME service commands (link uses SET_MET to slave MET to the
  * sim timecode) */

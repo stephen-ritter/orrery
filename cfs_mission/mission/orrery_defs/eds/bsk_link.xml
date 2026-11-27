@@ -225,6 +225,26 @@
         </EntryList>
       </ContainerDataType>
 
+      <!-- cFS -> Basilisk: one tick of an accepted burn, forwarded by fcs
+           while the burn is active. Like CamConfig it never gates and never
+           acks - it rides the cmd channel as its own ZeroMQ topic, drained
+           between ticks. Unlike torque it is apply-ONCE, never held: each
+           frame buys exactly one tick of thrust, so a craft that goes silent
+           mid-burn stops thrusting on the next tick. That is the safe
+           direction (a lost frame is a short burn, never an endless one), and
+           it makes the world's applied-impulse ledger a tick-for-tick mirror
+           of the craft's forwarded-frame ledger - the bench, not the craft,
+           reads the two against each other. -->
+      <ContainerDataType name="BurnCommand" shortDescription="One tick of commanded thrust (apply-once, never held)">
+        <EntryList>
+          <Entry name="SimTimeS" type="float64" shortDescription="sim time at the command [s]" />
+          <Entry name="ForceN" type="float64" shortDescription="thrust magnitude for this tick [N]" />
+          <Entry name="AxisB" type="Vector3" shortDescription="unit thrust axis, body frame" />
+          <Entry name="Frame" type="uint64" shortDescription="sim frame the command rode" />
+          <Entry name="BurnId" type="uint64" shortDescription="ordinal of the burn this frame belongs to (matches fcs HK LastBurnId)" />
+        </EntryList>
+      </ContainerDataType>
+
       <!-- cFS -> Basilisk: lockstep barrier acknowledgement. fcs answers EVERY
            sensor frame it processes - enabled or not -
            so StepAck{N} proves "the satellite has seen frame N" and the sim
@@ -261,6 +281,16 @@
           <Entry name="v_BN_N" type="Vector3" shortDescription="inertial velocity of B [m/s]" />
           <Entry name="sigma_BN" type="Quaternion" shortDescription="attitude of B relative to N (MRP)" />
           <Entry name="omega_BN_B" type="Vector3" shortDescription="body rate [rad/s]" />
+          <!-- The world's APPLIED ledger (Rung 1 burns): what the plant's
+               thrusters were actually given, tick by tick. The craft's claim
+               (fcs HK) is a different packet on a different wire, and no
+               flight software reads these bytes - truth reaches only the
+               ground. Counts ride float64 like every other entry here: exact
+               below 2^53, and the whole truth frame stays one <18d. -->
+          <Entry name="BurnImpulseAppliedNs" type="float64" shortDescription="|achieved force| x tick summed over applied ticks [N s]" />
+          <Entry name="BurnTicksApplied" type="float64" shortDescription="ticks this vehicle actually thrust" />
+          <Entry name="BurnTicksSaturated" type="float64" shortDescription="applied ticks the hardware could not fully deliver" />
+          <Entry name="BurnId" type="float64" shortDescription="craft ordinal of the last applied burn (0: never)" />
         </EntryList>
       </ContainerDataType>
 
@@ -343,6 +373,12 @@
       <ContainerDataType name="CamConfigTlm" baseType="CFE_HDR/TelemetryHeader">
         <EntryList>
           <Entry name="Payload" type="CamConfig" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="BurnCommandTlm" baseType="CFE_HDR/TelemetryHeader">
+        <EntryList>
+          <Entry name="Payload" type="BurnCommand" />
         </EntryList>
       </ContainerDataType>
 
@@ -443,6 +479,11 @@
               <GenericTypeMap name="TelemetryDataType" type="CamStorageTlm" />
             </GenericTypeMapSet>
           </Interface>
+          <Interface name="BURN_COMMAND_TLM" shortDescription="Software bus per-tick burn frame from fcs for basilisk (never gates)" type="CFE_SB/Telemetry">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelemetryDataType" type="BurnCommandTlm" />
+            </GenericTypeMapSet>
+          </Interface>
         </RequiredInterfaceSet>
         <Implementation>
           <VariableSet>
@@ -456,6 +497,7 @@
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="StepAckTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_STEP_ACK_TLM_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="CamConfigTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_CAM_CONFIG_TLM_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="CamStorageTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_CAM_STORAGE_TLM_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="BurnCommandTlmTopicId" initialValue="${CFE_MISSION/BSK_LINK_BURN_COMMAND_TLM_TOPICID}" />
           </VariableSet>
           <ParameterMapSet>
             <ParameterMap interface="SENSOR_FRAME_TLM" parameter="TopicId" variableRef="SensorFrameTlmTopicId" />
@@ -468,6 +510,7 @@
             <ParameterMap interface="STEP_ACK_TLM" parameter="TopicId" variableRef="StepAckTlmTopicId" />
             <ParameterMap interface="CAM_CONFIG_TLM" parameter="TopicId" variableRef="CamConfigTlmTopicId" />
             <ParameterMap interface="CAM_STORAGE_TLM" parameter="TopicId" variableRef="CamStorageTlmTopicId" />
+            <ParameterMap interface="BURN_COMMAND_TLM" parameter="TopicId" variableRef="BurnCommandTlmTopicId" />
           </ParameterMapSet>
         </Implementation>
       </Component>

@@ -30,6 +30,19 @@ hand-written one (the W3 parity check demands a bit-identical trajectory):
   the duplicate registration does not touch. THIS FIX IS PER VEHICLE: a fleet
   that misses it on one body flies one body on stale actuation, and the
   digest of nobody else notices.
+  A thruster effector is the third case, resolved by a spike through the C++
+  before any world code landed. Its force never travels through a buffer the
+  spacecraft pulls - the coupled integrator CALLS ``computeForceTorque`` -
+  so the STALE half of the trap does not structurally exist for it. What IS
+  task-ordered state is the firing SCHEDULE: ``UpdateState`` reads the
+  on-time message and ``ConfigureThrustRequests`` arms the firing timers, and
+  the tick's integration must see that tick's quota, so the freshness half of
+  the fix applies unchanged. The trailing duplicate ``UpdateState`` is also
+  provably a no-op here, by the effector's own guard rather than by
+  statelessness: ``ReadInputs`` rejects an unchanged command message
+  (``prevCommandTime == timeWritten``) before ``ConfigureThrustRequests`` can
+  run twice, so a re-sent frame can never buy a second firing, and on-times
+  that expire simply stop the thrust - apply-once, end to end.
 * The FSW section is forbidden: a bskforge control law would put the
   "flight software" in the simulator, and the link would command a body that
   is already being commanded from inside.
@@ -75,7 +88,7 @@ from sim.detumble_scenario import (
     GYRO_NOISE_SIGMA_RADS,
     KP_RADS,
 )
-from sim.eds_link import CamConfig, encode_container, encode_fit_manifest
+from sim.eds_link import BurnCommand, CamConfig, encode_container, encode_fit_manifest
 from sim.fleet import (
     add_link_args,
     resolve_endpoints,
@@ -106,6 +119,7 @@ from sim.parts import (
     mount_law_violations,
     registry_digest,
 )
+from sim.thruster_alloc import allocate_on_times
 
 DEFAULT_SCENARIO = Path(__file__).parent / "scenarios" / "detumble_forge.toml"
 
@@ -330,6 +344,7 @@ class ForgeBody:
         seed: int = 20261120,
         gyro_noise_sigma_rads: float = GYRO_NOISE_SIGMA_RADS,
         gyro_bias_rads: np.ndarray = GYRO_BIAS_RADS,
+        control_period_s: float | None = None,
     ) -> None:
         """Fix the schedule, subscribe to the plant, guard the wire schema.
 
@@ -381,6 +396,46 @@ class ForgeBody:
             self._wheel_sub = bundle.rw.effector.rwSpeedOutMsg.addSubscriber()
             rw_cfg = sc_cfg.reaction_wheels()
             self._num_wheels = len(rw_cfg.wheels) if rw_cfg is not None else 0
+
+        # Actuator half two: the TOML decides thrusters too. The effector
+        # speaks only THRArrayOnTimeCmdMsgPayload (seconds fired per thruster
+        # per command period), and bskforge's thrusterFiring law would be a
+        # control law - forbidden in the plant - so cmdsInMsg has no writer
+        # and the world side is this body's burn door. The geometry read
+        # back off the factory's devices is the allocation's hardware truth.
+        # Ordering: the module docstring's thruster case of the P3f trap.
+        self._burn_msg = None
+        self._thruster_dirs: np.ndarray | None = None
+        self._thruster_umax: np.ndarray | None = None
+        # The tick the quota covers: the rig's control period, told to the
+        # body by its scenario; the TOML's fsw rate is the fallback so a
+        # hand-built ForgeBody still knows its own rhythm.
+        self.control_period_s = (
+            control_period_s
+            if control_period_s is not None
+            else float(ctx.config.simulation.dt.fsw)
+        )
+        # The world's APPLIED ledger (two-ledger law): what the plant was
+        # actually given, tick by tick - achieved, not asked. The craft's
+        # claim lives in fcs HK; only the bench reads both.
+        self._burn_stats = {
+            "applied": 0,
+            "saturated": 0,
+            "refused_undeclared": 0,
+            "refused_bad": 0,
+            "impulse_applied_ns": 0.0,
+            "last_burn_id": 0,
+        }
+        thruster = bundle.thruster
+        if thruster is not None:
+            restore_effector_order(ctx.sim, thruster.effector)
+            self._burn_msg = messaging.THRArrayOnTimeCmdMsg()
+            thruster.effector.cmdsInMsg.subscribeTo(self._burn_msg)
+            devices = list(thruster.factory.thrusterList.values())
+            self._thruster_dirs = np.array(
+                [np.asarray(device.thrDir_B, dtype=float).ravel() for device in devices]
+            )
+            self._thruster_umax = np.array([float(device.MaxThrust) for device in devices])
 
         # Knowledge: the TOML decides too. A fitted plant IMU becomes the
         # satellite's rate source - its bias and random walk belong to the
@@ -987,15 +1042,78 @@ class ForgeBody:
             for eye in self._eyes:
                 eye[3].write(payload)
 
+    def apply_burn(self, cmd: BurnCommand) -> None:
+        """Spend one tick of a commanded burn's force quota (apply-ONCE).
+
+        The frame's on-times never outlive the tick they were bought for, so
+        the next tick thrusts only if a fresh frame arrived: a craft that
+        goes silent mid-burn stops thrusting, the safe direction a lost frame
+        must take. Demands the plant cannot meet are not refused but
+        SATURATED - the hardware's cone is physics, and the shortfall lands
+        in the applied ledger as a saturated tick, where the bench can see
+        it. A vehicle with no declared thrusters refuses: an absence the
+        tally reports, never an impulse silently absorbed.
+
+        This ledger counts what was ACHIEVED (force actually given x tick),
+        never what was asked. The craft's claim is fcs HK's business; the
+        difference between the two is a bench finding, not an input here.
+        """
+        if self._burn_msg is None or self._thruster_dirs is None or self._thruster_umax is None:
+            self._burn_stats["refused_undeclared"] += 1
+            return
+        force = float(cmd.force_n)
+        axis = np.asarray(cmd.axis_b, dtype=float)
+        norm = float(np.linalg.norm(axis))
+        if not np.isfinite(force) or force <= 0.0 or not np.isfinite(norm) or norm < 1e-9:
+            self._burn_stats["refused_bad"] += 1
+            return
+        alloc = allocate_on_times(
+            self._thruster_dirs,
+            self._thruster_umax,
+            force / norm * axis,
+            self.control_period_s,
+        )
+        # SWIG ships this name as both module and class in the stub;
+        # the class is what calls at runtime.
+        payload = messaging.THRArrayOnTimeCmdMsgPayload()  # ty: ignore[not-callable]
+        payload.OnTimeRequest = alloc.on_times_s.tolist()
+        # The stamp is deliberate, not defaulted: the effector's ReadInputs
+        # guards on the COMMAND TIMESTAMP (``prevCommandTime == timeWritten``
+        # is "stale"), and a bare ``write()`` stamps 0 - the first quota
+        # would fire and every later one would read as a retransmit. Basilisk's
+        # own thruster unit test writes with an explicit time for the same
+        # reason. The stamp doubles as the firing window's start: quota N,
+        # written at boundary t, thrusts over [t, t + on-time], and a
+        # message-less tick rewrites nothing - apply-once in the C++ too.
+        self._burn_msg.write(payload, macros.sec2nano(self.sim_time_s))
+        stats = self._burn_stats
+        stats["applied"] += 1
+        stats["impulse_applied_ns"] += (
+            float(np.linalg.norm(alloc.achieved_force_B)) * self.control_period_s
+        )
+        if alloc.saturated:
+            stats["saturated"] += 1
+        stats["last_burn_id"] = int(cmd.burn_id)
+
+    @property
+    def has_thrusters(self) -> bool:
+        """True when this vehicle's TOML declares a thruster effector."""
+        return self._burn_msg is not None
+
     def truth(self) -> Truth:
         """The simulator's own solution: ideal, unbiased, never on the sensor feed."""
         payload = self._state_sub()
+        stats = self._burn_stats
         return Truth(
             sim_time_s=self.sim_time_s,
             r_bn_n=tuple(np.asarray(payload.r_BN_N, dtype=float).reshape(-1).tolist()),
             v_bn_n=tuple(np.asarray(payload.v_BN_N, dtype=float).reshape(-1).tolist()),
             sigma_bn=tuple(np.asarray(payload.sigma_BN, dtype=float).reshape(-1).tolist()),
             omega_bn_b=tuple(np.asarray(payload.omega_BN_B, dtype=float).reshape(-1).tolist()),
+            burn_impulse_applied_ns=stats["impulse_applied_ns"],
+            burn_ticks_applied=float(stats["applied"]),
+            burn_ticks_saturated=float(stats["saturated"]),
+            burn_id=float(stats["last_burn_id"]),
         )
 
     def gyro(self) -> np.ndarray:
@@ -1210,6 +1328,7 @@ class ForgeScenario:
             seed=seed,
             gyro_noise_sigma_rads=gyro_noise_sigma_rads,
             gyro_bias_rads=gyro_bias_rads,
+            control_period_s=control_period_s,
         )
         self.bundle = self.body.bundle
 
@@ -1233,6 +1352,7 @@ class ForgeScenario:
             pace=pace,
             observers=plant_observers(self.body, lambda: (rig.sim_time_s, rig.frame)),
             cam_sink=self.body.apply_cam_config if self.body.has_plant_cam else None,
+            burn_sink=self.body.apply_burn if self.body.has_thrusters else None,
             fit_provider=fit_provider(
                 self.body,
                 lambda: (rig.sim_time_s, rig.frame),
@@ -1414,6 +1534,7 @@ class ForgeFleet:
                 seed=seed + index,  # per-vehicle RNG stream, deterministic
                 gyro_noise_sigma_rads=gyro_noise_sigma_rads,
                 gyro_bias_rads=gyro_bias_rads,
+                control_period_s=control_period_s,
             )
             for index, sc_cfg in enumerate(config.spacecraft)
         ]
@@ -1433,6 +1554,7 @@ class ForgeFleet:
                     kp=np.asarray(kp_rads, dtype=float),
                     observers=plant_observers(body, lambda: (rig.sim_time_s, rig.frame)),
                     cam_sink=body.apply_cam_config if body.has_plant_cam else None,
+                    burn_sink=body.apply_burn if body.has_thrusters else None,
                     fit_provider=fit_provider(
                         body,
                         lambda: (rig.sim_time_s, rig.frame),

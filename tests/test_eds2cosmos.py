@@ -284,9 +284,13 @@ def test_cmd_table_is_the_sps_dictionary(packets: list[Packet]) -> None:
     # FC-dispatch packets contribute one row per declared subtype...
     assert '{0x18C8, 1, 0, "FCS_CMD.EnableCmd"}' in text
     assert '{0x18C8, 2, 0, "FCS_CMD.DisableCmd"}' in text
+    assert '{0x18C8, 3, 0, "FCS_CMD.BurnStopCmd"}' in text
     # ...payload-bearing packets one row at FC 0 with their real payload
     # size (24 B: what fcs's own _Static_assert pins for FcsSetGain).
     assert '{0x18CA, 0, 24, "FCS_SET_GAIN"}' in text
+    # the Rung 1 burn ask: 40 B payload (force, duration, 3-axis), pinned the
+    # same way - what fcs will check its length against.
+    assert '{0x18D7, 0, 40, "FCS_BURN"}' in text
     # the scheduler's own port is in the dictionary (the SCHEDULE row exists -
     # flight refuses SELF-schedules at runtime, the dictionary stays complete)
     assert '{0x18CF, 0, 60, "SPS_SCHEDULE"}' in text
@@ -369,6 +373,7 @@ def test_custom_app_packets(packets: list[Packet]) -> None:
         "NoopCmd": 0,
         "EnableCmd": 1,
         "DisableCmd": 2,
+        "BurnStopCmd": 3,
     }
 
 
@@ -428,6 +433,7 @@ def test_bus_struct_header_matches_model(packets: list[Packet]) -> None:
         "BSK_LINK_ONBOARD_STATE_TLM": pinned["BskOnboardState_Payload_t"],
         "BSK_LINK_TORQUE_COMMAND_TLM": pinned["BskTorqueCmd_Payload_t"],
         "BSK_LINK_STEP_ACK_TLM": pinned["BskStepAck_Payload_t"],
+        "BSK_LINK_BURN_COMMAND_TLM": pinned["BskBurnCmd_Payload_t"],
         "FCS_HK_TLM": pinned["FcsHkTlm_Payload_t"],
         "OBC_HK_TLM": pinned["ObcHk_Payload_t"],
     }
@@ -468,7 +474,7 @@ def test_topicids_header_mirrors_xml() -> None:
         assert c_topics.get(name) == value, (
             f"topic {name}: XML {value} != C header {c_topics.get(name)}"
         )
-    assert len(xml_topics) == len(c_topics) == 27  # 20 apps + 5 parts + image ledger + CFDP down
+    assert len(xml_topics) == len(c_topics) == 29  # 20 apps + 5 parts + ledger + CFDP + burn pair
 
 
 def test_time_cmd_mid_derives_from_topicids() -> None:
@@ -559,11 +565,11 @@ def test_truth_defs_generated_from_the_bare_container(eds: Eds) -> None:
     from codegen.eds2cosmos import _cosmos_name, emit_cosmos_truth
 
     items = eds.leaf("BSK_LINK/TruthState", "BSK_LINK")
-    assert len(items) == 14, "TruthState is 14 float64s (112 B)"
+    assert len(items) == 18, "TruthState is 18 float64s (144 B: 14 orbit + burn ledger)"
     text = emit_cosmos_truth(items, target="TRUTH_CHIEF")
     assert "APPEND_ID_ITEM PACKET_ID 8 UINT 1" in text
     assert "APPEND_ITEM PACKET_LENGTH 16 UINT" in text
-    assert text.count("APPEND_ITEM") == 2 + 14  # reserved + length + payload
+    assert text.count("APPEND_ITEM") == 2 + 18  # reserved + length + payload
     for item in items:
         assert f"APPEND_ITEM {_cosmos_name(item.name)}" in text
     assert "COMMAND" not in text  # absence-of-cmd-def is the tripwire

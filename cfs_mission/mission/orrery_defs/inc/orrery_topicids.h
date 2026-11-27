@@ -56,6 +56,13 @@
  * transport is CF's, never the mission's. */
 #define CFE_MISSION_FCS_CFDP_DOWN_TOPICID 214
 
+/* Rung 1 burns: the ground's BURN ask rides its own topic per the same
+ * SetGainPkt law (BURNSTOP is argumentless and rides FCS_CMD FC 3), and the
+ * per-tick burn frame fcs egresses gets the mirror topic on the telemetry
+ * base. BURNSTOP is NOT here: an FC is not a topic. */
+#define CFE_MISSION_FCS_BURN_TOPICID 215
+#define CFE_MISSION_BSK_LINK_BURN_COMMAND_TLM_TOPICID 215
+
 /* cFS TIME service command port, block-relative (cfe-topicids.xml:
  * TIME_CMD = TELECOMMAND_BASE_TOPICID + 5). The link slaves mission MET to
  * the sim timecode over this port. */

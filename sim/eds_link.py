@@ -36,6 +36,7 @@ DIST = Path(os.environ.get("EDSLINK_DIST") or REPO / "edslink" / "dist")
 DB_NAME = "orrery"
 
 __all__ = [
+    "BurnCommand",
     "FitManifest",
     "NavState",
     "OnboardState",
@@ -43,12 +44,14 @@ __all__ = [
     "StepAck",
     "TorqueCommand",
     "available",
+    "decode_burn_command",
     "decode_fit_manifest",
     "decode_nav_state",
     "decode_onboard_state",
     "decode_opnav_state",
     "decode_step_ack",
     "decode_torque_command",
+    "encode_burn_command",
     "encode_container",
     "encode_fit_manifest",
     "encode_sensor_frame",
@@ -215,8 +218,16 @@ def encode_truth_state(
     v_bn_n: tuple[float, float, float],
     sigma_bn: tuple[float, float, float, float],
     omega_bn_b: tuple[float, float, float],
+    burn_impulse_applied_ns: float = 0.0,
+    burn_ticks_applied: float = 0.0,
+    burn_ticks_saturated: float = 0.0,
+    burn_id: float = 0.0,
 ) -> Any:  # noqa: ANN401 - stub-less C extension
-    """Build a packed ``BSK_LINK/TruthState`` (ground truth stream, never on cFS)."""
+    """Build a packed ``BSK_LINK/TruthState`` (ground truth stream, never on cFS).
+
+    The burn ledger defaults to silence: a plant that never thrusts says so
+    with zeros, and every pre-burn caller stays untouched.
+    """
     lib = _lib()
     obj = entry("BSK_LINK/TruthState")()
     obj["SimTimeS"] = sim_time_s
@@ -228,6 +239,10 @@ def encode_truth_state(
     ):
         for index, value in enumerate(values):
             obj[name][index] = value
+    obj["BurnImpulseAppliedNs"] = burn_impulse_applied_ns
+    obj["BurnTicksApplied"] = burn_ticks_applied
+    obj["BurnTicksSaturated"] = burn_ticks_saturated
+    obj["BurnId"] = burn_id
     return lib.PackedObject(obj)
 
 
@@ -439,6 +454,60 @@ def encode_cam_config(
     obj["Shutter"] = shutter
     obj["RenderRateS"] = render_rate_s
     obj["Pulse"] = pulse
+    return lib.PackedObject(obj)
+
+
+@dataclass(frozen=True)
+class BurnCommand:
+    """A decoded ``BSK_LINK/BurnCommand`` frame: one tick of a commanded burn.
+
+    The craft's claim, delivered apply-once: this tick, this force along this
+    body axis. ``burn_id`` is the craft's burn ordinal so the world's applied
+    ledger and the craft's forwarded ledger can be joined per burn by the
+    bench - neither side reads the other; only the bench does.
+    """
+
+    sim_time_s: float
+    force_n: float
+    axis_b: tuple[float, float, float]
+    frame: int
+    burn_id: int
+
+
+def decode_burn_command(payload: bytes) -> BurnCommand:
+    """Decode the body of a ``BSK_LINK/BurnCommand`` frame (the sim's burn door)."""
+    lib = _lib()
+    obj = entry("BSK_LINK/BurnCommand")(lib.PackedObject(payload))
+    return BurnCommand(
+        sim_time_s=float(obj["SimTimeS"]()),
+        force_n=float(obj["ForceN"]()),
+        axis_b=tuple(obj["AxisB"][i]() for i in range(3)),
+        frame=int(obj["Frame"]()),
+        burn_id=int(obj["BurnId"]()),
+    )
+
+
+def encode_burn_command(
+    sim_time_s: float,
+    force_n: float,
+    axis_b: tuple[float, float, float],
+    frame: int,
+    burn_id: int,
+) -> Any:  # noqa: ANN401 - stub-less C extension
+    """Build a packed ``BSK_LINK/BurnCommand``.
+
+    Production frames are egressed by ``bsk_link`` from the bus; this encoder
+    exists for tests that drive the sim's burn door without a container -
+    ``encode_cam_config``'s fake-FSW role again.
+    """
+    lib = _lib()
+    obj = entry("BSK_LINK/BurnCommand")()
+    obj["SimTimeS"] = sim_time_s
+    obj["ForceN"] = force_n
+    for index, value in enumerate(axis_b):
+        obj["AxisB"][index] = value
+    obj["Frame"] = frame
+    obj["BurnId"] = burn_id
     return lib.PackedObject(obj)
 
 

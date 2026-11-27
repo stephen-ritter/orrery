@@ -126,7 +126,7 @@ def test_published_frames_are_eds_link_frames(tmp_path: object, link_ports: dict
     lib = _lib()
     assert len(frames["sensor"][0]) == 40, "SensorFrame is 4 doubles + a counter"
     assert len(frames["echo"][0]) == 40, "TorqueCommand is 4 doubles + a counter"
-    assert len(frames["truth"][0]) == 112, "TruthState is 14 doubles"
+    assert len(frames["truth"][0]) == 144, "TruthState is 18 doubles"
 
     sensor = entry("BSK_LINK/SensorFrame")(lib.PackedObject(frames["sensor"][-1]))
     assert sensor["Frame"]() == ticks

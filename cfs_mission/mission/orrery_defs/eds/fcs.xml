@@ -10,7 +10,7 @@
     computed by fcs on every BSK_LINK_SENSOR_FRAME_TLM and published as
     BSK_LINK_TORQUE_COMMAND_TLM for bsk_link to forward to the sim. Ground
     commands arriving on the :5051 uplink own the authority: ENABLE / DISABLE /
-    SET_GAIN / SET_WHEEL_LIMIT / NOOP. Payload bytes are target-native
+    SET_GAIN / SET_WHEEL_LIMIT / BURN / BURNSTOP / NOOP. Payload bytes are target-native
     little-endian.
 
     Mode supervisor: fcs also ingests BSK_LINK_ONBOARD_STATE_TLM -
@@ -46,6 +46,14 @@
       <ContainerDataType name="DisableCmd" baseType="CommandBase">
         <ConstraintSet>
           <ValueConstraint entry="Sec.FunctionCode" value="2" />
+        </ConstraintSet>
+      </ContainerDataType>
+
+      <!-- End the active burn early. Bare and argumentless, so it rides the
+           FCS_CMD FC-subtype pattern that still works (NOOP/ENABLE/DISABLE). -->
+      <ContainerDataType name="BurnStopCmd" baseType="CommandBase">
+        <ConstraintSet>
+          <ValueConstraint entry="Sec.FunctionCode" value="3" />
         </ConstraintSet>
       </ContainerDataType>
 
@@ -122,6 +130,43 @@
         </EntryList>
       </ContainerDataType>
 
+      <!-- The burn ask: force along a BODY axis for a duration, ground units.
+           Its own interface per the SetGainPkt law (an argument-bearing command
+           is its own packet), and deliberate about units: the ground commands
+           force x duration (the impulse it wants) and the craft forwards that
+           quota per tick - the thruster rating stays ground-side because the
+           firmware is scenario-independent and must not know the plant's
+           Newtons. The duration cap is a firmware door (FCS_BURN_MAX_S), the
+           axis must be non-degenerate, and one burn at a time: a second ask
+           while burning is refused, not queued. This is the quota law
+           (option A): the craft commands force, Basilisk's thruster effector
+           owns the pulse pattern, and the world applies what the effector
+           fires. The claim ledger (HK) counts what THIS app forwarded; what
+           the world actually felt is truth-side, and only the bench reads
+           both. -->
+      <ContainerDataType name="BurnCmd" baseType="CFE_HDR/CommandHeader">
+      </ContainerDataType>
+
+      <ContainerDataType name="BurnPayload" shortDescription="one burn: force along a body axis for a duration">
+        <EntryList>
+          <Entry name="ForceN" type="BSK_LINK/float64" shortDescription="commanded thrust magnitude [N]; must be &gt; 0" />
+          <Entry name="DurationS" type="BSK_LINK/float64" shortDescription="burn duration [s]; 0 &lt; T &lt;= firmware cap" />
+          <Entry name="AxisB" type="BSK_LINK/Vector3" shortDescription="thrust axis, body frame; normalized onboard, must not be degenerate" />
+        </EntryList>
+      </ContainerDataType>
+
+      <ContainerDataType name="BurnPkt" baseType="BurnCmd">
+        <EntryList>
+          <Entry name="Payload" type="BurnPayload" />
+        </EntryList>
+      </ContainerDataType>
+
+      <!-- BURNSTOP rides the payloadless FC-subtype pattern (it IS
+           argumentless): it ends the active burn early - a partial burn is
+           still an honest partial, and the claim ledger counts what went out
+           before the stop. With no burn active it is a refusal: testimony,
+           not a shrug. -->
+
       <ContainerDataType name="HkTlm_Payload" shortDescription="fcs housekeeping">
         <EntryList>
           <Entry name="CommandCounter" type="BASE_TYPES/uint8" shortDescription="valid commands received" />
@@ -149,6 +194,28 @@
           <Entry name="WheelLimit" type="BSK_LINK/float64" shortDescription="wheel |speed| trip threshold [rad/s]" />
           <Entry name="WheelSpeeds" type="BSK_LINK/Vector3" shortDescription="latest wheel speeds from the onboard state [rad/s]" />
           <Entry name="SunCosine" type="BSK_LINK/float64" shortDescription="largest CSS cosine seen (0 = no sun in any eye)" />
+          <!-- Burn claim ledger: what THIS app accepted and forwarded,
+               built only from its own counters. What the world actually
+               applied is truth-side (world log + orbit), and the gap between
+               the two is a bench finding, never a flight-software input. -->
+          <Entry name="BurnState" type="BASE_TYPES/uint8" shortDescription="0 idle, 1 burning (a tick's frames are going out)">
+            <Constraints>
+              <EnumeratedValueConstraint>
+                <EnumerationList>
+                  <Enumeration label="IDLE" value="0" />
+                  <Enumeration label="BURNING" value="1" />
+                </EnumerationList>
+              </EnumeratedValueConstraint>
+            </Constraints>
+          </Entry>
+          <Entry name="BurnPad" type="BASE_TYPES/uint8" arraySize="3" shortDescription="explicit alignment filler" />
+          <Entry name="BurnCommandsAccepted" type="BASE_TYPES/uint32" shortDescription="BURN asks accepted (the burn started)" />
+          <Entry name="BurnCommandsRefused" type="BASE_TYPES/uint32" shortDescription="BURN/BURNSTOP refused: bad args, or burn already active" />
+          <Entry name="BurnFramesForwarded" type="BASE_TYPES/uint32" shortDescription="per-tick burn frames handed to bsk_link since boot" />
+          <Entry name="BurnImpulseClaimed" type="BSK_LINK/float64" shortDescription="integral of forwarded force x tick [N s] - a claim, not a measurement" />
+          <Entry name="LastBurnForceN" type="BSK_LINK/float64" shortDescription="force of the last accepted burn [N]" />
+          <Entry name="LastBurnId" type="BASE_TYPES/uint64" shortDescription="ordinal of the last accepted burn (1-based)" />
+          <Entry name="LastBurnAxisB" type="BSK_LINK/Vector3" shortDescription="unit axis of the last accepted burn, body frame" />
         </EntryList>
       </ContainerDataType>
 
@@ -188,6 +255,11 @@
               <GenericTypeMap name="TelecommandDataType" type="CfdpDownPkt" />
             </GenericTypeMapSet>
           </Interface>
+          <Interface name="BURN" shortDescription="Commanded continuous burn: force along a body axis for a duration" type="CFE_SB/Telecommand">
+            <GenericTypeMapSet>
+              <GenericTypeMap name="TelecommandDataType" type="BurnPkt" />
+            </GenericTypeMapSet>
+          </Interface>
           <Interface name="HK_TLM" shortDescription="Software bus housekeeping telemetry interface" type="CFE_SB/Telemetry">
             <GenericTypeMapSet>
               <GenericTypeMap name="TelemetryDataType" type="HkTlm" />
@@ -201,6 +273,7 @@
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="SetGainTopicId" initialValue="${CFE_MISSION/FCS_SET_GAIN_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="SetWheelLimitTopicId" initialValue="${CFE_MISSION/FCS_SET_WHEEL_LIMIT_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="CfdpDownTopicId" initialValue="${CFE_MISSION/FCS_CFDP_DOWN_TOPICID}" />
+            <Variable type="BASE_TYPES/uint16" readOnly="true" name="BurnTopicId" initialValue="${CFE_MISSION/FCS_BURN_TOPICID}" />
             <Variable type="BASE_TYPES/uint16" readOnly="true" name="HkTlmTopicId" initialValue="${CFE_MISSION/FCS_HK_TLM_TOPICID}" />
           </VariableSet>
           <ParameterMapSet>
@@ -209,6 +282,7 @@
             <ParameterMap interface="SET_GAIN" parameter="TopicId" variableRef="SetGainTopicId" />
             <ParameterMap interface="SET_WHEEL_LIMIT" parameter="TopicId" variableRef="SetWheelLimitTopicId" />
             <ParameterMap interface="CFDP_DOWN" parameter="TopicId" variableRef="CfdpDownTopicId" />
+            <ParameterMap interface="BURN" parameter="TopicId" variableRef="BurnTopicId" />
             <ParameterMap interface="HK_TLM" parameter="TopicId" variableRef="HkTlmTopicId" />
           </ParameterMapSet>
         </Implementation>

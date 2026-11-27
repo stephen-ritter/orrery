@@ -247,6 +247,19 @@ typedef struct
     double WheelLimit;            /* supervisor trip threshold [rad/s]   */
     double WheelSpeeds[3];        /* latest wheel feedback [rad/s]       */
     double SunCosine;             /* max CSS cosine seen [-]             */
+    /* Burn claim ledger (Rung 1): fcs' own counters, never a measurement.
+     * The world's applied impulse lives truth-side; only the bench reads
+     * both ledgers, so no pad is needed after SunCosine (offset 120 is
+     * already 8-aligned for nothing here - the byte run continues). */
+    uint8  BurnState;             /* 0 idle, 1 burning                   */
+    uint8  BurnPad[3];            /* explicit EDS pad before the counters */
+    uint32 BurnCommandsAccepted;
+    uint32 BurnCommandsRefused;   /* BURN and BURNSTOP refusals          */
+    uint32 BurnFramesForwarded;
+    double BurnImpulseClaimed;    /* sum of forwarded force x tick [N s] */
+    double LastBurnForceN;
+    uint64 LastBurnId;
+    double LastBurnAxisB[3];
 } __attribute__((packed)) FcsHkTlm_Payload_t;
 
 typedef struct
@@ -330,6 +343,41 @@ typedef struct
     CFE_MSG_TelemetryHeader_t TelemetryHeader;
     BskCamConfig_Payload_t    Payload;
 } BskCamConfigTlm_t;
+
+/* BSK_LINK/BurnCommand: one tick of an accepted burn, egressed by bsk_link
+ * to the sim on the cmd channel under its own topic - never a barrier
+ * frame, and apply-ONCE: each frame buys exactly one tick of thrust, so a
+ * silent craft never thrusts. See the container's EDS comment for the law. */
+typedef struct
+{
+    double   SimTimeS;   /* sim time at the command [s]        */
+    double   ForceN;     /* thrust magnitude this tick [N]      */
+    double   AxisB[3];   /* unit thrust axis, body frame        */
+    uint64   Frame;      /* sim frame the command rode          */
+    uint64   BurnId;     /* burn ordinal, matches fcs HK        */
+} __attribute__((packed)) BskBurnCmd_Payload_t;
+
+typedef struct
+{
+    CFE_MSG_TelemetryHeader_t TelemetryHeader;
+    BskBurnCmd_Payload_t      Payload;
+} BskBurnCmdTlm_t;
+
+/* FCS/BurnPayload: the ground's burn ask. Units are the ground's (Newtons,
+ * seconds); the firmware knows only the doors (finite, positive, capped
+ * duration), never the plant's rating. Axis is normalized onboard. */
+typedef struct
+{
+    double ForceN;
+    double DurationS;
+    double AxisB[3];
+} __attribute__((packed)) FcsBurn_Payload_t;
+
+typedef struct
+{
+    CFE_MSG_CommandHeader_t CommandHeader;
+    FcsBurn_Payload_t       Payload;
+} FcsBurnCmd_t;
 
 /* BSK_LINK/CamStorage: the onboard image ledger. bsk_link owns
  * this truth - it is the one that reassembles bytes into /cf/img files -
@@ -488,13 +536,15 @@ _Static_assert(sizeof(BskTorqueCmd_Payload_t) == 40, "TorqueCommand payload drif
 _Static_assert(sizeof(BskStepAck_Payload_t) == 24, "StepAck payload drift vs bsk_link.xml");
 _Static_assert(sizeof(FcsSetGain_Payload_t) == 24, "SetGain payload drift vs fcs.xml");
 _Static_assert(sizeof(FcsSetWheelLimit_Payload_t) == 8, "SetWheelLimit payload drift vs fcs.xml");
-_Static_assert(sizeof(FcsHkTlm_Payload_t) == 120, "FCS HK payload drift vs fcs.xml");
+_Static_assert(sizeof(FcsHkTlm_Payload_t) == 184, "FCS HK payload drift vs fcs.xml");
 _Static_assert(sizeof(ObcHk_Payload_t) == 80, "OBC HK payload drift vs obc.xml");
 _Static_assert(sizeof(SpsSchedule_Payload_t) == 60, "Schedule payload drift vs sps.xml");
 _Static_assert(sizeof(SpsHkTlm_Payload_t) == 72, "SPS HK payload drift vs sps.xml");
 _Static_assert(sizeof(CamSetConfig_Payload_t) == 16, "SetConfig payload drift vs cam.xml");
 _Static_assert(sizeof(CamHkTlm_Payload_t) == 48, "CAM HK payload drift vs cam.xml");
 _Static_assert(sizeof(BskCamConfig_Payload_t) == 48, "CamConfig payload drift vs bsk_link.xml");
+_Static_assert(sizeof(BskBurnCmd_Payload_t) == 56, "BurnCommand payload drift vs bsk_link.xml");
+_Static_assert(sizeof(FcsBurn_Payload_t) == 40, "Burn payload drift vs fcs.xml");
 _Static_assert(sizeof(BskCamStorage_Payload_t) == 96, "CamStorage payload drift vs bsk_link.xml");
 _Static_assert(sizeof(BskCamState_Payload_t) == 64, "CamState payload drift vs bsk_link.xml row");
 _Static_assert(sizeof(BskImageChunkHeader_t) == 24, "IMG chunk header drift vs sim framing");

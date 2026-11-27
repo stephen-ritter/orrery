@@ -37,8 +37,10 @@ import zmq
 from Basilisk.utilities import macros
 
 from sim.eds_link import (
+    BurnCommand,
     CamConfig,
     StepAck,
+    decode_burn_command,
     decode_cam_config,
     decode_step_ack,
     decode_torque_command,
@@ -58,6 +60,13 @@ TOPIC_CMD = b"CMD"
 # the hardcoded constants because it is neither physics nor a registry part:
 # a command surface, fire-and-forget by contract.
 TOPIC_CAM = b"CAM"
+# Burn: egressed on the cmd socket like CAM, its own topic, never gated. It
+# joins the hardcoded barrier constants for the same reason - a command
+# surface, not a registry part. Unlike CAM it is APPLY-ONCE: each frame buys
+# exactly one tick of thrust (the on-times a frame produces never outlive the
+# tick), so a craft that goes silent mid-burn stops thrusting on the next
+# tick. A lost frame is a short burn, never an endless one.
+TOPIC_BURN = b"BURN"
 TOPIC_TRUTH = b"TRUTH"
 # The boot handshake: the world's declared part fit, on the sensor socket
 # every tick. Not a part and not telemetry - it is the link's own control
@@ -127,20 +136,38 @@ def _vec3(vec: np.ndarray) -> tuple[float, float, float]:
 
 @dataclass(frozen=True)
 class Truth:
-    """One instant of the simulator's own solution, before any sensor error."""
+    """One instant of the simulator's own solution, before any sensor error.
+
+    The burn ledger is the WORLD's applied tally, not the craft's claim:
+    what the plant's thrusters were actually given, tick by tick. Flight
+    software never reads these bytes; the bench reads both ledgers and owns
+    the difference. (Rung 1; counts ride the truth wire's float64 exactly.)
+    """
 
     sim_time_s: float
     r_bn_n: tuple[float, float, float]
     v_bn_n: tuple[float, float, float]
     sigma_bn: tuple[float, float, float, float]
     omega_bn_b: tuple[float, float, float]
+    burn_impulse_applied_ns: float = 0.0
+    burn_ticks_applied: float = 0.0
+    burn_ticks_saturated: float = 0.0
+    burn_id: float = 0.0
 
 
 def truth_bytes(truth: Truth) -> bytes:
     """Encode a :class:`Truth` as the ``BSK_LINK/TruthState`` wire frame."""
     return bytes(
         encode_truth_state(
-            truth.sim_time_s, truth.r_bn_n, truth.v_bn_n, truth.sigma_bn, truth.omega_bn_b
+            truth.sim_time_s,
+            truth.r_bn_n,
+            truth.v_bn_n,
+            truth.sigma_bn,
+            truth.omega_bn_b,
+            burn_impulse_applied_ns=truth.burn_impulse_applied_ns,
+            burn_ticks_applied=truth.burn_ticks_applied,
+            burn_ticks_saturated=truth.burn_ticks_saturated,
+            burn_id=truth.burn_id,
         )
     )
 
@@ -220,6 +247,12 @@ class RigChannel:
     # vehicle has no commanded eye; a config for it is decoded, counted, and
     # dropped - visible in the exit report, never silently absorbed.
     cam_sink: Callable[[CamConfig], None] | None = None
+    # The burn door: called with each decoded BurnCommand the instant it
+    # arrives, between ticks - the frame buys exactly the NEXT tick (apply-
+    # once, see TOPIC_BURN). ``None`` means this vehicle declares no
+    # thrusters; the frame is decoded, counted here, and dropped - an
+    # absence on the exit tally, never a silently absorbed impulse.
+    burn_sink: Callable[[BurnCommand], None] | None = None
     sockets: dict[str, zmq.Socket] = field(default_factory=dict)
 
     stale_torques: int = 0  # frames (torque or ack) the check already passed
@@ -227,6 +260,7 @@ class RigChannel:
     foreign_frames: int = 0  # frames ahead of the check: a protocol breach
     bad_frames: int = 0  # undecodable or malformed multipart frames
     cam_configs: int = 0  # camera configs received (applied is the sink's tally)
+    burn_frames: int = 0  # burn frames received (applied is the sink's tally)
     rate_history: list[tuple[float, float]] = field(default_factory=list)
     torque_history: list[tuple[float, np.ndarray]] = field(default_factory=list)
     external_torque_history: list[tuple[float, np.ndarray | None]] = field(default_factory=list)
@@ -272,6 +306,7 @@ class LockstepRig:
         observers: dict[str, Callable[[], bytes | list[bytes]]] | None = None,
         fit_provider: Callable[[], bytes] | None = None,
         cam_sink: Callable[[CamConfig], None] | None = None,
+        burn_sink: Callable[[BurnCommand], None] | None = None,
     ) -> None:
         """Wire the channels; the plant(s) must already be built and initialized.
 
@@ -310,6 +345,7 @@ class LockstepRig:
                     observers=observers or {},
                     fit_provider=fit_provider,
                     cam_sink=cam_sink,
+                    burn_sink=burn_sink,
                 )
             ]
         if not channels:
@@ -357,6 +393,11 @@ class LockstepRig:
     def bad_frames(self) -> int:
         """Tripwire across all channels: undecodable or malformed frames."""
         return sum(ch.bad_frames for ch in self.channels)
+
+    @property
+    def burn_frames(self) -> int:
+        """Burn frames received across all channels (applied is the bodies' tally)."""
+        return sum(ch.burn_frames for ch in self.channels)
 
     @property
     def rate_history(self) -> list[tuple[float, float]]:
@@ -538,6 +579,15 @@ class LockstepRig:
                     ch.cam_configs += 1
                     if ch.cam_sink is not None:
                         ch.cam_sink(cfg)
+                    continue
+                if topic == TOPIC_BURN:
+                    # The same fire-and-forget law as CAM - a burn answer
+                    # never opens a barrier - but apply-ONCE physics: this
+                    # frame buys the next tick only, never a held state.
+                    burn = decode_burn_command(body)
+                    ch.burn_frames += 1
+                    if ch.burn_sink is not None:
+                        ch.burn_sink(burn)
                     continue
                 if topic == TOPIC_CMD:
                     cmd = decode_torque_command(body)

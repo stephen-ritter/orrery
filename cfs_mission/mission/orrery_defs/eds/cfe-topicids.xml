@@ -186,6 +186,7 @@
     <Define name="FCS_SET_GAIN_TOPICID"               value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 202" />
     <Define name="FCS_SET_WHEEL_LIMIT_TOPICID"        value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 203" />
     <Define name="FCS_CFDP_DOWN_TOPICID"              value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 214" />
+    <Define name="FCS_BURN_TOPICID"                   value="${CFE_MISSION/TELECOMMAND_BASE_TOPICID} + 215" />
     <Define name="FCS_HK_TLM_TOPICID"                 value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 202" />
     <Define name="BSK_LINK_STEP_ACK_TLM_TOPICID"      value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 203" />
     <Define name="OBC_HK_TLM_TOPICID"                 value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 205" />
@@ -207,6 +208,11 @@
     <Define name="CAM_HK_TLM_TOPICID"                 value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 210" />
     <Define name="BSK_LINK_CAM_CONFIG_TLM_TOPICID"    value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 212" />
     <Define name="BSK_LINK_CAM_STORAGE_TLM_TOPICID"   value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 213" />
+    <!-- Burn: the quota frame fcs egresses while a burn is active, and the
+         ground's BURN command. The actuator is a command-path part (see the
+         coverage ledger): it earns a command interface on FCS, never a part
+         row of its own. -->
+    <Define name="BSK_LINK_BURN_COMMAND_TLM_TOPICID"  value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 215" />
 
     <!-- BEGIN GENERATED (codegen/emit_frames.py): registered part topics -->
     <Define name="BSK_LINK_NAV_STATE_TLM_TOPICID"      value="${CFE_MISSION/TELEMETRY_BASE_TOPICID} + 207" />

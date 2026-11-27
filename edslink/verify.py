@@ -129,13 +129,17 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
         },
     ),
     "TruthState": (
-        "<14d",
+        "<18d",
         {
             "SimTimeS": 3.5,
             "r_BN_N": (7e6, -2e5, 1e3),
             "v_BN_N": (-0.3, 7.1, 0.2),
             "sigma_BN": (0.01, -0.02, 0.03, 0.999),
             "omega_BN_B": (0.004, -0.005, 0.006),
+            "BurnImpulseAppliedNs": 120.5,
+            "BurnTicksApplied": 40,
+            "BurnTicksSaturated": 1,
+            "BurnId": 7,
         },
     ),
 }

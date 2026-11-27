@@ -133,6 +133,7 @@ static const SpsCmdEntry_t SPS_CMD_TABLE[] = {
     {0x18C8, 0, 0, "FCS_CMD.NoopCmd"},
     {0x18C8, 1, 0, "FCS_CMD.EnableCmd"},
     {0x18C8, 2, 0, "FCS_CMD.DisableCmd"},
+    {0x18C8, 3, 0, "FCS_CMD.BurnStopCmd"},
     {0x18C9, 0, 0, "FCS_SEND_HK"},
     {0x18CA, 0, 24, "FCS_SET_GAIN"},
     {0x18CB, 0, 8, "FCS_SET_WHEEL_LIMIT"},
@@ -149,6 +150,7 @@ static const SpsCmdEntry_t SPS_CMD_TABLE[] = {
     {0x18D3, 0, 0, "CAM_SEND_HK"},
     {0x18D4, 0, 16, "CAM_SET_CONFIG"},
     {0x18D6, 0, 136, "FCS_CFDP_DOWN"},
+    {0x18D7, 0, 40, "FCS_BURN"},
 };
 
 #define SPS_CMD_COUNT (sizeof(SPS_CMD_TABLE) / sizeof(SPS_CMD_TABLE[0]))
