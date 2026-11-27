@@ -79,7 +79,10 @@ done
 echo "=== inherited store: 4 files stand, catalog proves 2 ==="
 
 echo "=== bench world up (${BENCH_NAME}, ${SIM_DURATION} sim-s, recorder ${CAPACITY_FILES} files) ==="
-DURATION="$SIM_DURATION" bash "$REPO/scripts/fleet.sh" up "sim/scenarios/$BENCH_NAME" 2>&1 |
+# This leg's subject IS an inherited store: the seeded receipts must survive
+# the boot census, so the yard door's fresh-world fence stands down by name
+# (fleet.sh FRESH_STORE=0) - the one bench the override exists for.
+FRESH_STORE=0 DURATION="$SIM_DURATION" bash "$REPO/scripts/fleet.sh" up "sim/scenarios/$BENCH_NAME" 2>&1 |
     tail -3 | tee "$WORK/up.log"
 
 # Both halves of the claim before anything is graded: the sim's outlet is

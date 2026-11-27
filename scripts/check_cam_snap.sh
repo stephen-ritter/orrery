@@ -147,8 +147,20 @@ if grep -q "refused: recorder full" "$WORK/chief.log"; then
 fi
 
 echo "=== byte law: each landed file is the PNG the sim's writer rendered ==="
-SIM_DIR="$("$RUNTIME" exec orrery-world sh -c 'ls -d /tmp/cam_store_1_* 2>/dev/null | head -1' || true)"
+# The WORLD's own announcement names this run's outlet directory. Globbing
+# /tmp is wrong: a reused container carries dead runs' stages, and
+# lexicographic "first" grades the byte law against whichever ghost speaks
+# loudest (2026-11-27: a dead run's dir, whose pulse landed on a rendered
+# tick, made a live capture look byte-less).
+SIM_DIR="$(sed -nE 's|.*store outlet ON \([^)]*-> (/tmp/cam_store_[^)]+)\).*|\1|p' \
+    "$WORK/world.log" | tail -1)"
 [ -n "$SIM_DIR" ] || { echo "check_cam_snap: the sim announced no store directory" >&2; exit 1; }
+# And the destination must be empty: docker cp NESTS a directory copy into an
+# existing one, so a sim_src left over from a previous leg would grade THIS
+# run's frames against the previous run's PNGs sitting in the outer layer
+# (the 2026-11-27 scar: seven nested ghosts under cam_snap/sim_src, each a
+# faithful copy, none of them what the byte law was reading).
+rm -rf "$WORK/sim_src"
 "$RUNTIME" cp "orrery-world:$SIM_DIR" "$WORK/sim_src" >/dev/null
 uv run python - "$WORK/sim_src" "$HOST_IMG" "$WORK/world.log" <<'PY'
 import hashlib

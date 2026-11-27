@@ -171,6 +171,35 @@ scenario_up() {
     uv run python -m codegen.emit_applist --scenario "$SCENARIO" || return 1
     uv run python -m codegen.emit_store --scenario "$SCENARIO" || return 1
 
+    # A fresh world boots an EMPTY store (law 2026-11-27). /cf/img and the
+    # store's manifest live in the host build tree, which survives every
+    # `down` - a swapped-in scenario used to adopt the DEAD world's frames:
+    # the boot census faithfully restored a ledger of files this world could
+    # never have made (play-session scar: a fresh snap craft booted full,
+    # refused its own captures as over-capacity, and published an inventory
+    # of 512 ghosts). The recorder's stage is wiped at every `up`, beside the
+    # startup tables and the build list the door already re-lands: an empty
+    # store is a scenario fact, not inherited scenery. Bench legs that TEST
+    # inheritance (check_cam_store seeds receipts on purpose) name the
+    # override FRESH_STORE=0 loudly - the ORRERY_ALLOW_STALE precedent: an
+    # override nobody sees is a fence nobody trusts. A hand-run
+    # `docker compose up` skips the door, the same exception the per-vehicle
+    # startup tables document.
+    CF_STAGE="cfs_mission/mission/build/exe/cpu1/cf"
+    case "${FRESH_STORE:-1}" in
+        1)
+            if [ -e "$CF_STAGE/img" ] || [ -e "$CF_STAGE/manifest.txt" ]; then
+                rm -rf "$CF_STAGE/img" "$CF_STAGE/manifest.txt" "$CF_STAGE/manifest.part"
+                echo "[${STEM}] store stage wiped: a fresh world starts with nothing to sell"
+            fi
+            ;;
+        0) echo "[${STEM}] FRESH_STORE=0: keeping the seeded store stage (inheritance is the thing under test)" ;;
+        *)
+            echo "fleet.sh: FRESH_STORE must be 1 (wipe, the law) or 0 (named override); got '${FRESH_STORE}'" >&2
+            return 1
+            ;;
+    esac
+
     # a cold machine builds both images and the mission inside `up` (the
     # compose init services; the mission install rewrites the image's own
     # fallback table, never the per-vehicle ones); the boot wait must

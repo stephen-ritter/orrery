@@ -83,3 +83,29 @@ def test_cam_holds_no_clerk_left_to_wake() -> None:
     text = CAM_C.read_text() + "\n" + CAM_C.with_suffix(".h").read_text()
     for residue in ("CAM_MANIFEST", "ManifestWrite", "HandleManifest", "FormatUtc"):
         assert residue not in text, f"the retired clerk left {residue} behind in cam"
+
+
+def test_the_fleet_door_boots_every_world_on_an_empty_store() -> None:
+    """Yard-door fence (2026-11-27): a fresh world inherits no frames.
+
+    The recorder's stage lives in the host build tree and survives every
+    `fleet down`; without this fence a swapped-in scenario adopts the dead
+    world's /cf/img - a census of files this world can never have made and
+    an inventory of ghosts. fleet.sh must wipe img/, manifest.txt and
+    manifest.part inside `up`, beside the startup tables and build list it
+    already re-lands. (Live acceptance: the yard handover after the purge
+    battery - pre-seed an orphan file, boot, demand files=0 and an empty
+    published inventory.)
+    """
+    door = (REPO / "scripts" / "fleet.sh").read_text(encoding="utf-8")
+    assert 'CF_STAGE="cfs_mission/mission/build/exe/cpu1/cf"' in door
+    wipe = re.search(r'rm -rf "\$CF_STAGE/img"[^\n]*', door)
+    assert wipe, "fleet.sh no longer wipes the store stage inside up"
+    assert "$CF_STAGE/manifest.txt" in wipe.group(0)
+    assert "$CF_STAGE/manifest.part" in wipe.group(0)
+    assert "store stage wiped" in door, "the fence says nothing when it fires"
+    # the override exists for exactly one subject - inheritance itself - and
+    # must announce itself; a silent FRESH_STORE=0 is a fence with amnesia.
+    assert "FRESH_STORE=0: keeping the seeded store stage" in door
+    bench = (REPO / "scripts" / "check_cam_store.sh").read_text(encoding="utf-8")
+    assert "FRESH_STORE=0" in bench, "the inheritance bench no longer names its override"
