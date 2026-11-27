@@ -72,9 +72,13 @@ run_cli setpassword >/dev/null 2>&1 || true
 # 0.1.8: EDS strings reach the ground as typed STRING - CFDP_DOWN paths can be
 #        typed into the Command Installer; EOT filenames read as text.
 # 0.1.9: CAM_CMD FC 1 ManifestCmd - the store inventory has a ground name.
+#        (0.1.13 retired it: the store publishes its own inventory.)
 # 0.1.10: target descriptions tell the mission, not the working plan; the
 #         screens and defs a reader opens now read as the mission speaks.
-GEM_VERSION=0.1.13
+# 0.1.14: the prebaked purge - thirteen silent modules left the dictionary
+#         (63 -> 32 command packets, 298 -> 133 SPS rows). A station must not
+#         offer commands for apps that no longer boot.
+GEM_VERSION=0.1.14
 rm -f "$REPO/cosmos_plugin"/openc3-cosmos-orrery-*.gem \
       # a stale gem in here gets bundled as DATA and re-extracts as a nested plugin on load
 docker run --rm -v "$REPO/cosmos_plugin:/p" --user "$(id -u):$(id -g)" ruby:3.4-slim \
@@ -82,9 +86,18 @@ docker run --rm -v "$REPO/cosmos_plugin:/p" --user "$(id -u):$(id -g)" ruby:3.4-
            --output=/p/openc3-cosmos-orrery-$GEM_VERSION.gem" >/dev/null
 
 # cwd ($REPO) is mounted as /openc3/local by `openc3.sh cli`
-# Unload our exact registry entry first; anything else loaded (tools, demo)
-# stays. First boot on a fresh station has nothing to unload, hence `|| true`.
-run_cli unload "openc3-cosmos-orrery-$GEM_VERSION.gem__0" DEFAULT >/dev/null 2>&1 || true
+# Unload by the NAME THE REGISTRY ACTUALLY CARRIES, never by the version about
+# to be installed: entries are versioned (openc3-cosmos-orrery-<ver>.gem__<n>),
+# so unloading the NEW version's name before a bump is a silent no-op - the old
+# entry survives, the load half-installs beside it, and the replace sweep then
+# kills the freshly started microservices (bit the v0.1.13 bring-up: a Ruby
+# backtrace, a listed entry, and no scope behind it). Anything else loaded
+# (tools, demo) stays; first boot on a fresh station has nothing to unload.
+for ENTRY in $(run_cli list DEFAULT 2>/dev/null \
+        | grep -oE 'openc3-cosmos-orrery-[^ ]+\.gem__[0-9]+' || true); do
+    echo "--- unloading $ENTRY ---"
+    run_cli unload "$ENTRY" DEFAULT >/dev/null 2>&1 || true
+done
 LOAD_OUT="$(run_cli load "/openc3/local/cosmos_plugin/openc3-cosmos-orrery-$GEM_VERSION.gem" DEFAULT 2>&1)"
 LOAD_OUT="${LOAD_OUT//$'\r'/}"
 printf '%s\n' "$LOAD_OUT" | grep -vE '^ ?\{|Container' | tail -2
@@ -105,4 +118,28 @@ if grep -qE "in '<main>'" <<<"$LOAD_OUT"; then
     exit 1
 fi
 
-echo "COSMOS stack up, orrery plugin loaded"
+echo "--- tripwire: the registry must SERVE the defs, not merely list them ---"
+# A green word from a wrapper is a claim; the registry is the proof (2026-11-24).
+# Extended 2026-11-27 to the version-bump race: a half-installed entry LISTED
+# fine and SERVED nothing - targets exist only once the gem's microservices have
+# extracted the target files. So the acceptance question is not "did the load
+# print", it is "does get_target_names answer SAT_CHIEF", and it polls: target
+# extraction after a load is the station's own asynchronous work.
+SERVED=0
+for i in $(seq 1 36); do
+    if ( cd "$REPO" && uv run python -c \
+            'import sys; from sim.cosmos_api import login, rpc; sys.exit(0 if "SAT_CHIEF" in rpc(login(), "get_target_names") else 1)' ) \
+            >/dev/null 2>&1; then
+        SERVED=1
+        break
+    fi
+    [ $((i % 6)) -eq 0 ] && echo "  SAT_CHIEF not serving yet ($((i * 5))s)..."
+    sleep 5
+done
+if [ "$SERVED" -ne 1 ]; then
+    echo "cosmos_stack: the station lists the gem but serves no SAT_CHIEF - a half-installed registry." >&2
+    echo "  It must not be trusted to fly: unload the entry 'cli list' actually names and load again." >&2
+    exit 1
+fi
+
+echo "COSMOS stack up, orrery plugin loaded and SERVING"
