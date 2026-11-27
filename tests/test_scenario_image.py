@@ -74,13 +74,16 @@ def test_a_fleet_builds_what_any_vehicle_wakes(tmp_path: Path) -> None:
 
 
 def test_core_shipped_organs_are_outside_the_cut() -> None:
-    """sch_lab and the labs answer for themselves on every image.
+    """sch_lab and the assert lib answer for themselves on every image.
 
     The fragment may not name them (the core and the per-CPU lists build
-    them); the scenario's cut is for mission organs only.
+    them); the scenario's cut is for mission organs only. The labs left
+    the inventory in the 2026-11-27 prebaked purge - ci_lab and to_lab
+    were apps the mission builds-or-not like any other, and they earned
+    their retirement like everyone else: silence.
     """
     shipped = {row.name for row in load_apps() if row.core_shipped}
-    assert shipped == {"cfe_assert", "sch_lab", "ci_lab", "to_lab"}
+    assert shipped == {"cfe_assert", "sch_lab"}
     for scenario in ("chief.toml", "camera_ops.toml"):
         assert not shipped & set(_names(scenario))
 

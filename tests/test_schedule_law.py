@@ -39,29 +39,17 @@ CORE = "core"
 
 # The committed schedule, stem by stem: the topicid name (the macro minus
 # _MID) and the app whose organ it pokes. The eye is absent on purpose -
-# its housekeeping answers the ground, not a timer.
+# its housekeeping answers the ground, not a timer. The 2026-11-27 prebaked
+# purge left with its table rows: the timer now speaks only to the core and
+# the four baseline organs that answer it (registry/apps.toml).
 LEDGER = {
     "CFE_ES_SEND_HK": CORE,
     "CFE_EVS_SEND_HK": CORE,
     "CFE_TIME_SEND_HK": CORE,
     "CFE_SB_SEND_HK": CORE,
     "CFE_TBL_SEND_HK": CORE,
-    "CI_LAB_SEND_HK": "ci_lab",
-    "TO_LAB_SEND_HK": "to_lab",
-    "SAMPLE_APP_SEND_HK": "sample_app",
     "CF_SEND_HK": "cf",
     "CF_WAKE_UP": "cf",
-    "MD_SEND_HK": "md",
-    "HS_SEND_HK": "hs",
-    "SC_SEND_HK": "sc",
-    "SC_WAKEUP": "sc",
-    "FM_SEND_HK": "fm",
-    "DS_SEND_HK": "ds",
-    "LC_SEND_HK": "lc",
-    "CS_SEND_HK": "cs",
-    "CS_BACKGROUND_CYCLE": "cs",
-    "MM_SEND_HK": "mm",
-    "HK_SEND_HK": "hk",
     "FCS_SEND_HK": "fcs",
     "OBC_HK_SEND_HK": "obc_hk",
     "SPS_SEND_HK": "sps",
@@ -74,10 +62,11 @@ GUARD = re.compile(r"#ifdef\s+(\w+)")
 def scheduled_stems() -> set[str]:
     """Every scheduled topicid stem in the table source, guards respected.
 
-    Entries inside a #ifdef are disabled in this mission (the build proves
-    it: the built table carries no guarded entry), and the only guard the
-    door knows is the SB one - a new guard is a new decision, refused by
-    the set-equality test rather than parsed into silence.
+    Entries inside a #ifdef are disabled in this mission, and since the
+    2026-11-27 purge the table carries NO guards at all: SBN was excluded
+    entirely before that, and the last guarded rows left with the retired
+    apps. A new guard is therefore a new decision - refused here rather
+    than parsed into silence.
     """
     stems: set[str] = set()
     guards: set[str] = set()
@@ -90,7 +79,7 @@ def scheduled_stems() -> set[str]:
             depth -= 1
         elif depth == 0:
             stems.update(m.group(1) for m in ENTRY.finditer(line))
-    assert guards == {"CFS_SBN_ENABLED"}, f"unknown schedule guards: {sorted(guards)}"
+    assert not guards, f"schedule guards returned: {sorted(guards)}"
     return stems
 
 

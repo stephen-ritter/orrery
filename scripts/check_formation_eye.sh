@@ -169,16 +169,9 @@ done
 # W4 opens its window BEFORE the world moves: bytes at rest, bytes after.
 CHIEF_RX_BEFORE="$(rx_bytes GS_TCP_INT)" || true
 DEP_RX_BEFORE="$(rx_bytes GS_TCP2_INT)" || true
-HK_SAT_DEP_BEFORE="$(uv run python - <<'EOF'
-from sim.cosmos_api import login, rpc
-try:
-    rows = rpc(login(), "get_tlm_packet", "SAT_DEPUTY", "HK_HK_TLM")
-    vals = {n: v for n, v, _ in rows}
-    print(vals.get("COMMAND_COUNTER"), vals.get("SEQUENCE"))
-except Exception:
-    print("none none")
-EOF
-)" || true
+# (A cached-HK "heartbeat" read used to ride here informationally; the
+# 2026-11-27 purge retired its packet, and the W4 witness never needed it:
+# the interface byte counters above ARE the ground-side proof.)
 
 echo "=== [fleet] raw-port id witness (8 s, chief's eye) ==="
 uv run python -m sim.id_witness --row camstate --seconds 8 --instance "$C_INST" \
@@ -213,16 +206,6 @@ CONSOLE_DEP="$WORK/console_deputy.log"
 "$RUNTIME" rm -f "orrery-$D_NAME" >/dev/null 2>&1 || true
 CONTAINERS=()
 "$RUNTIME" rm -f "$RENDERER" >/dev/null 2>&1 || true
-HK_SAT_DEP_AFTER="$(uv run python - <<'EOF'
-from sim.cosmos_api import login, rpc
-try:
-    rows = rpc(login(), "get_tlm_packet", "SAT_DEPUTY", "HK_HK_TLM")
-    vals = {n: v for n, v, _ in rows}
-    print(vals.get("COMMAND_COUNTER"), vals.get("SEQUENCE"))
-except Exception:
-    print("none none")
-EOF
-)" || true
 
 FLEET_STORE="$(grep -oE 'camera1 store outlet ON \(every [0-9]+th capture -> [^)]+\)' \
     "$WORK/sim_fleet.log" | tail -1 | sed -E 's/.*-> ([^)]+)\)/\1/')"
@@ -452,10 +435,6 @@ echo "              GS_TCP2_INT before=$DEP_RX_BEFORE during=$DEP_RX_DURING byte
     echo "FORMATION-EYE FAILED (W4): deputy interface crossed no traffic"
     echo "  is GS_TCP2_INT installed/enabled? scripts/cosmos_stack.sh re-installs the gem"
     exit 1; }
-# Cached-item freshness, informational: the HK item pair is chief's heartbeat
-# (sim/cosmos_api.py proves it there); the deputy's stream is proven by its
-# interface counters, and this line only shows what the TLM server cached.
-echo "  SAT_DEPUTY HK_HK_TLM cache: before=[$HK_SAT_DEP_BEFORE] after=[$HK_SAT_DEP_AFTER]"
 
 echo
 echo "FORMATION-EYE CHECK OK"

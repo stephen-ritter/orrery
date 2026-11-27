@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from codegen.eds2cosmos import build_eds, emit_c_cmd_table, emit_c_table, emit_cosmos
+from codegen.eds2cosmos import (
+    build_eds,
+    emit_c_cmd_table,
+    emit_c_table,
+    emit_cosmos,
+    mission_packets,
+)
 from codegen.eds_model import Eds, Leaf, Packet
 
 REPO = Path(__file__).resolve().parents[1]
@@ -33,11 +39,16 @@ def _pkt(packets: list[Packet], name: str) -> Packet:
 
 
 def test_packet_coverage_threshold(packets: list[Packet]) -> None:
-    """Every app/core package contributes packets (floor guards regressions)."""
+    """Every app/core package contributes packets (floor guards regressions).
+
+    Floors re-anchored at the 2026-11-27 prebaked purge: thirteen silent
+    modules left the model (31 tlm / 32 cmd remain), and a floor is a floor
+    for what the mission actually ships - not for the pile it retired.
+    """
     tlm = [p for p in packets if p.direction == "tlm"]
     cmd = [p for p in packets if p.direction == "cmd"]
-    assert len(tlm) >= 40
-    assert len(cmd) >= 50
+    assert len(tlm) >= 30
+    assert len(cmd) >= 30
 
 
 def test_no_skip_warnings(eds: Eds) -> None:
@@ -46,18 +57,27 @@ def test_no_skip_warnings(eds: Eds) -> None:
 
 
 def test_msgid_mapping_matches_mission_defs(packets: list[Packet]) -> None:
-    """Topic->msgid mirrors CFE_MissionLib_TryMapping (V1 header packing)."""
-    assert _pkt(packets, "HK_HK_TLM").msgid == 0x089B  # 0x0800 | (420-265)
-    assert _pkt(packets, "HK_CMD").msgid == 0x189A  # 0x1800 | (163-9)
-    assert _pkt(packets, "TO_LAB_HK_TLM").msgid == 0x0880  # 0x0800 | (393-265)
+    """Topic->msgid mirrors CFE_MissionLib_TryMapping (V1 header packing).
+
+    The 2026-11-27 purge moved these witnesses from HK/TO_LAB to the
+    mission's own packets: the derivation law did not change, only whose
+    numbers prove it.
+    """
+    assert _pkt(packets, "OBC_HK_TLM").msgid == 0x08CD  # 0x0800 | 0x0CD (TM topic)
+    assert _pkt(packets, "FCS_CMD").msgid == 0x18C8  # 0x1800 | 0x0C8 (TC topic)
+    assert _pkt(packets, "FCS_HK_TLM").msgid == 0x08CA  # 0x0800 | 0x0CA (TM topic)
 
 
 def test_function_code_states(packets: list[Packet]) -> None:
-    """HK_CMD carries the EDS-constrained function-code dispatch table."""
-    hk = _pkt(packets, "HK_CMD")
-    assert hk.function_codes == {"NoopCmd": 0, "ResetCountersCmd": 1}
+    """CAM_CMD carries the EDS-constrained function-code dispatch table.
+
+    (This law was witnessed on HK_CMD until the purge retired it; FC 1
+    stays unclaimed there for its own reason - see the retirement test.)
+    """
+    cam = _pkt(packets, "CAM_CMD")
+    assert cam.function_codes == {"NoopCmd": 0, "SnapCmd": 2}
     cmd_text, _ = emit_cosmos(packets)
-    assert 'STATE "NoopCmd" 0' in cmd_text
+    assert 'STATE "SnapCmd" 2' in cmd_text
 
 
 def test_header_layout_matches_c_structs(packets: list[Packet]) -> None:
@@ -65,25 +85,27 @@ def test_header_layout_matches_c_structs(packets: list[Packet]) -> None:
 
     Regression guard for the flattened model skipping the EDS <LengthEntry>:
     primary(6) + telemetry sec hdr(6) + alignment pad(4) -> payload at 16.
+    (Witnessed on HK until the 2026-11-27 purge; the OBC's housekeeping
+    carries the same flattened-header shape.)
     """
-    assert _pkt(packets, "HK_HK_TLM").byte_offset(".CommandCounter") == 16
+    assert _pkt(packets, "OBC_HK_TLM").byte_offset(".CommandCounter") == 16
     assert _pkt(packets, "CFE_EVS_LONG_EVENT_MSG").byte_offset(".AppName") == 16
     # command: primary(6) + FunctionCode + Checksum
-    hk_cmd = _pkt(packets, "HK_CMD")
-    assert hk_cmd.byte_offset(".FunctionCode") == 6
-    assert hk_cmd.byte_offset(".Checksum") == 7
-    assert hk_cmd.total_bytes() == 8  # bare NOOP
+    fcs_cmd = _pkt(packets, "FCS_CMD")
+    assert fcs_cmd.byte_offset(".FunctionCode") == 6
+    assert fcs_cmd.byte_offset(".Checksum") == 7
+    assert fcs_cmd.total_bytes() == 8  # bare NOOP
 
 
-def test_hk_tlm_layout(packets: list[Packet]) -> None:
-    """HK_HK_TLM payload items reflect the EDS entry list."""
-    names = [i.name.rsplit(".", 1)[-1] for i in _pkt(packets, "HK_HK_TLM").items]
+def test_obc_hk_tlm_layout(packets: list[Packet]) -> None:
+    """OBC_HK_TLM payload items reflect the EDS entry list."""
+    names = [i.name.rsplit(".", 1)[-1] for i in _pkt(packets, "OBC_HK_TLM").items]
     assert "CommandCounter" in names
-    assert "CombinedPacketsSent" in names
+    assert "FcsMode" in names
     tlm_text = emit_cosmos(packets)[1]
     assert 'APPEND_ITEM COMMAND_COUNTER 8 UINT "auto-generated from EDS" LITTLE_ENDIAN' in tlm_text
-    assert "TELEMETRY SAT_CHIEF HK_HK_TLM" in tlm_text
-    assert f"APPEND_ID_ITEM PKTID 16 UINT {0x089B}" in tlm_text  # HK_HK_TLM id
+    assert "TELEMETRY SAT_CHIEF OBC_HK_TLM" in tlm_text
+    assert f"APPEND_ID_ITEM PKTID 16 UINT {0x08CD}" in tlm_text  # OBC_HK_TLM id
 
 
 def test_command_def_syntax_v6(packets: list[Packet]) -> None:
@@ -91,7 +113,7 @@ def test_command_def_syntax_v6(packets: list[Packet]) -> None:
     cmd_text = emit_cosmos(packets)[0]
     assert "APPEND_PARAMETER" in cmd_text
     assert "APPEND_ITEM" not in cmd_text
-    assert f"APPEND_ID_PARAMETER PKTID 16 UINT 0 65535 {0x189A}" in cmd_text  # HK_CMD
+    assert f"APPEND_ID_PARAMETER PKTID 16 UINT 0 65535 {0x18C8}" in cmd_text  # FCS_CMD
     assert "APPEND_ID_PARAMETER FUNCCODE 8 UINT 0 255 0" in cmd_text
 
 
@@ -99,14 +121,16 @@ def test_wire_endianness_matches_native_target(packets: list[Packet]) -> None:
     """Headers are network-order; payload is target-native (x86 = little).
 
     Regression guard for the first wire capture: an HK NOOP event decoded as
-    big-endian EVS EventID read 1024 instead of 4.
+    big-endian EVS EventID read 1024 instead of 4. The HK packets retired
+    with the 2026-11-27 prebaked purge; OBC_HK_TLM carries the same mixed
+    shape (network-order time header, native-order payload).
     """
-    hk = _pkt(packets, "HK_HK_TLM")
+    obc = _pkt(packets, "OBC_HK_TLM")
     data = bytearray(28)
     data[6:10] = (1001023).to_bytes(4, "big")  # time header: big-endian
     data[16] = 7  # CommandCounter (uint8, LE)
-    assert hk.wire_get(bytes(data), ".Seconds") == 1001023
-    assert hk.wire_get(bytes(data), ".CommandCounter") == 7
+    assert obc.wire_get(bytes(data), ".Seconds") == 1001023
+    assert obc.wire_get(bytes(data), ".CommandCounter") == 7
     evs = _pkt(packets, "CFE_EVS_LONG_EVENT_MSG")
     data = bytearray(64)
     data[36:38] = (4).to_bytes(2, "little")  # EventID: native little
@@ -230,16 +254,16 @@ def test_vendor_repair_reports_a_fixed_upstream(tmp_path: Path) -> None:
 def test_c_table_telemetry_only(packets: list[Packet]) -> None:
     """gs_tcp header lists every telemetry MsgId, sorted, with the right count.
 
-    Commands (e.g. 0x189A HK_CMD) must NOT be beacon subscriptions: they are
-    consumed by their apps, and scheduled command traffic (sch_lab wake-ups)
-    would flood the ground with UNKNOWN-packet rejects.
+    Commands (e.g. 0x18C8 FCS_CMD) must NOT be beacon subscriptions: they
+    are consumed by their apps, and scheduled command traffic (sch_lab
+    wake-ups) would flood the ground with UNKNOWN-packet rejects.
     """
     text = emit_c_table(packets, "088b2fa")
     n_tlm = sum(1 for p in packets if p.direction == "tlm")
     assert 0 < n_tlm < len(packets)  # the model really carries commands too
     assert f"#define ORRERY_MID_COUNT {n_tlm}" in text
-    assert '{0x089B, "HK_HK_TLM"}' in text
-    assert "HK_CMD" not in text
+    assert '{0x08CA, "FCS_HK_TLM"}' in text
+    assert "FCS_CMD" not in text
     assert not any(line.lstrip().startswith("{0x18") for line in text.splitlines())
 
 
@@ -271,8 +295,43 @@ def test_cmd_table_is_the_sps_dictionary(packets: list[Packet]) -> None:
     n_rows = len([line for line in text.splitlines() if line.lstrip().startswith("{0x")])
     assert n_rows >= n_cmd  # every packet contributes at least one row
     # telemetry never enters a command dictionary
-    assert "HK_HK_TLM" not in text
+    assert "FCS_HK_TLM" not in text
     assert not any(line.lstrip().startswith("{0x08") for line in text.splitlines())
+
+
+def test_the_prebaked_apps_stay_purged(packets: list[Packet]) -> None:
+    """2026-11-27 purge tripwire: thirteen silent modules, absent everywhere.
+
+    hk hs lc mm sc md ds cs fm ci_lab to_lab sample_app sample_lib left
+    the registry, the build, and the EDS source set (registry/apps.toml
+    tells the audit story). Their packets must not creep back through a
+    regenerated golden or a re-added bundle eds/ directory: not in the
+    model, not in the defs, not in either C table. MIDs and event IDs
+    leave unclaimed - this is what keeps them unclaimed.
+    """
+    retired = ("HK_", "HS_", "LC_", "MM_", "MD_", "SC_", "DS_", "CS_", "FM_", "CI_LAB_")
+    assert not [p.name for p in packets if p.name.startswith(retired)]
+    assert not [p.name for p in packets if p.name.startswith(("TO_LAB_", "SAMPLE_"))]
+    cmd_text, tlm_text = emit_cosmos(mission_packets(packets))
+    table = emit_c_cmd_table(packets, "088b2fa")
+    for name in (
+        "HK_HK_TLM",
+        "HK_CMD",
+        "HS_HK_TLM",
+        "LC_LC_TLM",
+        "MM_MM_TLM",
+        "MD_DWELL_TLM",
+        "SC_SC_TLM",
+        "DS_FILE_DIR_TLM",
+        "CS_CS_TLM",
+        "FM_DIR_LIST_TLM",
+        "CI_LAB_HK_TLM",
+        "TO_LAB_HK_TLM",
+        "SAMPLE_APP_TLM",
+    ):
+        assert name not in cmd_text, name
+        assert name not in tlm_text, name
+        assert name not in table, name
 
 
 def test_schedule_envelope_wire(packets: list[Packet]) -> None:

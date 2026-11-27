@@ -39,36 +39,43 @@ def _tokens(table: str) -> list[tuple[str, ...]]:
 
 
 def _cmake_default() -> list[tuple[str, ...]]:
-    """The build-time fallback, read from its two source files."""
+    """The build-time fallback, read from its two source files.
+
+    Since the 2026-11-27 prebaked purge the fallback grammar is exactly one
+    quoted record per inventory row: the template loop that synthesized the
+    service-app tail - and its CFS_APP_STARTUP_ORDER list - left with the
+    apps it booted. The record check that loop did live (start only what
+    was built) is checked here statically instead: every name the fallback
+    writes must be in the union build list or the per-CPU list, cfe_assert
+    excepted - the core's own lib, written unconditionally.
+    """
     cmake = (DEFS / "generate_startup.cmake").read_text(encoding="utf-8")
-    always = [
+    records = [
         tuple(field.strip() for field in line.split(","))
         for line in re.findall(r'"(CFE_[A-Z_]+, [^"]*?);\\n"', cmake)
-        if "${" not in line  # the tail loop's template line is not a record
+        if "${" not in line  # a template line is not a record
     ]
-    order = re.search(r"set\(CFS_APP_STARTUP_ORDER ([^)]+)\)", cmake)
-    assert order, "generate_startup.cmake lost its startup-order list"
     targets = (DEFS / "targets.cmake").read_text(encoding="utf-8")
-    # the union literal (rung two moved it into the scenario fallback); the
-    # APPEND line is a ${} reference, not a list - the same exclusion rule
-    # the records use
+    # the union literal (rung two moved it into the scenario fallback) plus
+    # the per-CPU list; the APPEND line is a ${} reference, not a list - the
+    # same exclusion rule the records use
     built = " ".join(
         m
         for pattern in (
             r"(?i)APPEND MISSION_GLOBAL_APPLIST ([^\n)]+)",
             r"set\(ORRERY_SCENARIO_APPLIST\s+([^)]+)\)",
+            r"SET\(cpu1_APPLIST ([^\n)]+)\)",
         )
         for m in re.findall(pattern, targets)
         if "${" not in m
     ).split()
-    tail = [
-        ("CFE_APP", app, f"{app.upper()}_AppMain", app.upper(), "70", "131072", "0x0", "0")
-        for app in order.group(1).split()
-        if app in built
-    ]
-    # the always rows carry their entry type inside the quoted line; the tail
-    # records gain it here, the way the cmake loop writes it
-    return always + tail
+    for record in records:
+        if record[1] == "cfe_assert":
+            continue
+        assert record[1] in built, (
+            f"{record[1]}: the fallback promises an app no build list compiles"
+        )
+    return records
 
 
 # --- the union and its grammar ------------------------------------------------

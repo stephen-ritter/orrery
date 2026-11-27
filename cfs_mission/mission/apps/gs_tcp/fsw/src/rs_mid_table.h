@@ -29,31 +29,7 @@ static const RsMidEntry_t ORRERY_MID_TABLE[] = {
     {0x080D, "CFE_SB_ALLSUBS_TLM"},
     {0x080E, "CFE_SB_ONESUB_TLM"},
     {0x0810, "CFE_ES_MEMSTATS_TLM"},
-    {0x0880, "TO_LAB_HK_TLM"},
-    {0x0881, "TO_LAB_DATA_TYPES"},
-    {0x0883, "SAMPLE_APP_HK_TLM"},
-    {0x0884, "CI_LAB_HK_TLM"},
-    {0x0887, "MM_HK_TLM"},
-    {0x088A, "FM_HK_TLM"},
-    {0x088B, "FM_FILE_INFO_TLM"},
-    {0x088C, "FM_DIR_LIST_TLM"},
-    {0x088D, "FM_OPEN_FILES_TLM"},
-    {0x088E, "FM_MONITOR_TLM"},
-    {0x0890, "MD_HK_TLM"},
-    {0x0891, "MD_DWELL_TLM"},
-    {0x089B, "HK_HK_TLM"},
-    {0x089C, "HK_HK_COMBINED_PKT1_TLM"},
-    {0x089D, "HK_HK_COMBINED_PKT2_TLM"},
-    {0x089E, "HK_HK_COMBINED_PKT3_TLM"},
-    {0x089F, "HK_HK_COMBINED_PKT4_TLM"},
-    {0x08A4, "CS_HK_TLM"},
-    {0x08A7, "LC_HK_TLM"},
-    {0x08AA, "SC_HK_TLM"},
-    {0x08AD, "HS_HK_TLM"},
     {0x08B3, "CF_EOT_TLM"},
-    {0x08B8, "DS_HK_TLM"},
-    {0x08B9, "DS_DIAG_TLM"},
-    {0x08BA, "DS_COMP_TLM"},
     {0x08C8, "BSK_LINK_SENSOR_FRAME_TLM"},
     {0x08C9, "BSK_LINK_TORQUE_COMMAND_TLM"},
     {0x08CA, "FCS_HK_TLM"},
@@ -69,6 +45,6 @@ static const RsMidEntry_t ORRERY_MID_TABLE[] = {
     {0x08D5, "BSK_LINK_CAM_STORAGE_TLM"},
 };
 
-#define ORRERY_MID_COUNT 53
+#define ORRERY_MID_COUNT 29
 
 #endif /* RS_MID_TABLE_H */

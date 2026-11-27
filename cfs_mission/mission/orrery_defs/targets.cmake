@@ -105,8 +105,7 @@ if (ORRERY_APPLIST_FRAGMENT)
     include("${ORRERY_APPLIST_FRAGMENT}")
 else ()
     set(ORRERY_SCENARIO_APPLIST
-        sample_app sample_lib bsk_link fcs gs_tcp obc_hk sps cam cf_tcp
-        cf hs md mm cs fm lc sc ds hk)
+        bsk_link fcs gs_tcp obc_hk sps cam cf_tcp cf)
 endif ()
 list(APPEND MISSION_GLOBAL_APPLIST ${ORRERY_SCENARIO_APPLIST})
 
@@ -136,7 +135,9 @@ endif ()
 # all the CFS apps.  RISCV-64 is selected as the platform
 # to line up with expectations of next-gen flight hardware.
 SET(cpu1_PROCESSORID 1)
-SET(cpu1_APPLIST ci_lab to_lab sch_lab)
+# 2026-11-27 purge: ci_lab and to_lab retired - gs_tcp injects the uplink
+# itself and streams the beacon; the labs' copies of those jobs booted silent.
+SET(cpu1_APPLIST sch_lab)
 SET(cpu1_SYSTEM riscv64-poky-linux)
 
 # The "cpu2" is a contrived example of a helper system,

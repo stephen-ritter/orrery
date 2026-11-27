@@ -2,12 +2,16 @@
 
 Proves the generic gateway end to end with zero per-message ground code:
 streams raw CCSDS telemetry out of cFS on the BEACON port (:5050), injects an
-HK NOOP built from the EDS model on the COMMAND port (:5051), and verifies both
-the EVS event packet and the HK command counter increment in live telemetry.
-Then the negative half: the same NOOP written to the beacon port must change
-nothing — no counter move, and an EVS complaint — because the gateway accepts
-commands on the uplink port only. Offsets and MsgIds come from
-codegen/eds_model, the same source the COSMOS defs and gs_tcp table use.
+OBC NOOP built from the EDS model on the COMMAND port (:5051), and verifies
+both the EVS event packet and the OBC command counter increment in live
+telemetry. Then the negative half: the same NOOP written to the beacon port
+must change nothing — no counter move, and an EVS complaint — because the
+gateway accepts commands on the uplink port only. Offsets and MsgIds come
+from codegen/eds_model, the same source the COSMOS defs and gs_tcp table use.
+
+(The witness was the bundle's HK app until the 2026-11-27 prebaked purge
+retired it; the mission's own OBC housekeeping took over - same shape, and
+closer to what an operator actually commands.)
 
 Wire format note: CCSDS primary header + cFS time header are big-endian
 (the message module encodes them); application payload fields are C struct
@@ -26,8 +30,8 @@ REPO = Path(__file__).resolve().parents[1]
 CFS = REPO / "cfs_mission/cFS"
 MISSION_DEFS = REPO / "cfs_mission/mission/orrery_defs/eds"
 
-HK_NOOP_EID = 4  # hk_events.h HK_NOOP_INF_EID
-HK_NOOP_FC = 0
+OBC_NOOP_EID = 2  # obc_hk_events.h OBC_HK_NOOP_INF_EID
+OBC_NOOP_FC = 0
 GS_TCP_STRAY_RX_EID = 8  # gs_tcp_events.h GS_TCP_STRAY_RX_ERR_EID
 
 
@@ -97,8 +101,8 @@ def main() -> int:
     """Run the ground round trip both ways; returns process exit code."""
     eds = build_eds(CFS, MISSION_DEFS)
     pkts = {p.name: p for p in eds.packets()}
-    hk_cmd = pkts["HK_CMD"]
-    hk_tlm = pkts["HK_HK_TLM"]
+    obc_cmd = pkts["OBC_CMD"]
+    obc_tlm = pkts["OBC_HK_TLM"]
     evs_evt = pkts["CFE_EVS_LONG_EVENT_MSG"]
 
     app_off = evs_evt.byte_offset(".AppName")
@@ -106,15 +110,15 @@ def main() -> int:
     msg_off = evs_evt.byte_offset(".Message")
 
     client = GroundClient()
-    print(f"connected to gs_tcp, HK_CMD msgid=0x{hk_cmd.msgid:04X}")
+    print(f"connected to gs_tcp, OBC_CMD msgid=0x{obc_cmd.msgid:04X}")
 
     seen_msgids: dict[int, int] = {}
     noop_event = False
     counter_before: int | None = None
     counter_after: int | None = None
     sent = False
-    # HK_HK_TLM emits every 7.6 s (sch_lab), so both the before and after
-    # counter samples need two full output cycles at least.
+    # OBC_HK_TLM emits every 1 s (sch_lab), and its CommandCounter moves
+    # ONLY on a ground NOOP - the before/after pair is the whole proof.
     deadline = time.monotonic() + 60.0
 
     while time.monotonic() < deadline and not (noop_event and counter_after):
@@ -124,8 +128,8 @@ def main() -> int:
         msgid = int.from_bytes(pkt[:2], "big")
         seen_msgids[msgid] = seen_msgids.get(msgid, 0) + 1
 
-        if msgid == hk_tlm.msgid:
-            value = hk_tlm.wire_get(pkt, ".CommandCounter")
+        if msgid == obc_tlm.msgid:
+            value = obc_tlm.wire_get(pkt, ".CommandCounter")
             if not sent:
                 counter_before = value
             # Wait for the counter to actually move: the first packet after
@@ -134,12 +138,12 @@ def main() -> int:
                 counter_after = value
 
         if not sent:
-            # hold the NOOP until a HK_TLM baseline is on the books (the packet
-            # only comes every 7.6 s, and firing blind left counter_before None)
+            # hold the NOOP until a counter baseline is on the books (firing
+            # blind left counter_before None)
             if counter_before is not None and len(seen_msgids) >= 3:
-                client.send_packet(build_cmd(hk_cmd.msgid, HK_NOOP_FC))
+                client.send_packet(build_cmd(obc_cmd.msgid, OBC_NOOP_FC))
                 sent = True
-                print("sent HK NOOP via uplink :5051")
+                print("sent OBC NOOP via uplink :5051")
             continue
 
         if msgid == evs_evt.msgid:
@@ -147,7 +151,7 @@ def main() -> int:
             app = pkt[app_off : app_off + 20].split(b"\x00")[0].decode(errors="replace")
             eid = int.from_bytes(pkt[eid_off : eid_off + 2], "little")
             text = pkt[msg_off:].split(b"\x00")[0].decode(errors="replace")
-            if app == "HK" and eid == HK_NOOP_EID:
+            if app == "OBC_HK" and eid == OBC_NOOP_EID:
                 noop_event = True
                 print(f"EVS event via TCP: [{app}/{eid}] {text}")
 
@@ -156,16 +160,16 @@ def main() -> int:
     stray_complaint = False
     stray_freeze_checked = False
     if counter_after is not None:
-        client.send_on_beacon(build_cmd(hk_cmd.msgid, HK_NOOP_FC, seq=1))
-        print("sent HK NOOP via beacon :5050 (must be refused)")
+        client.send_on_beacon(build_cmd(obc_cmd.msgid, OBC_NOOP_FC, seq=1))
+        print("sent OBC NOOP via beacon :5050 (must be refused)")
         stray_deadline = time.monotonic() + 30.0
         while time.monotonic() < stray_deadline and not (stray_complaint and stray_freeze_checked):
             pkt = client.recv_packet(min(stray_deadline, time.monotonic() + 1.0))
             if pkt is None:
                 continue
             msgid = int.from_bytes(pkt[:2], "big")
-            if msgid == hk_tlm.msgid:
-                value = hk_tlm.wire_get(pkt, ".CommandCounter")
+            if msgid == obc_tlm.msgid:
+                value = obc_tlm.wire_get(pkt, ".CommandCounter")
                 stray_freeze_checked = True
                 if value > counter_after:
                     print(f"BEACON INJECTED A COMMAND: counter {counter_after} -> {value}")

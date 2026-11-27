@@ -23,25 +23,8 @@
 /*
 ** Include headers for message IDs here
 */
-#include "ci_lab_msgids.h"
-#include "to_lab_msgids.h"
-#include "sample_app_msgids.h"
 #include "cf_msgids.h"
-#include "hs_msgids.h"
-#include "md_msgids.h"
-#include "fm_msgids.h"
-#include "lc_msgids.h"
-#include "cs_msgids.h"
-#include "mm_msgids.h"
-#include "sc_msgids.h"
-#include "ds_msgids.h"
-#include "hk_msgids.h"
 #include "orrery_msgids.h" /* fcs SEND_HK (mission custom app) */
-
-#ifdef CFS_SBN_ENABLED
-#include "sbn_msgids.h"
-#include "sbn_msgdefs.h"
-#endif
 
 /*
 ** SCH Lab schedule table
@@ -50,6 +33,12 @@
 **     packet rate of 0 are skipped
 **  2. You can have commented out entries or entries with a packet rate of 0
 **  3. If the table grows too big, increase SCH_LAB_MAX_SCHEDULE_ENTRIES
+**
+** 2026-11-27 prebaked purge: the schedule speaks only to apps the wake list
+** can serve. The thirteen retired modules (registry/apps.toml) left their
+** SEND_HK rows with them - a scheduled poll into an un-subscribed MID is
+** SB-refusal noise on every tick, and an app nobody commands does not
+** deserve a heartbeat.
 */
 
 /* clang-format: off */
@@ -62,29 +51,11 @@ SCH_LAB_ScheduleTable_t SCH_TBL_Structure =
         {CFE_SB_MSGID_WRAP_VALUE(CFE_TIME_SEND_HK_MID),   44, 0}, /* every 4.4 seconds */
         {CFE_SB_MSGID_WRAP_VALUE(CFE_SB_SEND_HK_MID),     46, 0}, /* every 4.6 seconds */
         {CFE_SB_MSGID_WRAP_VALUE(CFE_TBL_SEND_HK_MID),    48, 0}, /* every 4.8 seconds */
-        {CFE_SB_MSGID_WRAP_VALUE(CI_LAB_SEND_HK_MID),     50, 0}, /* every 5.0 seconds */
-        {CFE_SB_MSGID_WRAP_VALUE(TO_LAB_SEND_HK_MID),     52, 0}, /* every 5.2 seconds */
-        {CFE_SB_MSGID_WRAP_VALUE(SAMPLE_APP_SEND_HK_MID), 54, 0}, /* every 5.4 seconds */
         {CFE_SB_MSGID_WRAP_VALUE(CF_SEND_HK_MID),         56, 0}, /* every 5.6 seconds */
         {CFE_SB_MSGID_WRAP_VALUE(CF_WAKE_UP_MID),         1,  0}, /* every 0.1 seconds (example of 10 Hz packet) */
-        {CFE_SB_MSGID_WRAP_VALUE(MD_SEND_HK_MID),         58, 0}, /* every 5.8 seconds */
-        {CFE_SB_MSGID_WRAP_VALUE(HS_SEND_HK_MID),         60, 0}, /* every 6.0 seconds */
-        {CFE_SB_MSGID_WRAP_VALUE(SC_SEND_HK_MID),          62, 0}, /* every 6.2 seconds */
-        {CFE_SB_MSGID_WRAP_VALUE(SC_WAKEUP_MID),           10, 0}, /* every 1.0 seconds (example of 1 Hz packet) */
-        {CFE_SB_MSGID_WRAP_VALUE(FM_SEND_HK_MID),          66, 0}, /* every 6.6 seconds */
-        {CFE_SB_MSGID_WRAP_VALUE(DS_SEND_HK_MID),          68, 0}, /* every 6.8 seconds */
-        {CFE_SB_MSGID_WRAP_VALUE(LC_SEND_HK_MID),          70, 0}, /* every 7.0 seconds */
-        {CFE_SB_MSGID_WRAP_VALUE(CS_SEND_HK_MID),          72, 0}, /* every 7.1 seconds */
-        {CFE_SB_MSGID_WRAP_VALUE(CS_BACKGROUND_CYCLE_MID), 5,  0}, /* every 0.5 seconds (example of 2 Hz packet) */
-        {CFE_SB_MSGID_WRAP_VALUE(MM_SEND_HK_MID),          74, 0}, /* every 7.4 seconds */
-        {CFE_SB_MSGID_WRAP_VALUE(HK_SEND_HK_MID),          76, 0}, /* every 7.6 seconds */
         {CFE_SB_MSGID_WRAP_VALUE(FCS_SEND_HK_MID),         78, 0}, /* every 7.8 seconds */
         {CFE_SB_MSGID_WRAP_VALUE(OBC_HK_SEND_HK_MID),      10, 0}, /* OBC HK every 1.0 second */
         {CFE_SB_MSGID_WRAP_VALUE(SPS_SEND_HK_MID),         80, 0}, /* sps queue state every 8.0 s */
-#ifdef CFS_SBN_ENABLED
-        {CFE_SB_MSGID_WRAP_VALUE(SBN_CMD_MID),             46, SBN_HK_CC}, /* every 4.6 seconds (matching the SB) */
-        {CFE_SB_MSGID_WRAP_VALUE(SBN_CMD_MID),             2, SBN_SCH_WAKEUP_CC}, /* every 0.2 seconds */
-#endif
     }
 };
 

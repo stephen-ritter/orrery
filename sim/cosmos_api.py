@@ -3,8 +3,8 @@
 Proves the generated defs are good enough for the real ground system with
 zero hand-written packet definitions:
   1. interface GS_TCP_INT connected and streaming telemetry,
-  2. SAT_CHIEF HK_CMD NOOP sent through the COSMOS command API,
-  3. the NOOP shows up in COSMOS-decoded HK_HK_TLM.CommandCounter
+  2. SAT_CHIEF OBC_CMD NOOP sent through the COSMOS command API,
+  3. the NOOP shows up in COSMOS-decoded OBC_HK_TLM.CommandCounter
      (which also proves the generated item endianness is right).
 
 Auth: password from $OPENC3_API_PASSWORD (set via ``openc3.sh cli
@@ -97,12 +97,12 @@ def main() -> int:
     print(f"targets installed: {len(targets)} (incl. SAT_CHIEF)")
 
     def sample() -> tuple[int, int]:
-        """(CommandCounter, CCSDS sequence) of the cached HK_HK_TLM values."""
-        rows = cast("list", rpc(token, "get_tlm_packet", "SAT_CHIEF", "HK_HK_TLM"))
+        """(CommandCounter, CCSDS sequence) of the cached OBC_HK_TLM values."""
+        rows = cast("list", rpc(token, "get_tlm_packet", "SAT_CHIEF", "OBC_HK_TLM"))
         vals = {name: v for name, v, _ in rows}
         raw, seq = vals.get("COMMAND_COUNTER"), vals.get("SEQUENCE")
         if raw is None or seq is None:
-            raise ValueError("no HK_HK_TLM packet received yet")
+            raise ValueError("no OBC_HK_TLM packet received yet")
         return int(str(raw)), int(str(seq))
 
     # The TLM server CACHES item values across mission restarts: the first
@@ -125,10 +125,13 @@ def main() -> int:
         if before is None:
             time.sleep(1)
     if before is None:
-        print("never received a fresh HK_HK_TLM packet via COSMOS")
+        print("never received a fresh OBC_HK_TLM packet via COSMOS")
         return 1
-    rpc(token, "cmd", "SAT_CHIEF", "HK_CMD", {})  # FC default 0 == NoopCmd
-    print("sent SAT_CHIEF HK_CMD NOOP via COSMOS cmd API")
+    # 2026-11-27 purge: this round trip used to poke the bundle's HK app.
+    # The mission's own OBC housekeeping answers instead - a better witness
+    # anyway, because the NOOP crosses the command path the operator flies.
+    rpc(token, "cmd", "SAT_CHIEF", "OBC_CMD", {})  # FC default 0 == NoopCmd
+    print("sent SAT_CHIEF OBC_CMD NOOP via COSMOS cmd API")
 
     after = before
     end = time.monotonic() + 40.0
@@ -137,7 +140,7 @@ def main() -> int:
         try:
             after = sample()[0]
         except (RuntimeError, ValueError):
-            pass  # HK arrives ~every 7s; no newer packet sampled yet
+            pass  # HK arrives ~every second; no newer packet sampled yet
 
     print(f"CommandCounter via COSMOS: {before} -> {after}")
     ok = after > before

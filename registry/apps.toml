@@ -29,7 +29,7 @@
 #               refusal, not a silent pass.
 #   requires    entailments: apps this one needs awake on the same bus.
 #   shipped_with  "core" = built by the core or the per-CPU lists (sch_lab,
-#               the labs, the assert lib): present on every image whatever
+#               the assert lib): present on every image whatever
 #               the scenario says, outside the scenario's build fragment
 #               (codegen/emit_applist). Absent = the mission builds it, and
 #               the scenario's wake list decides whether it exists at all.
@@ -40,6 +40,26 @@
 # The grammar law this file obeys: cFE's startup parser knows commas as
 # field delimiters, ';' as end-of-record, and '!' as end-of-file - it has NO
 # comments. This registry is the comment-free file's comment-bearing twin.
+#
+# --- 2026-11-27: the prebaked-app purge --------------------------------------
+#
+# This inventory once carried thirteen modules the yard never spoke to: hk hs
+# lc mm sc md ds cs fm ci_lab to_lab sample_app sample_lib. An audit of every
+# bench, probe, test, screen and doc found ZERO live consumers - not one send
+# to their commands, not one listener to their telemetry. Each role was
+# already rebuilt where the mission needs it: gs_tcp is the uplink (ci_lab)
+# and the beacon (to_lab), SPS is the stored-command service (sc), obc_hk is
+# the health observer (hs, hk), and CF plus the bsk_link store move the files
+# (fm, ds, mm, md). The labs and samples were the cFS demo organ: 13 tasks
+# booted, ~22 boot tables parsed, half the ground command dictionary (31 of
+# 63 packets) and 55% of the SPS schedulable rows served nobody.
+#
+# Retirement is total, on the FC 1 precedent: no optional tier was invented,
+# the rows leave the registry, their bundle EDS packages leave the defs, and
+# their MIDs and event IDs go unclaimed - old logs still decode, and if a
+# watchdog law ever needs HS, the row comes back and git remembers it was
+# here. Half-measures cannot sneak in: a registry row owns its EDS packages,
+# so a dropped row orphans packets the ground-scope door REFUSES to build.
 
 schema_version = 1
 
@@ -56,15 +76,6 @@ when = "baseline"
 shipped_with = "core"
 
 [[app]]
-name = "sample_lib"
-class = "CFE_LIB"
-entry = "SAMPLE_LIB_Init"
-short = "SAMPLE_LIB"
-priority = 0
-stack = 0
-when = "baseline"
-
-[[app]]
 name = "sch_lab"
 class = "CFE_APP"
 entry = "SCH_LAB_AppMain"
@@ -73,38 +84,6 @@ priority = 35
 stack = 32768
 when = "baseline"
 shipped_with = "core"
-
-[[app]]
-name = "ci_lab"
-class = "CFE_APP"
-entry = "CI_LAB_AppMain"
-short = "CI_LAB"
-priority = 40
-stack = 32768
-when = "baseline"
-shipped_with = "core"
-eds_packages = ["CI_LAB"]
-
-[[app]]
-name = "to_lab"
-class = "CFE_APP"
-entry = "TO_LAB_AppMain"
-short = "TO_LAB"
-priority = 45
-stack = 32768
-when = "baseline"
-shipped_with = "core"
-eds_packages = ["TO_LAB"]
-
-[[app]]
-name = "sample_app"
-class = "CFE_APP"
-entry = "SAMPLE_APP_Main"
-short = "SAMPLE_APP"
-priority = 50
-stack = 32768
-when = "baseline"
-eds_packages = ["SAMPLE_APP"]
 
 [[app]]
 name = "bsk_link"
@@ -175,7 +154,7 @@ priority = 69
 stack = 65536
 when = "baseline"
 
-# --- plumbing again: the ground door, then the service labs ------------------
+# --- plumbing again: the ground door, then the file-transfer engine -----------
 
 [[app]]
 name = "gs_tcp"
@@ -187,16 +166,6 @@ stack = 65536
 when = "baseline"
 
 [[app]]
-name = "lc"
-class = "CFE_APP"
-entry = "LC_AppMain"
-short = "LC"
-priority = 70
-stack = 131072
-when = "baseline"
-eds_packages = ["LC"]
-
-[[app]]
 name = "cf"
 class = "CFE_APP"
 entry = "CF_AppMain"
@@ -205,83 +174,3 @@ priority = 70
 stack = 131072
 when = "baseline"
 eds_packages = ["CF"]
-
-[[app]]
-name = "ds"
-class = "CFE_APP"
-entry = "DS_AppMain"
-short = "DS"
-priority = 70
-stack = 131072
-when = "baseline"
-eds_packages = ["DS"]
-
-[[app]]
-name = "fm"
-class = "CFE_APP"
-entry = "FM_AppMain"
-short = "FM"
-priority = 70
-stack = 131072
-when = "baseline"
-eds_packages = ["FM"]
-
-[[app]]
-name = "hk"
-class = "CFE_APP"
-entry = "HK_AppMain"
-short = "HK"
-priority = 70
-stack = 131072
-when = "baseline"
-eds_packages = ["HK"]
-
-[[app]]
-name = "hs"
-class = "CFE_APP"
-entry = "HS_AppMain"
-short = "HS"
-priority = 70
-stack = 131072
-when = "baseline"
-eds_packages = ["HS"]
-
-[[app]]
-name = "mm"
-class = "CFE_APP"
-entry = "MM_AppMain"
-short = "MM"
-priority = 70
-stack = 131072
-when = "baseline"
-eds_packages = ["MM"]
-
-[[app]]
-name = "sc"
-class = "CFE_APP"
-entry = "SC_AppMain"
-short = "SC"
-priority = 70
-stack = 131072
-when = "baseline"
-eds_packages = ["SC"]
-
-[[app]]
-name = "md"
-class = "CFE_APP"
-entry = "MD_AppMain"
-short = "MD"
-priority = 70
-stack = 131072
-when = "baseline"
-eds_packages = ["MD"]
-
-[[app]]
-name = "cs"
-class = "CFE_APP"
-entry = "CS_AppMain"
-short = "CS"
-priority = 70
-stack = 131072
-when = "baseline"
-eds_packages = ["CS"]
