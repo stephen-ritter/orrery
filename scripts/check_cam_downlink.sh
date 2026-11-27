@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Ground-requested files cross byte-identical: the downlink acceptance.
 #
-#   request   the downlink plant flies; the ground asks the store what it has
-#             (CAM_MANIFEST), downlinks the manifest like any file, picks a
-#             frame BY MANIFEST NAME, and receives it with the craft's own
-#             EOT verdict (state, txn_stat, fsize) and CF's transmit-time
-#             checksum re-verified over the landed bytes. The manifest is
-#             then rebuilt and must list a file that arrived mid-flight.
+#   request   the downlink plant flies; the ground reads the store's own
+#             published inventory (no command - /cf/manifest.txt is current
+#             at boot and after every mutation), downlinks it like any file,
+#             picks a frame BY MANIFEST NAME, and receives it with the
+#             craft's own EOT verdict (state, txn_stat, fsize) and CF's
+#             transmit-time checksum re-verified over the landed bytes. A
+#             file placed mid-flight must appear in the next fetch, because
+#             every republish walks the directory and the store keeps
+#             moving.
 #   generic   a random binary that is no picture at all crosses byte-exact:
 #             the transport serves FILES, not an image format.
 #   heals     the engine's link is dropped and redialed mid-flight; the next
@@ -113,10 +116,6 @@ def main() -> int:
     action, tlm, cmd = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
     client = GroundClient(tlm_port=tlm, cmd_port=cmd)
     try:
-        if action == "manifest":
-            client.send_packet(build_cmd(0x18D2, 1))  # CAM_CMD FC 1: inventory
-            print(json.dumps({"sent": "CAM_MANIFEST"}))
-            return 0
         if action == "hk":
             client.send_packet(build_cmd(0x18D3, 0))
             deadline = time.time() + 10
@@ -211,6 +210,7 @@ start_world() {
     rm -rf "$HOST_IMG"
     CONTAINER="$("$RUNTIME" run -d --network host --user "$(id -u):$(id -g)" -e HOME=/tmp \
         -e ORRERY_TLM_PORT="$BEACON" -e ORRERY_CMD_PORT="$UPLINK" \
+        -e ORRERY_VEHICLE=chief \
         -e ORRERY_ZMQ_SENSOR_ENDPOINT="tcp://127.0.0.1:$SENSOR" \
         -e ORRERY_ZMQ_CMD_ENDPOINT="tcp://127.0.0.1:$LINK_CMD" \
         -v "$REPO:/work" orrery-cfs:dev \
@@ -306,8 +306,6 @@ echo "=== REQUEST LEG: the store answers, the ground picks, bytes arrive ==="
 start_world request "$DOWNLINK_SCENARIO"
 wait_frames 2 120
 
-dl manifest "$BEACON" "$UPLINK" >/dev/null
-sleep 2  # the inventory is written on CAM's task tick, not in the command call
 MANIFEST="${PREFIX}manifest.txt"
 dl_expect /cf/manifest.txt "$MANIFEST" >/dev/null
 bucket_cat "$MANIFEST" | tee "$WORK/manifest.txt"
@@ -406,11 +404,18 @@ echo "=== GENERIC LEG: a random binary with no image meaning crosses byte-exact 
 # path and OS_MAX_PATH_LEN is 64, so store names live at frame scale
 # (14 B). A longer name is not stored - and now says so on the console.
 CRAFT_NAME="cargo_${RUNID: -4}.bin"
+BEFORE_PNGS="$(find "$HOST_IMG" -name '*.png' | wc -l | tr -d ' ')"
 head -c 7777 /dev/urandom >"$HOST_IMG/$CRAFT_NAME"
 CARGO_SHA="$(sha256sum "$HOST_IMG/$CRAFT_NAME" | awk '{print $1}')"
-sleep 2  # let the store settle before the manifest walks it
-dl manifest "$BEACON" "$UPLINK" >/dev/null
-sleep 2  # CAM regenerates on its 1 Hz task: ask WHAT exists only once it answered
+# Nobody re-walks on command anymore: the store republishes its inventory at
+# every mutation, and this plant records every 2nd capture. Wait for the next
+# landing to move the store - the republish's directory walk takes the
+# hand-placed cargo with it, because the directory, not the ledger, is truth.
+for _ in $(seq 1 30); do
+    n="$(find "$HOST_IMG" -name '*.png' | wc -l | tr -d ' ')"
+    [ "${n:-0}" -gt "$BEFORE_PNGS" ] && break
+    sleep 1
+done
 MANIFEST2="${PREFIX}manifest2.txt"
 dl_expect /cf/manifest.txt "$MANIFEST2" >/dev/null
 MANIFEST2_TEXT="$(bucket_cat "$MANIFEST2")"

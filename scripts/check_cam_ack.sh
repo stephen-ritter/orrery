@@ -26,9 +26,10 @@
 #             acked and evicted move again, same signature, same moment.
 #
 #   inventory the manifest lists exactly the files standing under /cf/img
-#             at request time - B still there, A and C not - and the
-#             camera app rewrote it on its own more times than the ground
-#             asked for it, because the store kept moving.
+#             at fetch time - B still there, A and C not - and nobody
+#             asked: the store publishes its own inventory at the boot
+#             census and at every mutation, and the command that once
+#             opened the ledger is retired (a stray FC 1 is refused).
 #
 # The six-file recorder (bytes slack: the FILE bound is what binds, so the
 # bench is frame-size independent) fills unprompted a few seconds into the
@@ -97,10 +98,12 @@ bash "$REPO/scripts/firmware.sh" check
 cat > "$WORK/dl.py" <<'PYEOF'
 """One-shot CFDP client for the acknowledged-transfer bench.
 
-Same length-framed uplink as every other probe; three actions:
-manifest (CAM FC 1), request (FCS_CFDP_DOWN, class 2 = CF's 1), and
-storage (watch CamStorage and print the recorder half). EOT parsing is
-the measured wire: nine native u32s at payload offset 16, then names.
+Same length-framed uplink as every other probe; two actions:
+request (FCS_CFDP_DOWN, class 2 = CF's 1) and storage (watch CamStorage
+and print the recorder half). The manifest needs no command anymore -
+the store publishes it at boot and at every mutation, so a fetch finds
+it current. EOT parsing is the measured wire: nine native u32s at
+payload offset 16, then names.
 """
 
 import json
@@ -135,10 +138,6 @@ def main() -> int:
     action, tlm, cmd = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
     client = GroundClient(tlm_port=tlm, cmd_port=cmd)
     try:
-        if action == "manifest":
-            client.send_packet(build_cmd(0x18D2, 1))
-            print(json.dumps({"sent": "CAM_MANIFEST"}))
-            return 0
         if action == "request":
             src, dst = sys.argv[4].encode(), sys.argv[5].encode()
             # DestEntityId, CfdpClass: CF's numbering - 1 means class 2,
@@ -360,9 +359,7 @@ echo "baseline: $BASE"
 }
 [ "$(field state "$BASE")" = "2" ] || { echo "a refused recorder must report FULL (2)"; exit 1; }
 
-echo "=== inventory first: the bench picks frames BY MANIFEST NAME ==="
-dl manifest "$BEACON" "$UPLINK" >/dev/null
-sleep 2
+echo "=== inventory first: the bench picks frames BY MANIFEST NAME, no command sent ==="
 MANIFEST="${PREFIX}manifest0.txt"
 dl_expect /cf/manifest.txt "$MANIFEST" >/dev/null
 "$RUNTIME" exec "$BUCKET" cat "$BUCKET_DIR/$MANIFEST" > "$WORK/manifest0.csv"
@@ -459,18 +456,33 @@ grep "recycled" "$WORK/craft.log" | grep -q "$(basename "$PICK_C")" || {
 [ -f "$HOST_IMG/$(basename "$PICK_B")" ] || { echo "B vanished from /cf/img"; exit 1; }
 [ ! -f "$HOST_IMG/$(basename "$PICK_A")" ] || { echo "A should have been recycled"; exit 1; }
 
-echo "=== inventory law: the manifest lists the truth, rewritten unprompted ==="
+echo "=== inventory law: the store's index is true at fetch, and boot signed it ==="
 MANIFEST1="${PREFIX}manifest1.txt"
-dl manifest "$BEACON" "$UPLINK" >/dev/null
-sleep 2
 dl_expect /cf/manifest.txt "$MANIFEST1" >/dev/null
 "$RUNTIME" exec "$BUCKET" cat "$BUCKET_DIR/$MANIFEST1" > "$WORK/manifest1.csv"
 { grep -q "$(basename "$PICK_B")" "$WORK/manifest1.csv" && ! grep -q "$(basename "$PICK_A")" "$WORK/manifest1.csv"; } || {
     echo "the final inventory disagrees with the store:"; head -8 "$WORK/manifest1.csv" >&2; exit 1;
 }
-WRITES="$("$RUNTIME" logs "$CONTAINER" 2>&1 | grep -c "manifest written" || true)"
-[ "${WRITES:-0}" -ge 4 ] || {
-    echo "only $WRITES inventory writes for 2 ground requests: the store moved, the manifest slept"; exit 1;
-}
+# Every line must name a file really standing: the manifest may lag a
+# capture that arrived mid-fetch (the store moves), but it may never lead
+# with a file that does not exist. The store never promised a command;
+# it owes only this honesty.
+tail -n +2 "$WORK/manifest1.csv" | cut -d, -f1 | while read -r listed; do
+    [ -f "$HOST_IMG/$(basename "$listed")" ] || {
+        echo "inventory lists $listed - no such file stands"; exit 1;
+    }
+done
+# Dump first: docker logs | grep -q dies on SIGPIPE+pipefail (grep quits
+# early, docker eats 141, and the pipeline reports failure ON A MATCH).
+"$RUNTIME" logs "$CONTAINER" > "$WORK/craft_final.log" 2>&1 || true
+if ! grep -q "inventory published" "$WORK/craft_final.log"; then
+    echo "boot signed no inventory: the census never published /cf/manifest.txt" >&2
+    exit 1
+fi
+# And the retired door stays shut: the old clerk's line must never appear.
+if grep -q "manifest written" "$WORK/craft_final.log"; then
+    echo "the camera app still writes inventories: the clerk was not retired" >&2
+    exit 1
+fi
 
 echo "CAM ACK ACCEPTANCE OK: A+C proven and recycled, B unproven and untouched, inventory true"

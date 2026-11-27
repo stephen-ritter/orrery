@@ -289,8 +289,13 @@ remembers itself: /cf/img/.catalog carries path, size, creation, and the
 proven bit, rewritten atomically on every mutation and read back at boot
 with one-directional nets - a standing file no line vouches for joins
 UNPROVEN, a line whose file is gone is dropped with an event. The
-inventory follows the store: the camera app rewrites the manifest on every
-store generation the bus reports. The store also answers to the present
+inventory is the store's own publication: bsk_link walks the directory and
+rewrites /cf/manifest.txt at the boot census and at every mutation it
+performs, draft-and-swap like the catalog, because the app that admits,
+lands, and recycles files is the only author who can never be behind its
+own story. No command opens or refreshes the ledger anymore - CAM_CMD FC 1
+is retired (a stray one is counted and refused), and the ground simply
+fetches the file, always current. The store also answers to the present
 tense: CAM_CMD FC 2 SNAP pulses the shutter - the sim door opens a closed
 eye, delivers the NEXT capture (never an old file) to the store outside the
 record cadence, and restores the ground's steady shutter; the ask and the

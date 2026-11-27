@@ -1085,6 +1085,186 @@ static uint8           BskStoreUntrackedWarned;
 static char            BskStorePending[BSK_LINK_STORE_PENDING_MAX][BSK_LINK_STORE_PATH_MAX];
 static uint32          BskStorePendingCount;
 
+/* Seconds since the Unix epoch -> "YYYY-MM-DDTHH:MM:SSZ". Hand-rolled civil
+ * calendar arithmetic (the days-from-civil algorithm) instead of libc's
+ * gmtime(): flight code has no business consulting the host's timezone
+ * table, and the integer form is exact. The clock this names is the
+ * container's wall clock - on the bench, the host's - not mission time:
+ * it records when the store PHYSICALLY gained a file. */
+static void BSK_Link_FormatUtc(int64 Seconds, char *Buf, size_t Len)
+{
+    int64 Days = Seconds / 86400;
+    int64 Secs = Seconds % 86400;
+    int64 Era, Doe, Yoe, Year, Doy, Mp, Day, Month;
+
+    if (Secs < 0)
+    {
+        Secs += 86400;
+        Days -= 1; /* floor, so a pre-1970 stamp still names its true day */
+    }
+    Days += 719468;
+    Era   = (Days >= 0 ? Days : Days - 146096) / 146097;
+    Doe   = Days - Era * 146097;                     /* day of era  [0,146096] */
+    Yoe   = (Doe - Doe / 1460 + Doe / 36524 - Doe / 146096) / 365;
+    Year  = Yoe + Era * 400;
+    Doy   = Doe - (365 * Yoe + Yoe / 4 - Yoe / 100); /* day of year   [0,365] */
+    Mp    = (5 * Doy + 2) / 153;                     /* month probe   [0,11]  */
+    Day   = Doy - (153 * Mp + 2) / 5 + 1;
+    Month = Mp < 10 ? Mp + 3 : Mp - 9;
+    Year += (Month <= 2);
+    snprintf(Buf, Len, "%04llu-%02llu-%02lluT%02llu:%02llu:%02lluZ",
+             (unsigned long long)Year, (unsigned long long)Month, (unsigned long long)Day,
+             (unsigned long long)(Secs / 3600), (unsigned long long)((Secs / 60) % 60),
+             (unsigned long long)(Secs % 60));
+}
+
+/* The ground's inventory: /cf/manifest.txt, published by the store itself.
+ *
+ * The inventory law: whoever admits, lands, and recycles files is the only
+ * author who can never be behind its own story. The catalog rewrites at the
+ * boot census and at every mutation; the ground's CSV rides those same
+ * moments. But its lines come from a FRESH WALK of the store directory,
+ * not the ledger: the ledger knows the frames the outlet landed, while the
+ * directory knows everything - a CFDP upload from the ground or a file an
+ * operator placed by hand becomes requestable the instant it stands, and
+ * an inventory that waits for the next outlet frame to notice it would
+ * hide a file the store already answers for. Cam's clerk walked; the store
+ * walks. The format is kept byte-for-byte (header path,size_bytes,
+ * created_utc; FULL path first, because a reader must not rebuild
+ * locations from bare names; creation order with ties by path, because
+ * capture order is the order a reader can act on - filesystem hash order
+ * reads as random): the file the ground fetches is an API, and APIs do
+ * not twitch. Draft-and-swap: a CFDP read already in flight holds the
+ * whole old inventory while the new one lands. */
+typedef struct
+{
+    char   Path[BSK_LINK_STORE_PATH_MAX];
+    uint64 Size;
+    int64  When; /* mtime seconds; ties broken by Path */
+} BskManifestEntry_t;
+
+static BskManifestEntry_t BskManifestWalk[BSK_LINK_STORE_LEDGER_MAX];
+static uint8              BskManifestPublished; /* one INFO per boot; after that the file is its own exhibit */
+
+/* Keep the walk ordered by creation time, ties by name: a table a reader
+ * can diff is worth more than a table that merely looks sorted, and a
+ * multi-eye bird captures several files inside one second. */
+static void BSK_Link_ManifestInsert(uint32 *Count, const char *Path, uint64 Size, int64 When)
+{
+    uint32 At = *Count;
+
+    while (At > 0 && (BskManifestWalk[At - 1u].When > When ||
+                      (BskManifestWalk[At - 1u].When == When && strcmp(BskManifestWalk[At - 1u].Path, Path) > 0)))
+    {
+        BskManifestWalk[At] = BskManifestWalk[At - 1u];
+        At--;
+    }
+    snprintf(BskManifestWalk[At].Path, sizeof(BskManifestWalk[At].Path), "%s", Path);
+    BskManifestWalk[At].Size = Size;
+    BskManifestWalk[At].When = When;
+    *Count += 1;
+}
+
+static void BSK_Link_ManifestWrite(void)
+{
+    char        Line[BSK_LINK_STORE_PATH_MAX + 64];
+    osal_id_t   DirId;
+    osal_id_t   Fd;
+    os_dirent_t Entry;
+    os_fstat_t  Stats;
+    bool        Ok;
+    uint32      Walked = 0;
+    uint32      Files  = 0;
+
+    if (OS_DirectoryOpen(&DirId, BSK_LINK_STORE_DIR) != OS_SUCCESS)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "inventory refused: %s unreadable - has the store ever run?", BSK_LINK_STORE_DIR);
+        return;
+    }
+    while (OS_DirectoryRead(DirId, &Entry) == OS_SUCCESS)
+    {
+        char        Path[BSK_LINK_STORE_PATH_MAX];
+        const char *Name = OS_DIRENTRY_NAME(Entry);
+
+        if (Name[0] == '\0' || Name[0] == '.')
+        {
+            continue; /* store internals: .part corpses and the catalog itself */
+        }
+        snprintf(Path, sizeof(Path), "%s/%s", BSK_LINK_STORE_DIR, Name);
+        if (OS_stat(Path, &Stats) != OS_SUCCESS)
+        {
+            /* A file nobody can request has no business on the inventory,
+             * but dropping it in silence moves the lie to the reader. */
+            CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                              "inventory skipped %s: status %d", Name, (int)OS_stat(Path, &Stats));
+            continue;
+        }
+        if (Walked >= BSK_LINK_STORE_LEDGER_MAX)
+        {
+            /* The sort budget is the store's size in files; a fuller store
+             * gets a refusal, never a shorter list pretending to be all. */
+            OS_DirectoryClose(DirId);
+            CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                              "inventory refused: store holds over %u files (sort budget) - previous kept",
+                              (unsigned int)BSK_LINK_STORE_LEDGER_MAX);
+            return;
+        }
+        BSK_Link_ManifestInsert(&Walked, Path, (uint64)OS_FILESTAT_SIZE(Stats), (int64)OS_FILESTAT_TIME(Stats));
+    }
+    OS_DirectoryClose(DirId);
+
+    Ok = OS_OpenCreate(&Fd, BSK_LINK_STORE_MANIFEST_PART, OS_FILE_FLAG_CREATE | OS_FILE_FLAG_TRUNCATE,
+                       OS_WRITE_ONLY) == OS_SUCCESS;
+    if (!Ok)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "inventory unwriteable: %s refused creation", BSK_LINK_STORE_MANIFEST_PART);
+        return;
+    }
+    snprintf(Line, sizeof(Line), "path,size_bytes,created_utc\n");
+    if (OS_write(Fd, Line, strlen(Line)) != (int32)strlen(Line))
+    {
+        Ok = false;
+    }
+    for (uint32 At = 0; At < Walked && Ok; ++At)
+    {
+        char When[32];
+
+        BSK_Link_FormatUtc(BskManifestWalk[At].When, When, sizeof(When));
+        snprintf(Line, sizeof(Line), "%s,%llu,%s\n", BskManifestWalk[At].Path,
+                 (unsigned long long)BskManifestWalk[At].Size, When);
+        if (OS_write(Fd, Line, strlen(Line)) != (int32)strlen(Line))
+        {
+            Ok = false; /* a partial line is worse than no manifest */
+        }
+        else
+        {
+            Files++;
+        }
+    }
+    OS_close(Fd);
+
+    if (Ok)
+    {
+        Ok = OS_mv(BSK_LINK_STORE_MANIFEST_PART, BSK_LINK_STORE_MANIFEST) == OS_SUCCESS;
+    }
+    if (!Ok)
+    {
+        OS_remove(BSK_LINK_STORE_MANIFEST_PART); /* the old inventory, if any, stays valid */
+        CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "inventory write failed: %s may be telling yesterday", BSK_LINK_STORE_MANIFEST);
+        return;
+    }
+    if (!BskManifestPublished)
+    {
+        BskManifestPublished = 1;
+        CFE_EVS_SendEvent(BSK_LINK_STORE_INF_EID, CFE_EVS_EventType_INFORMATION,
+                          "inventory published: %s - %u files standing", BSK_LINK_STORE_MANIFEST,
+                          (unsigned int)Files);
+    }
+}
+
 /* The store's memory across restarts: one CSV line per standing file -
  * path, size, creation, proven - rewritten whole on every mutation of the
  * store. The rewrite lands as .catalog.part and is OS_mv'd into place, so
@@ -1130,6 +1310,11 @@ static void BSK_Link_CatalogWrite(void)
         CFE_EVS_SendEvent(BSK_LINK_STORE_ERR_EID, CFE_EVS_EventType_ERROR,
                           "catalog write failed: receipts stand for this boot only");
     }
+    /* The inventory follows the catalog wherever it goes: same ledger, same
+     * moment, no command needed. A catalog failure does not veto this - a
+     * /cf that takes one file can still keep the ground's truth current,
+     * and if both fail, each says so in its own event. */
+    BSK_Link_ManifestWrite();
 }
 
 static uint64 BskCatalogNumber(const char **At, int64 *Signed) /* digits, optional sign */
@@ -1570,6 +1755,10 @@ static void BSK_Link_StoreSeed(void)
                       (unsigned)BSK_LinkAppData.StoreFilesNow, (unsigned long long)BSK_LinkAppData.StoreUsedBytes,
                       (unsigned int)Carried);
     BSK_Link_StoreUpdateState();
+    /* Boot signs the inventory: whatever the census settled - empty, seeded,
+     * or a store this boot adopted from a previous life - is exactly what
+     * /cf/manifest.txt now says. No ground command arms anything anymore. */
+    BSK_Link_ManifestWrite();
 }
 
 /* Which row, if any, is this craft's recorder? No vehicle name means no
@@ -1891,6 +2080,13 @@ static void BSK_Link_IngestImageChunk(const void* Data, size_t Size)
     if (BSK_LinkAppData.StoreClaimed)
     {
         BSK_Link_StoreLand(FinalPath, BSK_LinkAppData.StoreBytes);
+    }
+    else
+    {
+        /* Unclaimed is not un-inventoried: bounds may be unenforced, but a
+         * file that stands is requestable, and the ground's inventory walks
+         * the DIRECTORY - it never needed the ledger the claim owns. */
+        BSK_Link_ManifestWrite();
     }
     BSK_Link_EmitCamStorage();
     if (BSK_LinkAppData.FilesStored == 1 ||

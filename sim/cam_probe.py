@@ -155,7 +155,7 @@ def set_config(model: Packet, seq: int, shutter: int, camera_id: int, rate_s: fl
 def snap(cmd_model: Packet, seq: int) -> bytes:
     """Build a CAM_CMD FC 2 SNAP - the shutter pulse.
 
-    Header-only like NOOP and MANIFEST: "look now" takes no argument, the eye
+    Header-only like NOOP: "look now" takes no argument, the eye
     is the one already commanded.
     """
     return build_cmd(cmd_model.msgid, 2, seq=seq)

@@ -39,17 +39,14 @@
         </ConstraintSet>
       </ContainerDataType>
 
-      <!-- The inventory request: header-only, so it rides the CMD
-           interface's FC space like NOOP - the own-interface law binds
-           payload commands, and an interface for a zero-argument request
-           would buy a second MID to say nothing more. -->
-      <ContainerDataType name="ManifestCmd" baseType="CommandBase">
-        <ConstraintSet>
-          <ValueConstraint entry="Sec.FunctionCode" value="1" />
-        </ConstraintSet>
-      </ContainerDataType>
-
-      <!-- The shutter pulse: header-only like MANIFEST. "Look now" needs no
+      <!-- FC 1 is retired, not renumbered: the ground inventory
+           /cf/manifest.txt is published by the store itself (bsk_link writes
+           it with its catalog at the boot census and at every mutation), so
+           no command opens or refreshes a ledger anymore. The number stays
+           unclaimed - a stray FC 1 meets the invalid-function-code path,
+           counted and named on EVS - and FC 2 keeps its identity: scripts,
+           schedules, and muscle memory written against SNAP must not move. -->
+      <!-- The shutter pulse: header-only like NOOP. "Look now" needs no
            argument - the eye is the one this app already commands, at the
            rate it already runs. What the pulse does lives on the sim side
            of the airgap (CamConfig.Pulse): open the shutter if it stands

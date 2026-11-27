@@ -193,17 +193,26 @@ def test_sps_router_knows_the_request_length(packets: list[Packet]) -> None:
     assert '{0x18D6, 0, 136, "FCS_CFDP_DOWN"}' in table
 
 
-def test_manifest_rides_cam_cmd_with_a_ground_name(packets: list[Packet]) -> None:
-    """CAM_MANIFEST is FC 1 on CAM_CMD - named everywhere, no new MID.
+def test_the_retired_inventory_command_stays_retired(packets: list[Packet]) -> None:
+    """FC 1 is gone from every surface: EDS, ground defs, and the SPS table.
 
-    The inventory request has no arguments, so the own-interface law does
-    not bind it; but an FC the ground cannot name is an FC nobody sends.
+    The store publishes /cf/manifest.txt itself - boot census and every
+    mutation - so the command that once opened the ledger must not creep
+    back through an edited golden or a revived EDS block: a ground that can
+    send what the craft refuses is a trap, and an SPS row scheduling that
+    refusal is the same trap with a timer. NOOP and SNAP keep their numbers
+    (FC 1 stays unclaimed); SNAP's identity is scripts and muscle memory.
     """
     pkt = _pkt(packets, "CAM_CMD")
     assert pkt.msgid == 0x18D2
     cmd_text, _ = emit_cosmos(packets)
-    assert 'STATE "ManifestCmd" 1' in cmd_text
-    assert '{0x18D2, 1, 0, "CAM_CMD.ManifestCmd"}' in emit_c_cmd_table(packets, "088b2fa")
+    assert "ManifestCmd" not in cmd_text
+    assert 'STATE "NoopCmd" 0' in cmd_text
+    assert 'STATE "SnapCmd" 2' in cmd_text
+    table = emit_c_cmd_table(packets, "088b2fa")
+    assert "ManifestCmd" not in table
+    assert "{0x18D2, 1, 0," not in table
+    assert "{0x18D2, 2, 0," in table
 
 
 def test_vendor_repair_reports_a_fixed_upstream(tmp_path: Path) -> None:

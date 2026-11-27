@@ -43,10 +43,17 @@ def test_the_catalog_hides_behind_a_dot_name() -> None:
 
 
 def test_both_walks_skip_store_internals() -> None:
-    """Boot seed and the ground's inventory share one blindness: dot names."""
+    """The boot seed and the ground's inventory share one blindness: dot names.
+
+    Both walks live in the store's own source now - the clerk that used to
+    walk from cam is retired - so the guard must stand TWICE in bsk_link
+    and not at all in cam.
+    """
     guard = "Name[0] == '\\0' || Name[0] == '.'"
-    assert LINK_C.read_text().count(guard) >= 1, "the boot walk would index the catalog"
-    assert CAM_C.read_text().count(guard) >= 1, "the inventory would list the catalog"
+    assert LINK_C.read_text().count(guard) >= 2, "a store walk lost its blindness to dot names"
+    assert CAM_C.read_text().count(guard) == 0, (
+        "cam walks the store again - the clerk was not retired"
+    )
 
 
 def test_the_receipt_is_written_before_the_delete() -> None:
@@ -61,6 +68,18 @@ def test_the_receipt_is_written_before_the_delete() -> None:
 
 
 def test_the_inventory_speaks_no_receipts() -> None:
-    """The ground sees files; the proven column is a vehicle-side claim."""
-    assert '"path,size_bytes,created_utc\\n"' in CAM_C.read_text()
+    """The ground sees files; the proven column is a vehicle-side claim.
+
+    And the inventory's author is the store: the three-column header is
+    written where the files are admitted, landed, and recycled - not by a
+    bystander app.
+    """
+    assert '"path,size_bytes,created_utc\\n"' in LINK_C.read_text()
     assert '"path,size_bytes,created_utc,proven\\n"' in LINK_C.read_text()
+
+
+def test_cam_holds_no_clerk_left_to_wake() -> None:
+    """Retirement is total or it is folklore: no path, no flag, no writer."""
+    text = CAM_C.read_text() + "\n" + CAM_C.with_suffix(".h").read_text()
+    for residue in ("CAM_MANIFEST", "ManifestWrite", "HandleManifest", "FormatUtc"):
+        assert residue not in text, f"the retired clerk left {residue} behind in cam"

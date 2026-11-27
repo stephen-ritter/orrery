@@ -13,22 +13,18 @@
  *
  * Commands:
  *   CAM_CMD         FC 0 NOOP
- *                   FC 1 MANIFEST - write /cf/manifest.txt, the store's
- *                   requestable inventory, as CSV: header
- *                   path,size_bytes,created_utc, then one line per file with
- *                   the FULL path and its creation time, ordered by creation
- *                   (a directory walk returns filesystem hash order, which
- *                   reads as random; capture order is the order a reader
- *                   can act on). Once written this boot, the inventory
- *                   rewrites itself on every store mutation bsk_link
- *                   reports - a landed frame or a recycled one moves the
- *                   generation, and an inventory that keeps listing
- *                   yesterday's files makes liars of both. The ground
- *                   then requests the manifest through FCS_CFDP_DOWN like
- *                   any other file: inventory is a file too, so the file
- *                   path stays the only data plane. No arguments, so it
- *                   rides CAM_CMD (own-interface law binds payload commands
- *                   only - the SetGain law is about losing arguments).
+ *                   FC 1 is retired: /cf/manifest.txt, the store's
+ *                   requestable inventory, is published by the store itself.
+ *                   bsk_link writes it beside its catalog - at the boot
+ *                   census and at every mutation it performs - because the
+ *                   app that admits, lands, and recycles files is the only
+ *                   author who can never be behind its own story. The format
+ *                   is unchanged (CSV, header path,size_bytes,created_utc,
+ *                   FULL paths, creation order), and the ground still
+ *                   requests it through FCS_CFDP_DOWN like any other file:
+ *                   inventory is a file too, so the file path stays the only
+ *                   data plane. A stray FC 1 takes the invalid-function-code
+ *                   path: counted, named, refused.
  *   CAM_SET_CONFIG  upload shutter + camera id + render rate (own packet,
  *                   payload command per the SetGain law: arguments need a
  *                   real payload or codegen loses them)
@@ -76,13 +72,6 @@
  */
 #define CAM_RENDER_RATE_MAX 3600.0
 
-/** The store's directory (the image store's home) and the inventory CAM_MANIFEST
- *  writes into. The ground requests /cf/manifest.txt through FCS_CFDP_DOWN
- *  by this exact name; one name, one law, both sides. */
-#define CAM_IMG_DIR       "/cf/img"
-#define CAM_MANIFEST_PATH "/cf/manifest.txt"
-#define CAM_MANIFEST_TMP  "/cf/manifest.new"
-
 typedef struct
 {
     CFE_SB_PipeId_t Pipe;
@@ -110,10 +99,6 @@ typedef struct
     uint64 FramesRecorded;
     uint64 FilesStored;
     uint64 FilesTransferred; /* CF EOT count: files CF closed clean, TX */
-    uint64 ManifestWrites;   /* inventories written: asked for, or following the store */
-    uint64 StoreGeneration;  /* last store mutation heard from bsk_link        */
-    uint8  ManifestWritten;  /* 1: an inventory exists this boot, so the store's
-                              * moves must not leave it telling yesterday      */
 
     /* Read-only stamping from the sensor feed (never a law input). */
     double LastSimTimeS;

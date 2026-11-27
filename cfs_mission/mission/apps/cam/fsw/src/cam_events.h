@@ -12,8 +12,9 @@
 #define CAM_SET_CONFIG_ERR_EID  5 /* config refused (bad value or length)  */
 #define CAM_CONFIG_ERR_EID      6 /* config publish rejected (reported 1x) */
 #define CAM_PIPE_ERR_EID        7 /* pipe/subscribe failure at init        */
-#define CAM_MANIFEST_INF_EID    8 /* manifest written                      */
-#define CAM_MANIFEST_ERR_EID    9 /* manifest refused or failed mid-write  */
+/* 8 and 9 retired with the ground-manifest clerk: the store publishes its
+ * own inventory now (bsk_link), and cam writes no manifest to report on.
+ * The numbers stay unclaimed - COSMOS decodes old logs by them. */
 #define CAM_SNAP_INF_EID        10 /* shutter pulse accepted and forwarded  */
 #define CAM_SNAP_ERR_EID        11 /* shutter pulse refused (no eye yet)    */
 

@@ -6,7 +6,8 @@
 #           initializes the app; the ORDER still goes out on the operator's
 #           own port and the beacon stays silent to it - while every other
 #           frame streams (selective silence, not a dead port); and the
-#           store's manifest file never appears.
+#           store's inventory still signs - empty, because an honest census
+#           of nothing is a header and no lines.
 #   awake   camera_ops.toml - the eye declared. The same door lands a table
 #           that includes cam, ES initializes it, and the same order is
 #           answered: CAM_HK on the wire, counters and all.
@@ -168,8 +169,16 @@ if ! PYTHONPATH="$REPO" uv run python "$WORK/witness.py" silence "$BEACON" "$UPL
     exit 1
 fi
 cat "$WORK/witness_never.json"
-if [ -e "$CF_DIR/manifest.txt" ]; then
-    echo "[never] a manifest appeared from an app that was never awake" >&2
+# The inventory belongs to the store, not the camera: bsk_link wakes in every
+# scenario, so its census signs /cf/manifest.txt even with cam asleep. What
+# must hold is TRUTH, not absence - an empty store lists no files.
+if [ ! -e "$CF_DIR/manifest.txt" ]; then
+    echo "[never] the store signed no inventory: the census must publish even with cam asleep" >&2
+    exit 1
+fi
+if grep -q '^/cf/img/' "$CF_DIR/manifest.txt"; then
+    echo "[never] an empty store's manifest lists files:" >&2
+    cat "$CF_DIR/manifest.txt" >&2
     exit 1
 fi
 stop_world

@@ -63,6 +63,15 @@
 #define BSK_LINK_STORE_DIR        "/cf/img"
 #define BSK_LINK_STORE_CATALOG     BSK_LINK_STORE_DIR "/.catalog"
 #define BSK_LINK_STORE_CATALOG_PART BSK_LINK_STORE_DIR "/.catalog.part"
+
+/** The ground's inventory, published by the store itself beside its catalog
+ *  (boot census + every mutation). It lives OUTSIDE /cf/img - the store
+ *  directory holds only requestable frames - and the ground requests
+ *  /cf/manifest.txt through FCS_CFDP_DOWN by this exact name; one name, one
+ *  law, both sides. Draft-and-swap like the catalog: a reader mid-fetch
+ *  holds the whole old inventory, never a half line. */
+#define BSK_LINK_STORE_MANIFEST      "/cf/manifest.txt"
+#define BSK_LINK_STORE_MANIFEST_PART "/cf/manifest.part"
                                  /* dot names are store internals: the boot
                                   * walk and the ground's inventory both skip
                                   * them, so the index is never its own file */
