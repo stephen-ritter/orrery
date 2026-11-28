@@ -22,5 +22,10 @@
 #define FCS_SET_LIMIT_ERR_EID   15 /* threshold rejected (non-finite, absurd) */
 #define FCS_CFDP_DOWN_INF_EID   16 /* file handed to CF for downlink          */
 #define FCS_CFDP_DOWN_ERR_EID   17 /* request malformed or relay rejected     */
+#define FCS_BURN_INF_EID        18 /* burn accepted: quota open, per-frame fwd */
+#define FCS_BURN_REJ_ERR_EID    19 /* burn refused: door (argument, overlap)   */
+#define FCS_BURN_TLM_ERR_EID    20 /* burn frame publish rejected (reported 1x)*/
+#define FCS_BURNSTOP_INF_EID    21 /* BURNSTOP accepted: quota closed by ground*/
+#define FCS_BURN_DONE_INF_EID   22 /* quota elapsed: burn closed by duration   */
 
 #endif /* FCS_EVENTS_H */

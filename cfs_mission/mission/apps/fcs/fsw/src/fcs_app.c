@@ -93,6 +93,78 @@ static bool FCS_WheelsAtLimit(void)
 /* -------------------------------------------------------------------------- */
 
 /**
+ * Close the open quota and stamp HK. Shared by BURNSTOP, the clock, and the
+ * session-restart guard; the EVS belongs to the CALLER, because only the
+ * caller knows whether the ground, the duration, or a dead world ended the
+ * burn - and a bench reading events later should never have to guess.
+ */
+static void FCS_CloseBurn(void)
+{
+    FCS_AppData.BurnActive              = 0;
+    FCS_AppData.HkTlm.Payload.BurnState = 0;
+}
+
+/**
+ * One tick of an open quota: forward this frame's burn command to the sim.
+ *
+ * Called ONLY from ControlStep's new-frame path - which is what makes the
+ * law structural rather than polite: a barrier retransmit re-acks without
+ * re-running, so one sensor frame can buy AT MOST one tick of thrust. The
+ * quota closes on the first frame whose SIM time has passed the duration:
+ * a burn's length is a property of the orbit, never of host scheduling.
+ */
+static void FCS_EgressBurnFrame(const BskSensorFrame_Payload_t *Sensor)
+{
+    BskBurnCmdTlm_t Burn;
+    CFE_Status_t    Status;
+
+    if (!FCS_AppData.BurnActive)
+    {
+        return;
+    }
+
+    if ((Sensor->SimTimeS - FCS_AppData.BurnStartSimTimeS) > FCS_AppData.BurnDurationS)
+    {
+        FCS_CloseBurn();
+        CFE_EVS_SendEvent(FCS_BURN_DONE_INF_EID, CFE_EVS_EventType_INFORMATION,
+                          "burn %llu complete: %g N for %.1f s, %lu frames, claimed %.4g N s (t=%.1fs)",
+                          (unsigned long long)FCS_AppData.BurnSeq, FCS_AppData.BurnForceN, FCS_AppData.BurnDurationS,
+                          (unsigned long)FCS_AppData.BurnFramesForwarded, FCS_AppData.BurnImpulseClaimed,
+                          Sensor->SimTimeS);
+        return;
+    }
+
+    CFE_MSG_Init(CFE_MSG_PTR(Burn.TelemetryHeader), CFE_SB_ValueToMsgId(BSK_LINK_BURN_COMMAND_TLM_MID), sizeof(Burn));
+    Burn.Payload.SimTimeS = Sensor->SimTimeS;
+    Burn.Payload.ForceN   = FCS_AppData.BurnForceN;
+    memcpy(Burn.Payload.AxisB, FCS_AppData.BurnAxisB, sizeof(Burn.Payload.AxisB));
+    Burn.Payload.Frame   = Sensor->Frame;
+    Burn.Payload.BurnId  = FCS_AppData.BurnSeq;
+
+    CFE_SB_TimeStampMsg(CFE_MSG_PTR(Burn.TelemetryHeader));
+    Status = CFE_SB_TransmitMsg(CFE_MSG_PTR(Burn.TelemetryHeader), true);
+    if (Status == CFE_SUCCESS)
+    {
+        FCS_AppData.BurnFramesForwarded++;
+        FCS_AppData.BurnImpulseClaimed += FCS_AppData.BurnForceN * FCS_BURN_TICK_S;
+        FCS_AppData.HkTlm.Payload.BurnState           = 1;
+        FCS_AppData.HkTlm.Payload.BurnFramesForwarded = FCS_AppData.BurnFramesForwarded;
+        FCS_AppData.HkTlm.Payload.BurnImpulseClaimed  = FCS_AppData.BurnImpulseClaimed;
+    }
+    else if (FCS_AppData.PublishFailCount == 0)
+    {
+        CFE_EVS_SendEvent(FCS_BURN_TLM_ERR_EID, CFE_EVS_EventType_ERROR, "burn frame publish rejected: 0x%08X",
+                          (unsigned int)Status);
+    }
+    if (Status != CFE_SUCCESS)
+    {
+        FCS_AppData.PublishFailCount++;
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
  * The lockstep barrier ack: every processed sensor frame gets
  * one, whatever the mode. The sim blocks its next Basilisk step until the ack
  * carrying the frame number it just published arrives on the link, so the ack
@@ -172,6 +244,13 @@ static void FCS_ControlStep(const BskSensorFrame_Payload_t *Sensor)
         FCS_AppData.TorqueCommandsIssued = 0;
         FCS_AppData.HkTlm.Payload.SensorFramesReceived = 0;
         FCS_AppData.HkTlm.Payload.TorqueCommandsIssued = 0;
+        if (FCS_AppData.BurnActive)
+        {
+            /* A burn cannot straddle two worlds: its clock is the old
+             * session's sim time, and a quota judged against a restarted
+             * clock thrusts forever or never. It dies with its world. */
+            FCS_CloseBurn();
+        }
     }
     FCS_AppData.LastFrameNumber = Sensor->Frame;
 
@@ -223,6 +302,11 @@ static void FCS_ControlStep(const BskSensorFrame_Payload_t *Sensor)
             FCS_AppData.PublishFailCount++;
         }
     }
+
+    /* Burn after torque, before the ack: the tick's authority is the same
+     * fresh knowledge the torque was computed from, and the ack still
+     * answers the frame last, gate undisturbed. */
+    FCS_EgressBurnFrame(Sensor);
 
     /* The gate answers disabled runs too: an inert satellite still proves it
      * saw the frame, which is exactly what lets a lockstep sim keep stepping. */
@@ -312,6 +396,101 @@ static void FCS_HandleSetWheelLimit(const CFE_SB_Buffer_t *BufPtr)
     CFE_EVS_SendEvent(FCS_SET_LIMIT_INF_EID, CFE_EVS_EventType_INFORMATION,
                       "wheel trip threshold set: %.1f rad/s (supervisor active once onboard state flows)",
                       Candidate);
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * FCS_BURN: the ground's quota ask - force along a body axis for a duration.
+ *
+ * The doors here are the firmware's honest limits: finite, positive, capped
+ * against absurdity, non-degenerate axis, one quota at a time. What the
+ * nozzles can REALLY do is the world's knowledge, and the world answers an
+ * over-demand honestly: it saturates against the plant and its truth ledger
+ * records the ACHIEVED impulse. The axis is normalized onboard because the
+ * wire's contract says unit, and normalized twice costs nothing.
+ */
+static void FCS_HandleBurn(const CFE_SB_Buffer_t *BufPtr)
+{
+    const FcsBurnCmd_t *Cmd = (const FcsBurnCmd_t *)BufPtr;
+    size_t              Size;
+    double              Force;
+    double              Duration;
+    double              Axis[FCS_AXES];
+    double              NormSq  = 0.0;
+    bool                Acceptable;
+
+    CFE_MSG_GetSize(&BufPtr->Msg, &Size);
+    if (Size != sizeof(FcsBurnCmd_t))
+    {
+        FCS_AppData.HkTlm.Payload.CommandErrorCounter++;
+        FCS_AppData.HkTlm.Payload.BurnCommandsRefused++;
+        CFE_EVS_SendEvent(FCS_CMD_ERR_EID, CFE_EVS_EventType_ERROR, "BURN length %u, expected %u: ignored",
+                          (unsigned int)Size, (unsigned int)sizeof(FcsBurnCmd_t));
+        return;
+    }
+
+    Force    = Cmd->Payload.ForceN;
+    Duration = Cmd->Payload.DurationS;
+    for (uint8 i = 0; i < FCS_AXES; ++i)
+    {
+        Axis[i] = Cmd->Payload.AxisB[i];
+        NormSq += Axis[i] * Axis[i];
+    }
+
+    Acceptable = isfinite(Force) && Force > 0.0 && Force <= FCS_BURN_MAX_FORCE_N && isfinite(Duration) &&
+                 Duration > 0.0 && Duration <= FCS_BURN_MAX_DURATION_S && isfinite(Axis[0]) && isfinite(Axis[1]) &&
+                 isfinite(Axis[2]) && NormSq > 1e-18;
+    if (!Acceptable)
+    {
+        FCS_AppData.HkTlm.Payload.CommandErrorCounter++;
+        FCS_AppData.HkTlm.Payload.BurnCommandsRefused++;
+        CFE_EVS_SendEvent(FCS_BURN_REJ_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "BURN rejected (%.3g N along (%.3g %.3g %.3g) for %.3g s): need finite, 0 < F <= %g N, "
+                          "0 < T <= %g s, non-degenerate axis",
+                          Force, Axis[0], Axis[1], Axis[2], Duration, FCS_BURN_MAX_FORCE_N, FCS_BURN_MAX_DURATION_S);
+        return;
+    }
+
+    if (FCS_AppData.BurnActive)
+    {
+        /* Overlapping quotas have no honest meaning: whose force wins,
+         * whose clock runs? The ground closes the open burn first or waits
+         * for the duration to do it. */
+        FCS_AppData.HkTlm.Payload.CommandErrorCounter++;
+        FCS_AppData.HkTlm.Payload.BurnCommandsRefused++;
+        CFE_EVS_SendEvent(FCS_BURN_REJ_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "BURN refused: burn %llu still open (%.1f s elapsed of %.1f s); BURNSTOP first - quotas "
+                          "do not queue",
+                          (unsigned long long)FCS_AppData.BurnSeq, FCS_AppData.LastSimTimeS - FCS_AppData.BurnStartSimTimeS,
+                          FCS_AppData.BurnDurationS);
+        return;
+    }
+
+    {
+        const double Norm = sqrt(NormSq);
+        for (uint8 i = 0; i < FCS_AXES; ++i)
+        {
+            FCS_AppData.BurnAxisB[i] = Axis[i] / Norm;
+        }
+    }
+    FCS_AppData.BurnSeq++;
+    FCS_AppData.BurnActive            = 1;
+    FCS_AppData.BurnForceN            = Force;
+    FCS_AppData.BurnDurationS         = Duration;
+    FCS_AppData.BurnStartSimTimeS     = FCS_AppData.LastSimTimeS;
+
+    FCS_AppData.HkTlm.Payload.BurnState              = 1;
+    FCS_AppData.HkTlm.Payload.BurnCommandsAccepted++;
+    FCS_AppData.HkTlm.Payload.LastBurnForceN         = Force;
+    FCS_AppData.HkTlm.Payload.LastBurnId             = FCS_AppData.BurnSeq;
+    memcpy(FCS_AppData.HkTlm.Payload.LastBurnAxisB, FCS_AppData.BurnAxisB,
+           sizeof(FCS_AppData.HkTlm.Payload.LastBurnAxisB));
+    FCS_AppData.HkTlm.Payload.CommandCounter++;
+    CFE_EVS_SendEvent(FCS_BURN_INF_EID, CFE_EVS_EventType_INFORMATION,
+                      "burn %llu opened: %g N along (%+.3g %+.3g %+.3g) for %.1f s (t=%.1fs)",
+                      (unsigned long long)FCS_AppData.BurnSeq, Force, FCS_AppData.BurnAxisB[0],
+                      FCS_AppData.BurnAxisB[1], FCS_AppData.BurnAxisB[2], Duration, FCS_AppData.LastSimTimeS);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -442,6 +621,27 @@ static void FCS_HandleCmd(const CFE_SB_Buffer_t *BufPtr)
                               "control loop DISABLED: sensor frames still ingested, no torque commanded");
             break;
 
+        case 3: /* BURNSTOP */
+            /* Argumentless by contract, and REFUSED when idle: a stop with
+             * nothing to stop means the ground and the craft disagree about
+             * a burn that does not exist - exactly the misunderstanding an
+             * acked no-op would hide. */
+            if (!FCS_AppData.BurnActive)
+            {
+                FCS_AppData.HkTlm.Payload.CommandErrorCounter++;
+                FCS_AppData.HkTlm.Payload.BurnCommandsRefused++;
+                CFE_EVS_SendEvent(FCS_BURN_REJ_ERR_EID, CFE_EVS_EventType_ERROR,
+                                  "BURNSTOP refused: no burn in progress (t=%.1fs)", FCS_AppData.LastSimTimeS);
+                break;
+            }
+            FCS_CloseBurn();
+            FCS_AppData.HkTlm.Payload.CommandCounter++;
+            CFE_EVS_SendEvent(FCS_BURNSTOP_INF_EID, CFE_EVS_EventType_INFORMATION,
+                              "BURNSTOP: burn %llu closed after %lu frames, claimed %.4g N s (t=%.1fs)",
+                              (unsigned long long)FCS_AppData.BurnSeq, (unsigned long)FCS_AppData.BurnFramesForwarded,
+                              FCS_AppData.BurnImpulseClaimed, FCS_AppData.LastSimTimeS);
+            break;
+
         default:
             FCS_AppData.HkTlm.Payload.CommandErrorCounter++;
             CFE_EVS_SendEvent(FCS_CMD_ERR_EID, CFE_EVS_EventType_ERROR, "invalid function code %u",
@@ -488,6 +688,7 @@ static int32 FCS_AppInit(void)
         {FCS_SET_GAIN_MID, "gain upload"},
         {FCS_SET_WHEEL_LIMIT_MID, "wheel limit upload"},
         {FCS_CFDP_DOWN_MID, "file downlink request"},
+        {FCS_BURN_MID, "burn quota request"},
         {FCS_SEND_HK_MID, "housekeeping request"},
     };
 
@@ -616,6 +817,10 @@ void FCS_AppMain(void)
                     FCS_HandleCfdpDown(BufPtr);
                     break;
 
+                case FCS_BURN_MID:
+                    FCS_HandleBurn(BufPtr);
+                    break;
+
                 case FCS_SEND_HK_MID:
                     FCS_SendHk();
                     break;
@@ -630,12 +835,14 @@ void FCS_AppMain(void)
         }
     }
 
-    CFE_ES_WriteToSysLog("FCS exit: frames=%lu torque=%lu acks=%lu resends=%lu onboard=%lu trips=%u mode=%u\n",
+    CFE_ES_WriteToSysLog("FCS exit: frames=%lu torque=%lu acks=%lu resends=%lu onboard=%lu trips=%u burn=%lu/%lu claimed=%.4g mode=%u\n",
                          (unsigned long)FCS_AppData.SensorFramesReceived,
                          (unsigned long)FCS_AppData.TorqueCommandsIssued,
                          (unsigned long)FCS_AppData.StepAcksIssued,
                          (unsigned long)FCS_AppData.StepAckResends, (unsigned long)FCS_AppData.OnboardFramesReceived,
-                         (unsigned)FCS_AppData.ModeTrips, (unsigned int)FCS_AppData.Mode);
+                         (unsigned)FCS_AppData.ModeTrips, (unsigned long)FCS_AppData.HkTlm.Payload.BurnCommandsAccepted,
+                         (unsigned long)FCS_AppData.BurnFramesForwarded, FCS_AppData.BurnImpulseClaimed,
+                         (unsigned int)FCS_AppData.Mode);
 
     CFE_ES_ExitApp(RunStatus);
 }

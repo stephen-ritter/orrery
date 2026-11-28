@@ -34,5 +34,6 @@
 #define BSK_LINK_STORE_EVICT_INF_EID     27 /* proven-received file recycled       */
 #define BSK_LINK_STORE_ACKWRN_INF_EID    28 /* ack-pending overflow: proof         */
                                             /* capacity, not transfer capacity     */
+#define BSK_LINK_BURN_INF_EID            29 /* burn frame forwarded to the sim     */
 
 #endif /* BSK_LINK_EVENTS_H */

@@ -49,6 +49,13 @@
  *  CAM_HK-vs-CamState divergence pair, not by a barrier the physics waits on. */
 #define BSK_LINK_CAM_TOPIC "CAM"
 
+/** ZMQ topic of the per-tick burn frame (egress). One frame per sensor frame
+ *  while fcs holds an open quota, and apply-ONCE downstream: each frame buys
+ *  exactly one tick of thrust, so a craft that stops egressing stops pushing.
+ *  Fire-and-forget like CAM — a dropped frame costs one tick of honest
+ *  under-thrust, visible as claim-vs-applied divergence at the bench. */
+#define BSK_LINK_BURN_TOPIC "BURN"
+
 /* Store outlet: image bytes ride the sensor feed as their own topic
  * (fire-and-forget like every other sim frame), sliced so one frame never
  * has to hold a whole PNG. */
@@ -198,6 +205,9 @@ typedef struct
     uint32 CamRecvCount;       /* cam configs taken off the bus                  */
     uint32 CamFwdCount;        /* cam configs written to the sim                 */
     uint32 CamDropCount;       /* wrong length or egress send failed             */
+    uint32 BurnRecvCount;      /* burn frames taken off the bus (1 Hz while open)*/
+    uint32 BurnFwdCount;       /* burn frames written to the sim (each = 1 tick) */
+    uint32 BurnDropCount;      /* wrong length or egress failed: one tick lost   */
     /* Store outlet: reassembly of the sim's IMG chunk stream into
      * /cf/img files. The fd belongs to the ONE open capture; ordering is
      * TCP's, so anything out of sequence is damage to count, not to chase. */

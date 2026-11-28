@@ -732,6 +732,57 @@ static void BSK_Link_ForwardCamConfig(const CFE_SB_Buffer_t *BufPtr)
 /* -------------------------------------------------------------------------- */
 
 /**
+ * Forward one per-tick burn frame from the bus out to the Basilisk sim.
+ *
+ * The frame stream IS the thrust: fcs egresses one frame per sensor frame
+ * while a quota is open, the sim buys one tick of thrust per frame received,
+ * so a stall here costs exactly one tick of under-thrust - never a lingering
+ * wrong force the sim would keep applying. Frames are small and paced by
+ * the control loop (1 Hz while a burn runs, silent otherwise), so the event
+ * throttle is the torque one: first frame plus every N, drops loud once.
+ */
+static void BSK_Link_ForwardBurn(const CFE_SB_Buffer_t *BufPtr)
+{
+    const CFE_MSG_Message_t *Msg    = &BufPtr->Msg;
+    size_t                   MsgLen = 0;
+    BskBurnCmd_Payload_t     Body;
+
+    BSK_LinkAppData.BurnRecvCount++;
+
+    CFE_MSG_GetSize(Msg, &MsgLen);
+    if (MsgLen != sizeof(BskBurnCmdTlm_t))
+    {
+        BSK_LinkAppData.BurnDropCount++;
+        return;
+    }
+    memcpy(&Body, (const uint8 *)Msg + sizeof(CFE_MSG_TelemetryHeader_t), sizeof(Body));
+
+    if (BSK_Link_EgressFrame(&Body, sizeof(Body), BSK_LINK_BURN_TOPIC))
+    {
+        BSK_LinkAppData.BurnFwdCount++;
+        if ((BSK_LinkAppData.BurnFwdCount == 1) ||
+            ((BSK_LinkAppData.BurnFwdCount % BSK_LINK_TORQUE_EVENT_EVERY) == 0))
+        {
+            CFE_EVS_SendEvent(BSK_LINK_BURN_INF_EID, CFE_EVS_EventType_INFORMATION,
+                              "burn frame forwarded t=%.1fs F=%.3g N burn=%llu total=%lu", Body.SimTimeS, Body.ForceN,
+                              (unsigned long long)Body.BurnId, (unsigned long)BSK_LinkAppData.BurnFwdCount);
+        }
+    }
+    else
+    {
+        if (BSK_LinkAppData.BurnDropCount == 0)
+        {
+            CFE_EVS_SendEvent(BSK_LINK_EGRESS_ERR_EID, CFE_EVS_EventType_ERROR,
+                              "burn frame dropped: no egress capacity (%s); one tick of thrust lost",
+                              BSK_LinkCmdEndpoint);
+        }
+        BSK_LinkAppData.BurnDropCount++;
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
  * Pull one multipart frame off the feed, if one is fully queued, and account for it.
  *
  * Reading topic and payload together matters: a topic consumed without its payload
@@ -2367,6 +2418,15 @@ static int32 BSK_Link_AppInit(void)
                           "cam config subscribe failed, status=%08x; camera command surface DEAD",
                           (unsigned int)Status);
     }
+    /* Burn frame egress. Failed subscribe = the craft thinks it is thrusting
+     * while the world sees nothing - the two ledgers will show it at the
+     * bench; the control and gate paths above stay untouched. Loud, not fatal. */
+    Status = CFE_SB_Subscribe(CFE_SB_ValueToMsgId(BSK_LINK_BURN_COMMAND_TLM_MID), BSK_LinkAppData.CmdPipe);
+    if (Status != CFE_SUCCESS)
+    {
+        CFE_EVS_SendEvent(BSK_LINK_SUBSCRIBE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "burn frame subscribe failed, status=%08x; burn egress DEAD", (unsigned int)Status);
+    }
     /* The recorder's witnesses, both on CF's own MIDs: what CF was asked to
      * transfer (with the class the ground chose) and how CF closed each
      * transaction. A failed subscribe costs the store its ability to forget
@@ -2663,6 +2723,10 @@ void BSK_LINK_AppMain(void)
                 {
                     BSK_Link_ForwardCamConfig(BufPtr);
                 }
+                else if (MsgIdValue == (CFE_SB_MsgId_Atom_t)BSK_LINK_BURN_COMMAND_TLM_MID)
+                {
+                    BSK_Link_ForwardBurn(BufPtr);
+                }
                 else if (MsgIdValue == (CFE_SB_MsgId_Atom_t)CF_CMD_MID)
                 {
                     BSK_Link_WitnessCfCommand(BufPtr, MsgSize);
@@ -2679,7 +2743,7 @@ void BSK_LINK_AppMain(void)
         }
     }
 
-    CFE_ES_WriteToSysLog("BSK_LINK exit: recv=%lu frames=%lu bad=%lu other_topic=%lu torque=%lu/%lu/%lu acks=%lu/%lu/%lu cam=%lu/%lu/%lu store=%llu files/%llu B drops=%lu\n",
+    CFE_ES_WriteToSysLog("BSK_LINK exit: recv=%lu frames=%lu bad=%lu other_topic=%lu torque=%lu/%lu/%lu acks=%lu/%lu/%lu cam=%lu/%lu/%lu burn=%lu/%lu/%lu store=%llu files/%llu B drops=%lu\n",
                          (unsigned long)BSK_LinkAppData.MsgRecvCount,
                          (unsigned long)BSK_LinkAppData.SensorMsgCount,
                          (unsigned long)BSK_LinkAppData.MalformedMsgCount,
@@ -2693,6 +2757,9 @@ void BSK_LINK_AppMain(void)
                          (unsigned long)BSK_LinkAppData.CamRecvCount,
                          (unsigned long)BSK_LinkAppData.CamFwdCount,
                          (unsigned long)BSK_LinkAppData.CamDropCount,
+                         (unsigned long)BSK_LinkAppData.BurnRecvCount,
+                         (unsigned long)BSK_LinkAppData.BurnFwdCount,
+                         (unsigned long)BSK_LinkAppData.BurnDropCount,
                          (unsigned long long)BSK_LinkAppData.FilesStored,
                          (unsigned long long)BSK_LinkAppData.BytesStored,
                          (unsigned long)BSK_LinkAppData.ImgDropCount);
