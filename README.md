@@ -1,16 +1,21 @@
 # orrery
 
-A whole fake constellation on one laptop: realistic Basilisk digital-twin physics,
-real flight software running on NASA core Flight Software (cFS), and OpenC3 COSMOS
-as ground control. One scenario file is the world — every `[[spacecraft]]` block
-flies its own container and its own ground services, and the shared world steps
-only when every vehicle has acked. Like the clockwork it is named for: one crank,
-every body at once.
+orrery runs a complete mission loop on one workstation: Basilisk physics
+simulating the spacecraft, flight software built on NASA core Flight Software
+(cFS) running in real closed loop, and OpenC3 COSMOS as the ground station.
+
+A scenario file defines the mission. Each spacecraft it declares runs as its
+own flight-software container with its own ground services, and the shared
+simulation advances only when every vehicle has acknowledged the control tick
+— one world, every vehicle on the same clock. Ports, ground-station targets,
+command and telemetry definitions, and the acceptance checks that prove them
+are all generated from the same definition, so the simulator, the flight
+software, and the ground station can never disagree about what was built.
 
 ## Getting started
 
 Requirements: Linux or macOS with **Docker** and **[uv](https://docs.astral.sh/uv/)**.
-No cFS source, no COSMOS checkout, no Python setup — the yard fetches and pins
+No cFS source, no COSMOS checkout, no Python setup — the build fetches and pins
 those itself.
 
 ```bash
@@ -33,11 +38,11 @@ the Basilisk engine and the EDS binding exist:
    engine volume, and builds the EdsLib binding inside that same interpreter.
 
 `scripts/fleet.sh` is the documented door (bare `docker compose up` works once
-`ORRERY_UID`/`ORRERY_GID` are exported, but skips `fleet.sh`'s laws — see
-[The fleet](#the-fleet)). `scripts/mission_build.sh` is the standalone build for
-when you have edited flight software and want the receipt on its own.
+`ORRERY_UID`/`ORRERY_GID` are exported, but skips the checks `fleet.sh` performs
+— see [The fleet](#the-fleet)). `scripts/mission_build.sh` is the standalone
+build for when you have edited flight software and want the receipt on its own.
 
-Want ground control too (optional; the yard flies without it):
+Want ground control too (optional; the fleet runs without it):
 
 ```bash
 scripts/cosmos_stack.sh    # fetches COSMOS to the cosmos.lock pin, starts it,
@@ -47,64 +52,68 @@ scripts/cosmos_stack.sh    # fetches COSMOS to the cosmos.lock pin, starts it,
 Adding a vehicle means editing two places — the scenario block and a service
 pair in `compose.yml`; `docs/adding_a_spacecraft.md` walks through it.
 
-## What flies today
+## Capabilities
 
-Every line here is a row in the acceptance ladder, not a claim:
-`bash scripts/verify.sh` flies them all, offline mirrors through live fleet.
+Every capability below is proven by the acceptance ladder:
+`bash scripts/verify.sh` runs the offline checks and the live benches.
 
-**One scenario file, N vehicles.** Each `[[spacecraft]]` block gets its own
+**Vehicle fleet from one scenario.** Each `[[spacecraft]]` block gets its own
 container, lockstep gate, port block, and COSMOS targets — all derived from the
-block, never declared twice. A perpetual run (`DURATION=inf`) stops politely at
-a tick boundary and prints its digest.
+block, never declared twice. A perpetual run (`DURATION=inf`) stops on request
+at a tick boundary and prints its trajectory digest.
 
-**Real flight software, in closed loop.** Attitude control with a supervisor
-that trips, refuses, and recovers on a live bus; a burn door that vetoes
-nonsense and overlapping asks before anything reaches the plant; stored
-sequences (`sps`) that execute on the sim's own clock — the satellite carrying
-out the future without further contact.
+**Closed-loop flight software.** Attitude control with a supervisor that
+detects faults, refuses invalid commands, and recovers on a live bus. Burn
+requests are validated before execution — malformed asks and overlapping burns
+are rejected before anything reaches the simulation. Stored sequences (`sps`)
+hold commands with execution times and run them aboard on the simulation
+clock, with no further ground contact.
 
-**Authority that can run out.** Thruster sets allocate force per tick and a
-clipped tick is counted, truth-visible. A declared fuel tank drains natively as
-the nozzles fire, and the world prices every tick before writing it — squeezing
-asks the stock cannot cover, then starving whole ticks at exactly zero. The
-published exhibit: a craft claiming 327 N·s while the world applied 49.1 and
-the tank sat at `0.0` kg — because the craft is fuel-blind by design (no
-sensor, no fuel claim, nothing to lie about).
+**Fuel-limited thrust authority.** Thrusters allocate force per control tick,
+and a tick the hardware cannot fully deliver is counted and visible in truth.
+A declared fuel tank drains natively as the thrusters fire, and the simulation
+prices every tick before applying it — reducing asks the remaining stock
+cannot cover and withholding ticks entirely once the tank is empty, to exactly
+zero. The spacecraft itself carries no fuel sensor and makes no fuel claim;
+fuel is reported only on the simulation's truth stream.
 
-**Transfers a tank can budget.** A Hohmann transfer composed ground-side from
-plain per-burn asks: leg 1 full authority, the second leg fired at the apoapsis
-*measured* on the truth stream (nothing predicted), and the verdict is the
-orbit itself — eccentricity collapsing from 3.0e-3 to 1.4e-4, confirmed
-circular by a 240 s coast. An over-priced third ask meets the dry door again,
-and the fuel shortfall stays visible in the orbit, not just the ledgers.
-There is no DO_HOHMANN command, on purpose: primitives fly, procedures compose.
+**Orbital transfers.** Hohmann transfers are flown ground-side as a sequence
+of the same burn commands an operator uplinks: an initial burn raises the
+apoapsis, the second burn fires at the apoapsis detected from the truth
+stream, and the result is verified from the orbit itself — eccentricity
+collapsing, radius holding steady on a confirmation coast. The deliberate
+absence of a dedicated transfer command is the design: flight software
+executes primitives, and the ground composes them into maneuvers.
 
-**Two ledgers, one mission.** The craft claims what it forwarded (HK and
-beacon); the world applies what physics delivered (the truth stream). They are
-allowed to diverge — every bench measures the gap rather than hiding it — and
-the sim is the only place both books meet.
+**Separate craft and world telemetry.** The spacecraft's telemetry reports
+what it commanded; the truth stream reports what the simulation applied. The
+two are distinct packets on distinct wires by construction, divergence between
+them is expected under fuel exhaustion or hardware saturation, and the sim is
+the only place both are visible.
 
-**Cameras across the airgap.** A commanded eye lands on both views; image
-files cross byte-identical; the ground names a file from the store's own
-manifest and receives it, with the link healing without a bounce — all while
-the trajectory digests refuse to move.
+**Camera operations across the airgap.** Pointing commands land on both the
+vehicle's view and the station's views; recorded image files cross to the
+ground byte-identical; the ground selects a file by name from the onboard
+store's manifest and receives it, recovering from link interruptions without
+restarting the transfer — with the trajectory digests unchanged throughout.
 
-**Knowledge beside truth.** A modelled receiver and star tracker publish their
-own opinions (`NavState`, `AttitudeState`) next to the truth stream; acceptance
-asserts the pair must *differ* at device scale and *agree* as one world,
-bounded by the sigmas the scenario file itself declares.
+**Onboard knowledge beside simulated truth.** A modelled receiver and a
+modelled star tracker publish independent estimates (`NavState`,
+`AttitudeState`) alongside the truth stream; the acceptance checks require
+them to differ from truth at sensor scale and to agree within the uncertainties
+the scenario declares — so onboard knowledge is exercised as knowledge, not
+as a copy of the truth.
 
-**The boot handshake.** Every tick, the vehicle compares three views of its
-fit — what the scenario claims, what the binary was built with, what the bus
-actually streams — and names the disagreement; a schema mismatch stops the
-mission rather than decoding bytes under the wrong layout.
+**Boot-time configuration handshake.** Each control tick, the vehicle compares
+its scenario's declared configuration, the firmware's build-time registry, and
+the data actually streaming on the bus, and reports any disagreement. A schema
+mismatch halts the mission rather than decoding bytes under the wrong layout.
 
-**Bit-exact determinism.** Pinned trajectory digests in `tests/baselines/` are
-re-flown by the ladder; a scheduled flight repeats itself and *disagrees* with
-its reactive twin on purpose; the yard refuses to boot firmware its own build
-did not stamp.
+**Deterministic regression.** Pinned trajectory digests in `tests/baselines/`
+are re-flown by the acceptance ladder, a scheduled flight repeats bit-exactly,
+and the launch refuses to boot firmware its own build did not stamp.
 
-## The world and the wire
+## Data paths and ports
 
 **Truth never flows through cFS.** Sim truth reaches the ground over its own
 per-vehicle path — world → truth gateway (`sim/truth_gateway.py`) → COSMOS
@@ -125,8 +134,8 @@ derived from its scenario position.
 | `5580` | ZMQ PUB (sim → cFS) | Basilisk sensor frames (EDS-encoded, onboard view: biased + noisy) |
 | `5581` | ZMQ PULL (cFS → sim) | actuator commands into the plant — `fcs` wheel torques and the per-tick burn frames, via `bsk_link` |
 | `5590` | ZMQ PUB (sim → ground) | truth state → truth gateway → `TRUTH_<vehicle>`, never through cFS |
-| `5591` | ZMQ PUB (sim) | echo of the torque the effector ACTUALLY felt, frame-matched (lockstep ground proof) |
-| `5150` | TCP (ground) | truth gateway server: COSMOS's truth interface dials *in*; telemetry-only, truth uplink refused |
+| `5591` | ZMQ PUB (sim) | echo of the torque the effector actually applied, frame-matched (lockstep ground proof) |
+| `5150` | TCP (ground) | truth gateway server: COSMOS's truth interface dials in; telemetry-only, truth uplink refused |
 | `2900` | HTTP | COSMOS CE web + JSON-RPC API |
 
 ```mermaid
@@ -146,38 +155,39 @@ flowchart LR
 Every world tick checks on an ack from every vehicle (lockstep), so the diagram
 is a loop the whole fleet turns together, not a pipeline. The tick's rate is the
 scenario's `[simulation.dt] fsw` — the same number that sets the Basilisk
-fswTask rate, read from the TOML.
+fswTask rate, read from the scenario file.
 
 ## The fleet
 
-The scenario file IS the fleet: block index is the port slot (block 0 = the
-legacy set), the block name is the COSMOS target (`SAT_<NAME>`, `TRUTH_<NAME>`),
-and one Basilisk world steps only when every container has acked.
+The scenario file defines the fleet: block index is the port slot (block 0 uses
+the legacy range), the block name is the COSMOS target (`SAT_<NAME>`,
+`TRUTH_<NAME>`), and one Basilisk world steps only when every container has
+acked.
 
 ```bash
 scripts/fleet.sh up sim/scenarios/twin_ops.toml    # 2 vehicles, one shared world
-DURATION=inf scripts/fleet.sh up sim/scenarios/twin_ops.toml  # perpetual: turns until `down`
+DURATION=inf scripts/fleet.sh up sim/scenarios/twin_ops.toml  # runs until stopped
 scripts/fleet.sh status sim/scenarios/twin_ops.toml
 scripts/fleet.sh down
 ```
 
-`fleet.sh up` keeps laws a raw `compose up` would skip: ports derived from the
-scenario, a boot-proof wait (each vehicle's own line naming its own beacon and
-uplink, not a fixed sleep), a provenance check of the binary that flew, a
-pre-launch sweep of stale containers and evidence — and a stop delivered at a
-tick boundary so a perpetual run still prints its digest.
+`fleet.sh up` performs checks a bare `compose up` skips: ports derived from the
+scenario, a boot-proof wait (each vehicle's own startup line naming its own
+beacon and uplink, not a fixed sleep), a provenance check of the binary that
+flew, a pre-launch sweep of stale containers and evidence — and a stop
+delivered at a tick boundary so a perpetual run still prints its digest.
 
-## Parts, not wiring
+## Component registry
 
 The scenario file is the **vehicle manifest**: a `[[spacecraft.sensors]]` block
-picks a part, and the parts catalogue (`registry/parts.toml`) says what that
-part means in flight software and on the ground — its airgap topic, EDS
-container, MsgId, its EVS voice, and the acceptance exhibit it must arrive
-with. Fitting a registered part is a manifest edit: the topicids header, the
-frame table, the beacon table, the COSMOS defs, and the truth-vs-flight exhibit
-all arrive by generation, with zero C edits (one superset firmware; presence is
-runtime data). `docs/adding_a_sensor.md` is the procedure and the honest account
-of what remains hand-authored and why.
+picks a component, and the component registry (`registry/parts.toml`) defines
+what that component means in flight software and on the ground — its airgap
+topic, EDS container, MsgId, its EVS events, and the acceptance check it must
+pass. Adding a registered component is therefore a manifest edit: the topicids
+header, the frame table, the beacon table, the COSMOS defs, and the
+truth-vs-flight check all arrive by generation, with zero C edits (one superset
+firmware; presence is runtime data). `docs/adding_a_sensor.md` is the procedure
+and the honest account of what remains hand-authored and why.
 
 ## Layout
 
@@ -185,10 +195,10 @@ of what remains hand-authored and why.
 | --- | --- |
 | `sim/` | the Basilisk plants and the shared lockstep rig: `forge_scenario.py` builds plants from `scenarios/*.toml` (`twin_ops.toml` the fleet, `chief.toml` the operations plant, `burn.toml` / `fuel.toml` / `hohmann.toml` the authority benches), `lockstep.py` the barrier/clock/link gate, `truth_gateway.py` the per-vehicle truth server |
 | `cfs_mission/` | cFS mission layer — our apps (`fcs`, `bsk_link`, `gs_tcp`, `sps`, …) and defs, grafted onto the core at configure time; the core is fetched to `cfs_mission/cfs.lock`'s pin, never vendored |
-| `registry/` | `parts.toml` — the parts catalogue; `coverage.toml` — the ledger of what is supported, refused, and unwired |
+| `registry/` | `parts.toml` — the component registry; `coverage.toml` — the ledger of what is supported, refused, and unwired |
 | `docs/` | `adding_a_scenario.md`, `adding_a_sensor.md`, `adding_a_spacecraft.md` — the three ways to extend; `data_provenance.md` — the truth/knowledge boundary; `coverage.md` — generated from the ledger |
 | `edslink/` + `codegen/` | the mission EDS compiled to a runtime schema, and the generators that derive COSMOS defs, bus tables, and every identity surface a registered part claims from it |
 | `cosmos_plugin/` | the OpenC3 plugin: `SAT_<vehicle>` and `TRUTH_<vehicle>` targets, screens, and interfaces |
-| `scripts/` | `fleet.sh` (the door), `cosmos_stack.sh`, `verify.sh` (the acceptance ladder), and one `check_*.sh` per live bench |
+| `scripts/` | `fleet.sh` (the standard entry point), `cosmos_stack.sh`, `verify.sh` (the acceptance ladder), and one `check_*.sh` per live bench |
 | `tests/` | the offline half of the ladder: units, wire pins, codegen idempotence, pinned trajectory baselines |
-| `docker/` | the yard's two image recipes, built by the init services or `scripts/image.sh` |
+| `docker/` | the two image recipes, built by the init services or `scripts/image.sh` |
