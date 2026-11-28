@@ -160,7 +160,7 @@ command_path = """COSMOS/ground -> FCS_BURN quota -> fcs doors (nonsense and ove
     the world's fuel door (tank priced per tick: throttle, starve) -> force
     world-side; claims ride FCS_HK, applied AND fuel ride TRUTH (bench only)"""
 first_hop = "provider"
-scenarios = ["burn.toml", "fuel.toml"]
+scenarios = ["burn.toml", "fuel.toml", "hohmann.toml"]
 owner = "authority"
 why = """The quota law flies since 2026-11-27: the ground commands
 {force, duration, axis}, the craft doors it and egresses one BurnCommand per tick
@@ -172,7 +172,14 @@ prices every tick's ask against the tank's native books, throttles what it canno
 cover, and starves whole ticks at EXACT zero - while the craft, fuel-blind by
 design (no sensor, no fuel claim), keeps claiming what it was given. The fuel
 bench's published exhibit: claim 327 N s against applied 49.1, tank EXACTLY 0.0 kg,
-55 starved ticks.
+55 starved ticks. The Hohmann rung (2026-11-28) made fuel the MISSION budget: the transfer
+is composed ground-side from plain FCS_BURN legs (no HOHMANN command exists, on purpose -
+primitives fly, procedures compose), leg 2 fires at the apoapsis MEASURED on the truth
+stream (radial-velocity flip; nothing predicted), and the verdict is the orbit itself -
+e 3.0e-3 to 1.44e-4, r held to 64 m over a 240 s confirmation coast. The over-priced third
+ask (12.24 kg against 1.93 surviving) bought ~38 ticks, throttled 2, starved 201: claim
+15,500 N s against applied 5,395, tank to the exact-zero clamp - and the survivors' partial
+burn re-elliptized the orbit (e 3.3e-3 after), physics refusing to hide the shortfall.
 What keeps this row command-path is knowledge, not force: the world's applied
 ledger rides TRUTH, which is the bench's stream and never the bus. The path to
 landed is the one the camera walked - a forge-sampled BurnState (fuel rows
