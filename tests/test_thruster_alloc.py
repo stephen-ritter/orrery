@@ -107,3 +107,20 @@ def test_honest_inputs_or_nothing() -> None:
         allocate_on_times(CROSS_X_DIRS, CROSS_X_UMAX, np.array([1.0, 1.0]), TICK)
     with pytest.raises(ValueError, match="max_thrusts"):
         allocate_on_times(CROSS_X_DIRS, np.full(3, 5.0), np.zeros(3), TICK)
+
+
+def test_scaling_a_plan_is_linear_in_every_book() -> None:
+    """BurnAllocation.scaled is the door's affordability shrink (fuel rung).
+
+    One ask, one squeeze: force, on-times and (linearly) fuel cost all move
+    by the ratio; direction survives; saturation is a shape, so a shortfall
+    stays true and a clean plan stays clean.
+    """
+    demand = np.array([4.0, 0.0, 0.0])
+    plan = allocate_on_times(CROSS_X_DIRS, CROSS_X_UMAX, demand, TICK)
+    half = plan.scaled(0.5)
+    assert np.allclose(half.on_times_s, 0.5 * plan.on_times_s)
+    assert np.allclose(half.achieved_force_B, 0.5 * plan.achieved_force_B)
+    assert half.saturated == plan.saturated
+    over = allocate_on_times(CROSS_X_DIRS, CROSS_X_UMAX, 100.0 * demand, TICK)
+    assert over.scaled(0.5).saturated, "a clipped plan stays clipped when shrunk"

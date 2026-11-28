@@ -78,7 +78,10 @@ run_cli setpassword >/dev/null 2>&1 || true
 # 0.1.14: the prebaked purge - thirteen silent modules left the dictionary
 #         (63 -> 32 command packets, 298 -> 133 SPS rows). A station must not
 #         offer commands for apps that no longer boot.
-GEM_VERSION=0.1.15
+# 0.1.16: the truth frames grow the fuel ledger (TruthState 18 -> 22 f64:
+#         remaining/spent kg, starved/throttled ticks). Only TRUTH_* targets
+#         change: fuel is the world's book, never a beacon packet.
+GEM_VERSION=0.1.16
 rm -f "$REPO/cosmos_plugin"/openc3-cosmos-orrery-*.gem \
       # a stale gem in here gets bundled as DATA and re-extracts as a nested plugin on load
 docker run --rm -v "$REPO/cosmos_plugin:/p" --user "$(id -u):$(id -g)" ruby:3.4-slim \

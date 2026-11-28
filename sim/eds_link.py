@@ -218,15 +218,22 @@ def encode_truth_state(
     v_bn_n: tuple[float, float, float],
     sigma_bn: tuple[float, float, float, float],
     omega_bn_b: tuple[float, float, float],
+    *,
     burn_impulse_applied_ns: float = 0.0,
     burn_ticks_applied: float = 0.0,
     burn_ticks_saturated: float = 0.0,
     burn_id: float = 0.0,
+    fuel_remaining_kg: float = float("nan"),
+    fuel_spent_kg: float = float("nan"),
+    fuel_ticks_starved: float = 0.0,
+    fuel_ticks_throttled: float = 0.0,
 ) -> Any:  # noqa: ANN401 - stub-less C extension
     """Build a packed ``BSK_LINK/TruthState`` (ground truth stream, never on cFS).
 
     The burn ledger defaults to silence: a plant that never thrusts says so
-    with zeros, and every pre-burn caller stays untouched.
+    with zeros, and every pre-burn caller stays untouched. The fuel rows
+    default to the other idiom: NaN declares "this vehicle has no tank"
+    where zero would lie about stock; the event counts are true zeros.
     """
     lib = _lib()
     obj = entry("BSK_LINK/TruthState")()
@@ -243,6 +250,10 @@ def encode_truth_state(
     obj["BurnTicksApplied"] = burn_ticks_applied
     obj["BurnTicksSaturated"] = burn_ticks_saturated
     obj["BurnId"] = burn_id
+    obj["FuelRemainingKg"] = fuel_remaining_kg
+    obj["FuelSpentKg"] = fuel_spent_kg
+    obj["FuelTicksStarved"] = fuel_ticks_starved
+    obj["FuelTicksThrottled"] = fuel_ticks_throttled
     return lib.PackedObject(obj)
 
 

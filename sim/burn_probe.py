@@ -49,7 +49,7 @@ EVS_FCS_BURN_REJ_EID = 19  # FCS_BURN_REJ_ERR_EID
 EVS_FCS_BURNSTOP_EID = 21  # FCS_BURNSTOP_INF_EID
 EVS_FCS_BURN_DONE_EID = 22  # FCS_BURN_DONE_INF_EID
 
-TRUTH_F64_COUNT = 18  # BSK_LINK/TruthState: 14 orbit/attitude + 4 burn rows
+TRUTH_F64_COUNT = 22  # BSK_LINK/TruthState: 14 orbit/attitude + 4 burn + 4 fuel rows
 IMPULSE = 14  # BurnImpulseAppliedNs
 TICKS_APPLIED = 15  # BurnTicksApplied
 TICKS_SATURATED = 16  # BurnTicksSaturated
@@ -63,7 +63,7 @@ class TruthWatcher:
     """The world's own voice: the sim's truth PUB, ground-side.
 
     The applied ledger lives here and nowhere else onboard can see it -
-    that separation IS the two-ledger law. Raw 144 B frames (18 LE f64)
+    that separation IS the two-ledger law. Raw 176 B frames (22 LE f64)
     on topic TRUTH, one per lockstep tick.
     """
 
@@ -85,7 +85,7 @@ class TruthWatcher:
             except zmq.Again:
                 return
             if len(parts) == 2 and len(parts[1]) == TRUTH_F64_COUNT * 8:
-                self.latest = struct.unpack("<18d", parts[1])
+                self.latest = struct.unpack("<22d", parts[1])
                 self.frames += 1
 
 

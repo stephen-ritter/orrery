@@ -48,6 +48,20 @@ class BurnAllocation:
     achieved_force_B: np.ndarray
     saturated: bool
 
+    def scaled(self, ratio: float) -> BurnAllocation:
+        """Proportionally shrink this plan: same shape, ratio of the burn.
+
+        Fuel cost is linear in on-time, so scaling a plan by an
+        affordability ratio stays a consistent plan: the force, the
+        on-times and the fuel they cost all shrink by exactly `ratio`.
+        Saturation is a shape, not a size: a shortfall stays true.
+        """
+        return BurnAllocation(
+            on_times_s=self.on_times_s * ratio,
+            achieved_force_B=self.achieved_force_B * ratio,
+            saturated=self.saturated,
+        )
+
 
 def allocate_on_times(
     directions_B: np.ndarray,

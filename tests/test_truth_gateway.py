@@ -13,14 +13,14 @@ from codegen.eds2cosmos import TRUTH_HEADER_BYTES, TRUTH_PACKET_ID
 from sim.fleet import truth_target
 from sim.truth_gateway import build_frame
 
-TRUTH_PAYLOAD_BYTES = 144  # BSK_LINK/TruthState: 18 LE float64 (14 + burn ledger)
+TRUTH_PAYLOAD_BYTES = 176  # BSK_LINK/TruthState: 22 LE f64 (14 orbit + burn + fuel ledgers)
 
 
 def test_frame_header_matches_the_generated_def_and_protocol() -> None:
     """The one header every reader agrees on: def, length protocol, wire."""
     payload = bytes(range(TRUTH_PAYLOAD_BYTES))
     frame = build_frame(payload)
-    assert len(frame) == TRUTH_HEADER_BYTES + TRUTH_PAYLOAD_BYTES == 148
+    assert len(frame) == TRUTH_HEADER_BYTES + TRUTH_PAYLOAD_BYTES == 180
     packet_id, reserved, length = struct.unpack_from(">BBH", frame)
     assert packet_id == TRUTH_PACKET_ID == 1  # def: APPEND_ID_ITEM PACKET_ID 8 UINT 1
     assert reserved == 0  # def: HEADER_RESERVED "zero on the wire"

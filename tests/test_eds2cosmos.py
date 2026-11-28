@@ -565,11 +565,11 @@ def test_truth_defs_generated_from_the_bare_container(eds: Eds) -> None:
     from codegen.eds2cosmos import _cosmos_name, emit_cosmos_truth
 
     items = eds.leaf("BSK_LINK/TruthState", "BSK_LINK")
-    assert len(items) == 18, "TruthState is 18 float64s (144 B: 14 orbit + burn ledger)"
+    assert len(items) == 22, "TruthState is 22 float64s (176 B: 14 orbit + burn + fuel)"
     text = emit_cosmos_truth(items, target="TRUTH_CHIEF")
     assert "APPEND_ID_ITEM PACKET_ID 8 UINT 1" in text
     assert "APPEND_ITEM PACKET_LENGTH 16 UINT" in text
-    assert text.count("APPEND_ITEM") == 2 + 18  # reserved + length + payload
+    assert text.count("APPEND_ITEM") == 2 + 22  # reserved + length + payload
     for item in items:
         assert f"APPEND_ITEM {_cosmos_name(item.name)}" in text
     assert "COMMAND" not in text  # absence-of-cmd-def is the tripwire

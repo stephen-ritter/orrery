@@ -235,7 +235,7 @@ def test_burn_frame_round_trips_at_its_pinned_length() -> None:
 
 
 def test_truth_frame_carries_the_applied_ledger() -> None:
-    """144 B: 14 orbit doubles plus the four-row burn ledger, ground-side only."""
+    """176 B: 14 orbit doubles plus the four-row burn and four-row fuel ledgers, ground only."""
     frame = truth_bytes(
         Truth(
             sim_time_s=1.0,
@@ -249,7 +249,7 @@ def test_truth_frame_carries_the_applied_ledger() -> None:
             burn_id=3.0,
         )
     )
-    assert len(frame) == 144
+    assert len(frame) == 176
     obj = entry("BSK_LINK/TruthState")(_lib().PackedObject(frame))
     assert float(obj["BurnImpulseAppliedNs"]()) == pytest.approx(30.5)
     assert float(obj["BurnTicksApplied"]()) == 10.0

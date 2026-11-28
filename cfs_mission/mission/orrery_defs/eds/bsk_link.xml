@@ -291,6 +291,17 @@
           <Entry name="BurnTicksApplied" type="float64" shortDescription="ticks this vehicle actually thrust" />
           <Entry name="BurnTicksSaturated" type="float64" shortDescription="applied ticks the hardware could not fully deliver" />
           <Entry name="BurnId" type="float64" shortDescription="craft ordinal of the last applied burn (0: never)" />
+          <!-- The fuel ledger (fuel rung). The tank is the world's physical
+               stock: it drains natively as the set fires and does NOT gate
+               the force (measured, bsk 2.12), so the world reads it and
+               withholds what it cannot afford. A vehicle with NO declared
+               tank reports NaN for the two mass rows - an absence declared,
+               not a zero-filled fiction - while the two event counts are
+               true zeros: a tankless plant never starved a tick. -->
+          <Entry name="FuelRemainingKg" type="float64" shortDescription="tank stock at this instant [kg]; NaN when no tank is declared" />
+          <Entry name="FuelSpentKg" type="float64" shortDescription="fuel the tank reported spending this flight [kg]; NaN when no tank is declared" />
+          <Entry name="FuelTicksStarved" type="float64" shortDescription="ticks a burn ask met an empty tank and was withheld" />
+          <Entry name="FuelTicksThrottled" type="float64" shortDescription="ticks the ask was squeezed to what the fuel could buy" />
         </EntryList>
       </ContainerDataType>
 

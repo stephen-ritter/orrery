@@ -121,6 +121,11 @@ from sim.parts import (
 )
 from sim.thruster_alloc import allocate_on_times
 
+#: Standard gravity: the Isp-to-mass-flow conversion Basilisk itself uses
+#: (mdot = F / (Isp * g0)), stated here because the world's fuel door does
+#: the same arithmetic to price a tick's ask before the plant burns it.
+_G0 = 9.80665
+
 DEFAULT_SCENARIO = Path(__file__).parent / "scenarios" / "detumble_forge.toml"
 
 # Registry rows by part name: the world-side provider table looks its
@@ -407,6 +412,17 @@ class ForgeBody:
         self._burn_msg = None
         self._thruster_dirs: np.ndarray | None = None
         self._thruster_umax: np.ndarray | None = None
+        # Fuel (fuel rung): the tank is plant hardware and Basilisk's books
+        # on it are native - but measured on 2.12, an empty tank does NOT
+        # gate the force: the set keeps thrusting. So the world reads the
+        # tank each tick and withholds what it cannot afford: starve when
+        # dry, squeeze the ask when partly full. The craft's claim ledger
+        # stays what it was; the divergence when the tank dies is physics,
+        # and only the bench reads both ledgers.
+        self._fuel_out = None
+        self._fuel_per_ns_per_n: np.ndarray | None = None  # kg per N of thrust-sec, per device
+        self._fuel_load0_kg = 0.0
+        self._fuel_stats = {"starved": 0, "throttled": 0}
         # The tick the quota covers: the rig's control period, told to the
         # body by its scenario; the TOML's fsw rate is the fallback so a
         # hand-built ForgeBody still knows its own rhythm.
@@ -436,6 +452,12 @@ class ForgeBody:
                 [np.asarray(device.thrDir_B, dtype=float).ravel() for device in devices]
             )
             self._thruster_umax = np.array([float(device.MaxThrust) for device in devices])
+            self._fuel_per_ns_per_n = np.array(
+                [1.0 / (float(device.steadyIsp) * _G0) for device in devices]
+            )
+            if thruster.tank is not None:
+                self._fuel_out = thruster.tank.fuelTankOutMsg
+                self._fuel_load0_kg = float(thruster.tank_model.maxFuelMass)
 
         # Knowledge: the TOML decides too. A fitted plant IMU becomes the
         # satellite's rate source - its bias and random walk belong to the
@@ -1042,6 +1064,22 @@ class ForgeBody:
             for eye in self._eyes:
                 eye[3].write(payload)
 
+    def _fuel_remaining(self) -> float:
+        """Live tank stock, with the unwritten-message quirk resolved.
+
+        Before the tank's first dynamics step its output message is
+        untouched and reads ALL-ZERO - which is not "empty", it is "the
+        books have not opened". The tell is the declaration: a written
+        message always carries maxFuelMass > 0 (the schema forbids a zero
+        load), so an unwritten read falls back to the declared load, and a
+        drained-to-exact-zero tank stays exactly zero. Measured on 2.12:
+        the model clamps propMass to 0.0 itself ("depletion is stopped").
+        """
+        msg = self._fuel_out.read()  # ty: ignore[missing-union-attribute] - set with the tank
+        if float(msg.maxFuelMass) <= 0.0:
+            return self._fuel_load0_kg
+        return float(msg.fuelMass)
+
     def apply_burn(self, cmd: BurnCommand) -> None:
         """Spend one tick of a commanded burn's force quota (apply-ONCE).
 
@@ -1073,6 +1111,35 @@ class ForgeBody:
             force / norm * axis,
             self.control_period_s,
         )
+        if self._fuel_out is not None and self._fuel_per_ns_per_n is not None:
+            # Price the tick in fuel, then let the tank's stock spend it.
+            # The demand is the allocation's own plan: each device fires at
+            # MaxThrust for its on-time, so its cost is umax*on/(Isp*g0).
+            remaining = self._fuel_remaining()
+            demand = float(np.dot(self._thruster_umax * alloc.on_times_s, self._fuel_per_ns_per_n))
+            if remaining <= 0.0 or demand > remaining:
+                if remaining <= 0.0:
+                    # Dry: withhold the whole tick. The craft's quota clock
+                    # keeps claiming while the world stays silent - the
+                    # honest divergence, physical this time.
+                    self._fuel_stats["starved"] += 1
+                    return
+                # Partly affordable: squeeze the ask to what the stock can
+                # buy. Fuel cost is linear in on-time, so the affordability
+                # ratio is exact on the second allocation, not an estimate.
+                ratio = remaining / demand
+                alloc = allocate_on_times(
+                    self._thruster_dirs,
+                    self._thruster_umax,
+                    force / norm * axis * ratio,
+                    self.control_period_s,
+                )
+                demand = float(
+                    np.dot(self._thruster_umax * alloc.on_times_s, self._fuel_per_ns_per_n)
+                )
+                if demand > remaining:  # allocation's own clipping, one honest clamp
+                    alloc = alloc.scaled(remaining / demand)
+                self._fuel_stats["throttled"] += 1
         # SWIG ships this name as both module and class in the stub;
         # the class is what calls at runtime.
         payload = messaging.THRArrayOnTimeCmdMsgPayload()  # ty: ignore[not-callable]
@@ -1104,6 +1171,18 @@ class ForgeBody:
         """The simulator's own solution: ideal, unbiased, never on the sensor feed."""
         payload = self._state_sub()
         stats = self._burn_stats
+        fuel = self._fuel_stats
+        if self._fuel_out is not None:
+            # The tank keeps its own books natively; the world reports
+            # them, never a Python-side accounting that could drift.
+            remaining = self._fuel_remaining()
+            fuel_remaining: float = remaining
+            fuel_spent: float = max(self._fuel_load0_kg - remaining, 0.0)
+        else:
+            # No declared tank: the mass rows say so (NaN), the event counts
+            # are true zeros - a tankless plant never starved a tick.
+            fuel_remaining = float("nan")
+            fuel_spent = float("nan")
         return Truth(
             sim_time_s=self.sim_time_s,
             r_bn_n=tuple(np.asarray(payload.r_BN_N, dtype=float).reshape(-1).tolist()),
@@ -1114,6 +1193,10 @@ class ForgeBody:
             burn_ticks_applied=float(stats["applied"]),
             burn_ticks_saturated=float(stats["saturated"]),
             burn_id=float(stats["last_burn_id"]),
+            fuel_remaining_kg=fuel_remaining,
+            fuel_spent_kg=fuel_spent,
+            fuel_ticks_starved=float(fuel["starved"]),
+            fuel_ticks_throttled=float(fuel["throttled"]),
         )
 
     def gyro(self) -> np.ndarray:

@@ -153,6 +153,10 @@ class Truth:
     burn_ticks_applied: float = 0.0
     burn_ticks_saturated: float = 0.0
     burn_id: float = 0.0
+    fuel_remaining_kg: float = float("nan")
+    fuel_spent_kg: float = float("nan")
+    fuel_ticks_starved: float = 0.0
+    fuel_ticks_throttled: float = 0.0
 
 
 def truth_bytes(truth: Truth) -> bytes:
@@ -168,6 +172,10 @@ def truth_bytes(truth: Truth) -> bytes:
             burn_ticks_applied=truth.burn_ticks_applied,
             burn_ticks_saturated=truth.burn_ticks_saturated,
             burn_id=truth.burn_id,
+            fuel_remaining_kg=truth.fuel_remaining_kg,
+            fuel_spent_kg=truth.fuel_spent_kg,
+            fuel_ticks_starved=truth.fuel_ticks_starved,
+            fuel_ticks_throttled=truth.fuel_ticks_throttled,
         )
     )
 

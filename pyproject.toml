@@ -16,7 +16,7 @@ dependencies = [
 # the tag, so "v0.3.0" means one immutable thing forever; bumping it is a
 # deliberate, journaled act, exactly like the cFS and COSMOS pins. (The wheel
 # line still matches: bskforge requires >=2.12.0, we pin ~=2.12.)
-bskforge = { git = "https://github.com/stephen-ritter/bskforge.git", tag = "v0.8.0" }
+bskforge = { git = "https://github.com/stephen-ritter/bskforge.git", tag = "v0.9.0" }
 
 [dependency-groups]
 dev = [

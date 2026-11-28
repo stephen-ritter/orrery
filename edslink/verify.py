@@ -129,7 +129,7 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
         },
     ),
     "TruthState": (
-        "<18d",
+        "<22d",
         {
             "SimTimeS": 3.5,
             "r_BN_N": (7e6, -2e5, 1e3),
@@ -140,6 +140,10 @@ CASES: dict[str, tuple[str, dict[str, tuple[float, ...] | float | int]]] = {
             "BurnTicksApplied": 40,
             "BurnTicksSaturated": 1,
             "BurnId": 7,
+            "FuelRemainingKg": 0.041,
+            "FuelSpentKg": 0.009,
+            "FuelTicksStarved": 2,
+            "FuelTicksThrottled": 5,
         },
     ),
 }
