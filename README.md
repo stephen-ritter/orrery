@@ -147,17 +147,17 @@ derived from its scenario position.
 flowchart LR
   WORLD["world — one Basilisk process,<br/>all vehicles, one clock"]
   VEH["vehicle — cFS flight software<br/>+ bsk_link decoder"]
-  SAT["SAT_&lt;vehicle&gt;<br/>what the vehicle knows"]
-  GW["truth gateway"]
-  TRT["TRUTH_&lt;vehicle&gt;<br/>sim truth"]
   REND["Vizard renderer<br/>pinned scene generator"]
-  WORLD -- "sensors :5580 — EDS frames,<br/>biased + noisy" --> VEH
-  VEH -- "commands :5581 —<br/>effectors into the plant" --> WORLD
-  VEH -- "telemetry :5050 — out only,<br/>inbound refused via EVS" --> SAT
-  SAT -. "commands :5051 — a separate socket" .-> VEH
-  WORLD -- "truth :5590 — navigator state" --> GW -- ":5150 — COSMOS dials in" --> TRT
-  WORLD -- "scene state :5556" --> REND
-  REND -- "rendered camera views" --> WORLD
+  GW["truth gateway"]
+  subgraph GS["COSMOS ground station"]
+    SAT["SAT_&lt;vehicle&gt;<br/>what the vehicle knows"]
+    TRT["TRUTH_&lt;vehicle&gt;<br/>sim truth"]
+  end
+  WORLD <-->|"sensors :5580 — biased + noisy<br/>commands :5581 — effectors into the plant"| VEH
+  WORLD <-->|"scene state :5556<br/>rendered camera views return"| REND
+  VEH <-->|"telemetry :5050 — out only,<br/>inbound refused via EVS<br/>commands :5051 — a separate socket"| SAT
+  WORLD -- "truth :5590 — navigator state" --> GW
+  GW -- ":5150 — COSMOS dials in" --> TRT
 ```
 
 Every world tick checks on an ack from every vehicle (lockstep), so the diagram
