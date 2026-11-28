@@ -155,15 +155,22 @@ name = "thrusters"
 kind = "effector"
 status = "command-path"
 bskforge = "schema+builder"
-command_path = """partial: sps schedules pulses on the bus; nothing turns them into
-    forces world-side"""
-first_hop = "fsw-command"
-scenarios = []
+command_path = """COSMOS/ground -> FCS_BURN quota -> fcs doors (nonsense and overlap
+    refused) -> one BurnCommand per tick -> BSK_LINK/BURN egress -> thruster_alloc ->
+    force world-side; claims ride FCS_HK, applied rides TRUTH (bench only)"""
+first_hop = "provider"
+scenarios = ["burn.toml"]
 owner = "authority"
-why = """The cheapest-looking gap here: the SPS app exists and already uploads
-and runs a schedule, but the pulse terminates at the bus. Closing it needs a
-force path (and then pulse-width physics inside a 1 Hz lockstep tick, which is
-the actual hard part - a thruster wants a faster tick than attitude does)."""
+why = """The quota law flies since 2026-11-27: the ground commands
+{force, duration, axis}, the craft doors it and egresses one BurnCommand per tick
+(a silent craft stops thrusting by construction), the world allocates on-times
+group-wise against device caps and counts saturated ticks - claim 54.0 N s against
+applied 42.0 is the bench's published exhibit, not a discrepancy. What keeps this
+row command-path is knowledge, not force: the world's applied ledger rides TRUTH,
+which is the bench's stream and never the bus. The path to landed is the one the
+camera walked - a forge-sampled BurnState forwarded by bsk_link, the provider hop.
+Fuel waits behind that: Rung 1 is fuel-less constant thrust by owner decision, and
+FuelTank + mass depletion are native-but-unwired until the Hohmann earns them."""
 
 [[type]]
 name = "drag"

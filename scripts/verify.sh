@@ -79,6 +79,7 @@ GATES=(
     "live|ops-replay|the scheduled flight repeats itself AND disagrees with the reactive one|bash scripts/check_ops_replay.sh|"
     "live|fleet-fly|one world, N containers, both digests, no stale anchor|bash scripts/fly_fleet.sh|"
     "live|modes|the supervisor trips, refuses, and recovers on a live bus|bash scripts/check_modes.sh|"
+    "live|burn|the quota door, the per-tick stream, both ledgers on a live bus|bash scripts/check_burn.sh|"
     "live|fit-handshake|the four boot verdicts: matched, silent, denied, abort|bash scripts/check_fit_handshake.sh|"
     "live|cam-command|a commanded eye lands on both views while the digests refuse to move|bash scripts/check_cam_command.sh|"
     "live|cam-record|image files cross the airgap byte-identical while physics refuses to move|bash scripts/check_cam_record.sh|"
