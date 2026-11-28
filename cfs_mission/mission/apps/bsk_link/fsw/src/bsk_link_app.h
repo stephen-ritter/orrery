@@ -242,7 +242,7 @@ typedef struct
     uint64 RefusedCam;         /* in through the out-of-order branch             */
     uint64 RefusedCapture;
     BskCamStorageTlm_t CamStorageTlm; /* the ledger as the bus sees it           */
-    uint32 TimeSyncCount;      /* SET_MET sent: mission clock slaved to the sim  */
+    uint32 TimeSyncCount;      /* clock commands sent: STCF+MET slaved to the sim  */
     uint32 WorldFrameCounts[BSK_LINK_FRAME_ROWS];      /* per registry row      */
     uint32 WorldFramePublishFail[BSK_LINK_FRAME_ROWS]; /* rejected, reported once */
 

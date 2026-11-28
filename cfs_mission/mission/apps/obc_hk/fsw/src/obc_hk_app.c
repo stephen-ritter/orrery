@@ -22,7 +22,8 @@ static void OBC_HK_SendHk(void)
 {
     /* The payload struct IS the image: every handler filled it as traffic
      * arrived, so a report is a stamp and a send - nothing to assemble,
-     * nothing to drift. */
+     * nothing to drift. MissionClockS belongs to the frame handler: the
+     * reading must come from a frame's wake, not from this send. */
     CFE_SB_TimeStampMsg(CFE_MSG_PTR(OBC_HK_AppData.HkTlm.TelemetryHeader));
     CFE_SB_TransmitMsg(CFE_MSG_PTR(OBC_HK_AppData.HkTlm.TelemetryHeader), true);
 }
@@ -162,6 +163,19 @@ void OBC_HK_AppMain(void)
                         OBC_HK_AppData.LastSensorSimTimeS              = Frame->Payload.SimTimeS;
                         OBC_HK_AppData.HkTlm.Payload.SensorFramesSeen  = OBC_HK_AppData.SensorFramesSeen;
                         OBC_HK_AppData.HkTlm.Payload.LastSensorSimTimeS = OBC_HK_AppData.LastSensorSimTimeS;
+                        /* Wake-time clock: the mission clock as an observer
+                         * of sensor frames reads it, in the frame's own wake.
+                         * The link slaves the clock BEFORE publishing the
+                         * frame that wakes anyone, so this reading minus the
+                         * SimTimeS above is the wake-time skew every frame
+                         * consumer - a stored-command evaluator included -
+                         * inherits. Zero-ish is the ordering law; the clock
+                         * bench measures it, one wake per HK sample. */
+                        {
+                            CFE_TIME_SysTime_t Now = CFE_TIME_GetTime();
+                            OBC_HK_AppData.HkTlm.Payload.MissionClockS =
+                                (double)Now.Seconds + (double)Now.Subseconds / 4294967296.0;
+                        }
                     }
                     else
                     {

@@ -471,6 +471,8 @@ typedef struct
     double WheelSpeeds[3];    /* latest wheel feedback [rad/s]               */
     double SunCosine;         /* max CSS cosine seen [-]                     */
     double MagFieldNormT;     /* |B| from the magnetometer [T]               */
+    double MissionClockS;     /* CFE_TIME read in a sensor frame's wake: the
+                               * wake-time skew a frame consumer inherits [s] */
 } __attribute__((packed)) ObcHk_Payload_t;
 
 typedef struct
@@ -537,7 +539,7 @@ _Static_assert(sizeof(BskStepAck_Payload_t) == 24, "StepAck payload drift vs bsk
 _Static_assert(sizeof(FcsSetGain_Payload_t) == 24, "SetGain payload drift vs fcs.xml");
 _Static_assert(sizeof(FcsSetWheelLimit_Payload_t) == 8, "SetWheelLimit payload drift vs fcs.xml");
 _Static_assert(sizeof(FcsHkTlm_Payload_t) == 184, "FCS HK payload drift vs fcs.xml");
-_Static_assert(sizeof(ObcHk_Payload_t) == 80, "OBC HK payload drift vs obc.xml");
+_Static_assert(sizeof(ObcHk_Payload_t) == 88, "OBC HK payload drift vs obc.xml");
 _Static_assert(sizeof(SpsSchedule_Payload_t) == 60, "Schedule payload drift vs sps.xml");
 _Static_assert(sizeof(SpsHkTlm_Payload_t) == 72, "SPS HK payload drift vs sps.xml");
 _Static_assert(sizeof(CamSetConfig_Payload_t) == 16, "SetConfig payload drift vs cam.xml");

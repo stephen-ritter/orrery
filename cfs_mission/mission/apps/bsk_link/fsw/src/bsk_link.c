@@ -495,49 +495,69 @@ static int BSK_Link_WorldFrameLookup(const char *Topic)
  * spacecraft's time source - the HIL pattern in software).
  *
  * Every sensor frame carries SimTimeS, the sim instant the frame describes.
- * Promote it to the mission clock with the same TIME ground command the
- * operator uses (SET_MET): on a real bird a timecode unit does this once per
- * tone; here the link does it once per frame - and a frame is one sim second
- * by construction. A frozen sim freezes MET: onboard time advances exactly
- * when sim time does, and the time-tagged schedule waits with the sim.
- * Between frames
- * the TIME task's 1 Hz software tone free-runs - sub-second wall-clock slop
- * on pure observability traffic, which is all a watching link is.
- * Control-path logic reads the frame's
- * SimTimeS (frame-accurate by definition), never the CFE clock.
+ * Promote it to the mission clock with the same TIME ground commands an
+ * operator uses, BOTH terms of SCT = MET + STCF: SET_STCF pins the
+ * spacecraft-time offset at zero, SET_MET pins elapsed time to the frame's
+ * timecode. The link then owns every term of the craft clock and all three
+ * TIME bases read physics seconds - the platform's 1e6 s default STCF would
+ * otherwise sit under every timestamp, and the first clock bench caught it
+ * sitting there. On a real bird a timecode unit does this once per tone;
+ * here the link does it once per frame - and a frame is one sim second by
+ * construction. A frozen sim freezes MET: onboard time advances exactly when
+ * sim time does, and the time-tagged schedule waits with the sim. Between
+ * frames the TIME task's 1 Hz software tone free-runs - sub-second wall-clock
+ * slop on pure observability traffic, which is all a watching link is.
+ * Control-path logic that must be frame-exact reads the frame's SimTimeS;
+ * the wake-time clock bench (scripts/check_clock.sh) measures what the CFE
+ * clock is worth at a wake, because a stored-command evaluator decides on it.
  *
- * TIME answers every SET_MET with its own EVS event and counts it in its HK:
- * the sync is audible on the console and auditable on the beacon.
+ * TIME answers every accepted command with its own EVS event and counts it
+ * in its HK: the sync is audible on the console and auditable on the beacon.
  */
 static void BSK_Link_SyncMissionTime(void)
 {
-    CFE_TIME_SetMETCmd_t Cmd;
-    double               Frac;
+    CFE_TIME_SetMETCmd_t  MetCmd;
+    CFE_TIME_SetSTCFCmd_t StcfCmd;
+    double                Frac;
 
-    memset(&Cmd, 0, sizeof(Cmd));
-    if (CFE_MSG_Init(CFE_MSG_PTR(Cmd.CommandHeader), CFE_SB_ValueToMsgId(ORRERY_TIME_CMD_MID),
-                     sizeof(Cmd)) != CFE_SUCCESS)
+    memset(&StcfCmd, 0, sizeof(StcfCmd));
+    if (CFE_MSG_Init(CFE_MSG_PTR(StcfCmd.CommandHeader), CFE_SB_ValueToMsgId(ORRERY_TIME_CMD_MID),
+                     sizeof(StcfCmd)) != CFE_SUCCESS)
     {
         return; /* fixed mid and size: impossible, but never send half a command */
     }
-    CFE_MSG_SetFcnCode(CFE_MSG_PTR(Cmd.CommandHeader), CFE_TIME_SET_MET_CC);
+    CFE_MSG_SetFcnCode(CFE_MSG_PTR(StcfCmd.CommandHeader), CFE_TIME_SET_STCF_CC);
+    /* The zeroed payload IS the point: spacecraft time = mission elapsed time,
+     * epoch = sim start. Pin the offset before the elapsed time. */
 
-    Cmd.Payload.Seconds = (uint32)BSK_LinkAppData.LastSimTimeS;
-    Frac                = BSK_LinkAppData.LastSimTimeS - (double)Cmd.Payload.Seconds;
+    memset(&MetCmd, 0, sizeof(MetCmd));
+    if (CFE_MSG_Init(CFE_MSG_PTR(MetCmd.CommandHeader), CFE_SB_ValueToMsgId(ORRERY_TIME_CMD_MID),
+                     sizeof(MetCmd)) != CFE_SUCCESS)
+    {
+        return;
+    }
+    CFE_MSG_SetFcnCode(CFE_MSG_PTR(MetCmd.CommandHeader), CFE_TIME_SET_MET_CC);
+
+    MetCmd.Payload.Seconds = (uint32)BSK_LinkAppData.LastSimTimeS;
+    Frac                   = BSK_LinkAppData.LastSimTimeS - (double)MetCmd.Payload.Seconds;
     if (Frac < 0.0 || Frac >= 1.0)
     {
         Frac = 0.0; /* malformed timecode: whole seconds still beat garbage */
     }
-    Cmd.Payload.MicroSeconds = (uint32)(Frac * 1000000.0);
+    MetCmd.Payload.MicroSeconds = (uint32)(Frac * 1000000.0);
 
-    if (CFE_SB_TransmitMsg(CFE_MSG_PTR(Cmd.CommandHeader), true) == CFE_SUCCESS)
+    if (CFE_SB_TransmitMsg(CFE_MSG_PTR(StcfCmd.CommandHeader), true) != CFE_SUCCESS)
+    {
+        return; /* no half-slaved clock counted */
+    }
+    if (CFE_SB_TransmitMsg(CFE_MSG_PTR(MetCmd.CommandHeader), true) == CFE_SUCCESS)
     {
         BSK_LinkAppData.TimeSyncCount++;
         if (BSK_LinkAppData.TimeSyncCount == 1)
         {
             CFE_EVS_SendEvent(BSK_LINK_TIME_INF_EID, CFE_EVS_EventType_INFORMATION,
-                              "mission MET slaved to link timecode: %u s",
-                              (unsigned int)Cmd.Payload.Seconds);
+                              "mission clock slaved to link timecode: MET %u s, STCF pinned 0",
+                              (unsigned int)MetCmd.Payload.Seconds);
         }
     }
 }
@@ -2277,14 +2297,18 @@ static void BSK_Link_DrainOneFrame(void)
 
         BSK_LinkAppData.SensorMsgCount++;
 
+        /* The timecode this frame carries becomes the mission clock BEFORE the
+         * frame wakes anyone: SET_MET reaches the TIME task's pipe first, so
+         * TIME is queued ahead of every consumer this publish wakes, and a task
+         * deciding on this frame reads a clock freshly set to physics time.
+         * No API promises that task order - the clock bench measures it. */
+        BSK_Link_SyncMissionTime();
+
         /* The decoded frame becomes mission telemetry: fcs runs its control law
          * on this MsgId, and the beacon streams it, so COSMOS sees exactly what
          * the satellite senses - nothing the simulator knows can sneak in,
          * because only decoded link bytes are copied into the payload. */
         BSK_Link_PublishSensorFrame();
-
-        /* The timecode this frame carries is now the mission clock. */
-        BSK_Link_SyncMissionTime();
 
         /* EVS on the first frame and then once per N, so a 1 Hz feed does not
          * flood the event bus. Values here came out of the EDS decode. */

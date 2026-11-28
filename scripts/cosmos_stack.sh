@@ -81,7 +81,11 @@ run_cli setpassword >/dev/null 2>&1 || true
 # 0.1.16: the truth frames grow the fuel ledger (TruthState 18 -> 22 f64:
 #         remaining/spent kg, starved/throttled ticks). Only TRUTH_* targets
 #         change: fuel is the world's book, never a beacon packet.
-GEM_VERSION=0.1.16
+# 0.1.17: OBC_HK grows MISSION_CLOCK_S - the mission clock as CFE_TIME reads
+#         it in a sensor frame's wake. The clock bench measures against it;
+#         a station decoding SAT_* telemetry sees the same clock the craft
+#         decides on.
+GEM_VERSION=0.1.17
 rm -f "$REPO/cosmos_plugin"/openc3-cosmos-orrery-*.gem \
       # a stale gem in here gets bundled as DATA and re-extracts as a nested plugin on load
 docker run --rm -v "$REPO/cosmos_plugin:/p" --user "$(id -u):$(id -g)" ruby:3.4-slim \
