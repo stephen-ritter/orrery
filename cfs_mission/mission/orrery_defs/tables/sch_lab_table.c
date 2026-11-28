@@ -24,6 +24,7 @@
 ** Include headers for message IDs here
 */
 #include "cf_msgids.h"
+#include "sc_msgids.h"    /* sc SEND_HK (pristine bundle app, revived 2026-11-28) */
 #include "orrery_msgids.h" /* fcs SEND_HK (mission custom app) */
 
 /*
@@ -39,6 +40,14 @@
 ** SEND_HK rows with them - a scheduled poll into an un-subscribed MID is
 ** SB-refusal noise on every tick, and an app nobody commands does not
 ** deserve a heartbeat.
+**
+** 2026-11-28 sequence arc: sc returns (registry/apps.toml), and it gets a
+** SEND_HK poll but deliberately NO wakeup row. Upstream sc counted a stock
+** 1 Hz sch tick; this mission seats SC_WAKEUP_MID on the bsk_link sensor
+** frame (orrery_defs/config/sc_msgid_values.h) - one wake per sim second,
+** frame-quantized like the ATS tags it evaluates - and the frame is the
+** link's packet, not the timer's. A schedule row aimed at that MID would
+** inject a bogus frame onto the bus once per second.
 */
 
 /* clang-format: off */
@@ -56,6 +65,7 @@ SCH_LAB_ScheduleTable_t SCH_TBL_Structure =
         {CFE_SB_MSGID_WRAP_VALUE(FCS_SEND_HK_MID),         78, 0}, /* every 7.8 seconds */
         {CFE_SB_MSGID_WRAP_VALUE(OBC_HK_SEND_HK_MID),      10, 0}, /* OBC HK every 1.0 second */
         {CFE_SB_MSGID_WRAP_VALUE(SPS_SEND_HK_MID),         80, 0}, /* sps queue state every 8.0 s */
+        {CFE_SB_MSGID_WRAP_VALUE(SC_SEND_HK_MID),          62, 0}, /* sc ATS/RTS state every 6.2 s (no wakeup row: the sensor frame wakes sc) */
     }
 };
 

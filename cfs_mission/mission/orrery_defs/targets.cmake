@@ -105,7 +105,7 @@ if (ORRERY_APPLIST_FRAGMENT)
     include("${ORRERY_APPLIST_FRAGMENT}")
 else ()
     set(ORRERY_SCENARIO_APPLIST
-        bsk_link fcs gs_tcp obc_hk sps cam cf_tcp cf)
+        bsk_link fcs gs_tcp obc_hk sps cam cf_tcp cf sc)
 endif ()
 list(APPEND MISSION_GLOBAL_APPLIST ${ORRERY_SCENARIO_APPLIST})
 

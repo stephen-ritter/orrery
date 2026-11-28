@@ -3,6 +3,7 @@
 #   uv run python -m codegen.eds_sources --write
 set(ORRERY_EDS_DIRS
     "${ORRERY_REPO}/cfs_mission/cFS/apps/cf"
+    "${ORRERY_REPO}/cfs_mission/cFS/apps/sc"
     "${ORRERY_REPO}/cfs_mission/cFS/apps/sch_lab"
     "${ORRERY_REPO}/cfs_mission/cFS/cfe/modules/cfe_testcase"
     "${ORRERY_REPO}/cfs_mission/cFS/cfe/modules/config"

@@ -174,3 +174,22 @@ priority = 70
 stack = 131072
 when = "baseline"
 eds_packages = ["CF"]
+
+# 2026-11-28 sequence arc: the purge's own clause invoked - "the row comes
+# back and git remembers it was here". The stored-command arc decided to fly
+# pristine upstream SC rather than grow SPS into a sequencer, so the row
+# returns with its bundle EDS package (the ground dictionary grows SC's own
+# packets). It boots LAST, the way the prebaked era booted it: the executor
+# of stored commands comes up only after every organ it will command is
+# listening. The wake law is mission-authored: SC_WAKEUP_MID seats on the
+# sensor frame (orrery_defs/config/sc_msgid_values.h), one wake per sim
+# second, so whole-second ATS tags fire on frame boundaries.
+[[app]]
+name = "sc"
+class = "CFE_APP"
+entry = "SC_AppMain"
+short = "SC"
+priority = 70
+stack = 131072
+when = "baseline"
+eds_packages = ["SC"]

@@ -41,7 +41,10 @@ CORE = "core"
 # _MID) and the app whose organ it pokes. The eye is absent on purpose -
 # its housekeeping answers the ground, not a timer. The 2026-11-27 prebaked
 # purge left with its table rows: the timer now speaks only to the core and
-# the four baseline organs that answer it (registry/apps.toml).
+# the baseline organs that answer it (registry/apps.toml). The 2026-11-28
+# sequence arc added sc's SEND_HK - and refuses it a wakeup row: sc's wake
+# is the bsk_link sensor frame (orrery_defs/config/sc_msgid_values.h), and
+# a timer row aimed at that MID would inject a bogus frame every second.
 LEDGER = {
     "CFE_ES_SEND_HK": CORE,
     "CFE_EVS_SEND_HK": CORE,
@@ -53,6 +56,7 @@ LEDGER = {
     "FCS_SEND_HK": "fcs",
     "OBC_HK_SEND_HK": "obc_hk",
     "SPS_SEND_HK": "sps",
+    "SC_SEND_HK": "sc",
 }
 
 ENTRY = re.compile(r"CFE_SB_MSGID_WRAP_VALUE\((\w+)_MID\)")

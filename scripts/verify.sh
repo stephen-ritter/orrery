@@ -83,6 +83,7 @@ GATES=(
     "live|fuel|the tank sells and the world withholds: EXACT-zero dry, starved ticks, an unbroken claim|bash scripts/check_fuel.sh|"
     "live|hohmann|fuel BUDGETS a transfer: measured apoapsis, circularized orbit, a stranded thin-tank ask|bash scripts/check_hohmann.sh|"
     "live|clock|the mission clock is the sensor feed's: wake-time skew under half a tick at BOTH paces|bash scripts/check_clock.sh|"
+    "live|sc-boot|the revived sequencer boots, stores nothing, refuses the phantom, answers ground|bash scripts/check_sc.sh|"
     "live|fit-handshake|the four boot verdicts: matched, silent, denied, abort|bash scripts/check_fit_handshake.sh|"
     "live|cam-command|a commanded eye lands on both views while the digests refuse to move|bash scripts/check_cam_command.sh|"
     "live|cam-record|image files cross the airgap byte-identical while physics refuses to move|bash scripts/check_cam_record.sh|"

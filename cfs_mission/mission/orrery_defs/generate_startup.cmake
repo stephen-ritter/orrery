@@ -24,9 +24,13 @@ function (generate_cfs_startup_script CFS_INSTALL_DIR)
     set (LINE_cf_tcp       "CFE_APP, cf_tcp,       CF_TCP_AppMain,     CF_TCP,       69,   65536,  0x0, 0;\n")
     set (LINE_gs_tcp       "CFE_APP, gs_tcp,       GS_TCP_AppMain,     GS_TCP,       60,   65536,  0x0, 0;\n")
     set (LINE_cf           "CFE_APP, cf,           CF_AppMain,         CF,           70,   131072, 0x0, 0;\n")
+    set (LINE_sc           "CFE_APP, sc,           SC_AppMain,         SC,           70,   131072, 0x0, 0;\n")
 
     file (WRITE ${STARTUP_FILE} "${LINE_cfe_assert}")
-    foreach (APP sch_lab bsk_link fcs obc_hk sps cam cf_tcp gs_tcp cf)
+    # sc last, the way the prebaked era booted it: the ATS executor comes up
+    # only after every organ it will command is listening (2026-11-28 revival,
+    # registry/apps.toml).
+    foreach (APP sch_lab bsk_link fcs obc_hk sps cam cf_tcp gs_tcp cf sc)
         # the tail's idiom: IN_LIST wants policy CMP0057, which this install
         # scope never promised
         list (FIND ARGN ${APP} SHOULD_START)

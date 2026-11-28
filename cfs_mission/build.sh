@@ -88,6 +88,18 @@ install() {
     # cf/ - and "the image carries no eye" must not be a lie by residue.
     rm -f "$BUILD_DIR"/exe/cpu*/cf/*.so
     DESTDIR="$BUILD_DIR" cmake --build "$BUILD_DIR" --target mission-install
+    # The factory ships no sequences: upstream sc stages its sample table
+    # images (sc_ats1 + sc_rts001..004) beside the app, and its private
+    # header autostarts RTS 1 on every power-on - a fresh boot would run
+    # the sample chain, stored commands the mission never wrote, on a bus
+    # whose law is that every command has a known author. The knob
+    # (RTS_ID_AUTO_POWER_ON) sits unhooked in the app's private header and
+    # the app stays pristine, so the mission answers at the image, after
+    # install, beside the orphan-.so prune above. Boot then reads honestly:
+    # SC logs its RTS load miss count, the auto-start of RTS 1 fails as
+    # unallocated, HK shows a sequencer with nothing stored. Sequences
+    # arrive from the ground (CFE_TBL load + SC switch) or not at all.
+    rm -f "$BUILD_DIR"/exe/cpu*/cf/sc_ats1.tbl "$BUILD_DIR"/exe/cpu*/cf/sc_rts00[1-4].tbl
 }
 run()     { cd "$BUILD_DIR/exe/cpu1" && ./container-start; }
 

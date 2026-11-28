@@ -85,7 +85,13 @@ run_cli setpassword >/dev/null 2>&1 || true
 #         it in a sensor frame's wake. The clock bench measures against it;
 #         a station decoding SAT_* telemetry sees the same clock the craft
 #         decides on.
-GEM_VERSION=0.1.17
+# 0.1.18: the sc revival (sequence arc): SC_CMD/SC_SEND_HK/SC_WAKEUP enter
+#         the command dictionary and SC_HK_TLM the frames - the ground now
+#         commands and reads the stored-command service. SC's WAKEUP entry
+#         is the nominal TC seat; the firmware wake is the sensor frame
+#         (orrery_defs/config/sc_msgid_values.h), which the ground never
+#         sends.
+GEM_VERSION=0.1.18
 rm -f "$REPO/cosmos_plugin"/openc3-cosmos-orrery-*.gem \
       # a stale gem in here gets bundled as DATA and re-extracts as a nested plugin on load
 docker run --rm -v "$REPO/cosmos_plugin:/p" --user "$(id -u):$(id -g)" ruby:3.4-slim \

@@ -29,6 +29,7 @@ static const RsMidEntry_t ORRERY_MID_TABLE[] = {
     {0x080D, "CFE_SB_ALLSUBS_TLM"},
     {0x080E, "CFE_SB_ONESUB_TLM"},
     {0x0810, "CFE_ES_MEMSTATS_TLM"},
+    {0x08AA, "SC_HK_TLM"},
     {0x08B3, "CF_EOT_TLM"},
     {0x08C8, "BSK_LINK_SENSOR_FRAME_TLM"},
     {0x08C9, "BSK_LINK_TORQUE_COMMAND_TLM"},
@@ -46,6 +47,6 @@ static const RsMidEntry_t ORRERY_MID_TABLE[] = {
     {0x08D7, "BSK_LINK_BURN_COMMAND_TLM"},
 };
 
-#define ORRERY_MID_COUNT 30
+#define ORRERY_MID_COUNT 31
 
 #endif /* RS_MID_TABLE_H */

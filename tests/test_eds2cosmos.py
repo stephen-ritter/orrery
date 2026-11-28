@@ -304,16 +304,23 @@ def test_cmd_table_is_the_sps_dictionary(packets: list[Packet]) -> None:
 
 
 def test_the_prebaked_apps_stay_purged(packets: list[Packet]) -> None:
-    """2026-11-27 purge tripwire: thirteen silent modules, absent everywhere.
+    """2026-11-27 purge tripwire: twelve silent modules, absent everywhere.
 
-    hk hs lc mm sc md ds cs fm ci_lab to_lab sample_app sample_lib left
-    the registry, the build, and the EDS source set (registry/apps.toml
-    tells the audit story). Their packets must not creep back through a
+    hk hs lc mm md ds cs fm ci_lab to_lab sample_app sample_lib left the
+    registry, the build, and the EDS source set (registry/apps.toml tells
+    the audit story). Their packets must not creep back through a
     regenerated golden or a re-added bundle eds/ directory: not in the
-    model, not in the defs, not in either C table. MIDs and event IDs
-    leave unclaimed - this is what keeps them unclaimed.
+    model, not in the defs, not in either C table. MIDs and event IDs leave
+    unclaimed - this is what keeps them unclaimed.
+
+    sc is the exception the purge itself wrote: "the row comes back and git
+    remembers it was here" - and the 2026-11-28 sequence arc called it,
+    reviving pristine upstream SC as the stored-command service. The pin
+    simply flips sides for sc: its four packets must be PRESENT here, in
+    the model, the defs and the beacon table - a revival as deliberate and
+    as checked as the retirement was.
     """
-    retired = ("HK_", "HS_", "LC_", "MM_", "MD_", "SC_", "DS_", "CS_", "FM_", "CI_LAB_")
+    retired = ("HK_", "HS_", "LC_", "MM_", "MD_", "DS_", "CS_", "FM_", "CI_LAB_")
     assert not [p.name for p in packets if p.name.startswith(retired)]
     assert not [p.name for p in packets if p.name.startswith(("TO_LAB_", "SAMPLE_"))]
     cmd_text, tlm_text = emit_cosmos(mission_packets(packets))
@@ -325,7 +332,6 @@ def test_the_prebaked_apps_stay_purged(packets: list[Packet]) -> None:
         "LC_LC_TLM",
         "MM_MM_TLM",
         "MD_DWELL_TLM",
-        "SC_SC_TLM",
         "DS_FILE_DIR_TLM",
         "CS_CS_TLM",
         "FM_DIR_LIST_TLM",
@@ -336,6 +342,26 @@ def test_the_prebaked_apps_stay_purged(packets: list[Packet]) -> None:
         assert name not in cmd_text, name
         assert name not in tlm_text, name
         assert name not in table, name
+
+
+def test_sc_revival_is_on_the_wire(packets: list[Packet]) -> None:
+    """The 2026-11-28 revival, pinned: sc's surface exists and is seatable.
+
+    The mirror of the purge tripwire above. The HK lands on the mission map
+    (TM+170 = 0x08AA) and the beacon table carries it, because a sequencer
+    the ground cannot read is a sequencer the ground cannot fly. The command
+    side (SC_CMD on TC+169, SEND_HK TC+170) is present for the same reason;
+    SC_WAKEUP's nominal TC+171 seat is inert by law - the firmware wake is
+    the sensor frame (orrery_defs/config/sc_msgid_values.h), and the ground
+    has never woken a sequencer anyway.
+    """
+    byname = {p.name: p for p in packets}
+    assert byname["SC_HK_TLM"].msgid == 0x08AA
+    assert byname["SC_CMD"].msgid == 0x18A9
+    cmd_text, tlm_text = emit_cosmos(mission_packets(packets))
+    beacon = emit_c_table(mission_packets(packets), "088b2fa")
+    assert "SC_HK_TLM" in tlm_text and '{0x08AA, "SC_HK_TLM"}' in beacon
+    assert "SC_CMD" in cmd_text
 
 
 def test_schedule_envelope_wire(packets: list[Packet]) -> None:
