@@ -45,17 +45,11 @@ LINK_CMD=$((SENSOR + 1))
 
 # The two boot-poisoning squatters the yard learned to refuse (POSIX msg
 # queues are a fixed 10 on this box, and a lingering listener steals the
-# craft's handshake into a dead backlog): check before ANYTHING boots.
-if pgrep -x core-cpu1 >/dev/null; then
-    echo "FAIL: a host core-cpu1 is running (pid $(pgrep -xd core-cpu1 | tr '\n' ' '));" \
-        "it starves every mission boot of message queues. Kill it first." >&2
-    exit 1
-fi
-if ss -tln | grep -qE ":${SENSOR}([[:space:]]|\$)"; then
-    echo "FAIL: tcp/${SENSOR} already has a listener before the first boot:" >&2
-    ss -tlnp | grep -E ":${SENSOR}([[:space:]]|\$)" >&2 || true
-    exit 1
-fi
+# craft's handshake into a dead backlog): checked below, after this bench has
+# quieted its own yard - container cores of a healthy fleet appear in THIS
+# /proc, so a refusal before fleet down would flag a legitimate fleet as the
+# squat (doctrine run 2026-11-27 proved the order the hard way). Still before
+# anything of this bench's boots: a match after the sweep is a true squatter.
 
 cd "$REPO"
 CONTAINER=""
@@ -68,8 +62,26 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# A quiet yard is a precondition, not a hope: this bench refuses a listener on
+# its ports below - right to refuse, and fleet down is the way to arrive having
+# earned the refusal (the standing fleet is a legitimate listener, and its
+# landing of a per-vehicle wake list would poison the union boots below it;
+# 2026-11-27). seconds on a quiet tree.
+bash "$REPO/scripts/fleet.sh" down >/dev/null 2>&1 || true
 stale="$("$RUNTIME" ps -q --filter ancestor=orrery-cfs:dev || true)"
-[ -n "$stale" ] && "$RUNTIME" stop $stale >/dev/null || true
+[ -n "$stale" ] && "$RUNTIME" rm -f $stale >/dev/null || true
+
+if pgrep -x core-cpu1 >/dev/null; then
+    echo "FAIL: a host core-cpu1 survives the yard sweep (pid" \
+        "$(pgrep -x core-cpu1 | tr '\n' ' '));" \
+        "it starves every mission boot of message queues. Kill it first." >&2
+    exit 1
+fi
+if ss -tln | grep -qE ":${SENSOR}([[:space:]]|\$)"; then
+    echo "FAIL: tcp/${SENSOR} already has a listener after the yard sweep:" >&2
+    ss -tlnp | grep -E ":${SENSOR}([[:space:]]|\$)" >&2 || true
+    exit 1
+fi
 
 # fly_cycle <probe-mode> <scenario> -> CYCLE_RC, CYCLE_DIGEST, CYCLE_LOG,
 # CYCLE_STORE_DIRS (lines "id:dir", every outlet the sim announced),

@@ -45,8 +45,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# A quiet yard is a precondition, not a hope: this bench boots bare craft on
+# the all-parts union wake list, and the shared cf/cfe_es_startup.scr carries
+# WHATEVER vehicle booted last (container-start lands one over it, and a dead
+# scenario's per-vehicle tables re-arm the trap). fleet down removes the yard
+# and re-lands the union; seconds on a quiet tree (2026-11-27: a restored
+# operational fleet was one such landing away from stealing this bench's cam).
+bash "$REPO/scripts/fleet.sh" down >/dev/null 2>&1 || true
 stale="$("$RUNTIME" ps -q --filter ancestor=orrery-cfs:dev || true)"
-[ -n "$stale" ] && "$RUNTIME" stop $stale >/dev/null || true
+[ -n "$stale" ] && "$RUNTIME" rm -f $stale >/dev/null || true
 
 # fly_cycle <mode> <scenario> -> CYCLE_RC (probe), CYCLE_DIGEST, CYCLE_LOG,
 # CYCLE_STORE_DIR (record leg: where the sim's own PNG writer wrote)

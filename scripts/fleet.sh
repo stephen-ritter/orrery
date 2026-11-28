@@ -293,6 +293,16 @@ fleet_down() {
         bash "$REPO/scripts/mission_build.sh" install >/dev/null 2>&1 ||
             echo "[down] union reinstall FAILED - the plane still carries a scenario's cuts" >&2
     fi
+    # the per-vehicle wake lists sweep with them. container-start LANDS one
+    # over the shared cf/cfe_es_startup.scr at every boot whose ORRERY_VEHICLE
+    # matches a table on disk, so dead scenario tables are a booby-trapped
+    # union: the next bare or -e ORRERY_VEHICLE boot re-lands the dead wake
+    # list whenever it knocks (cam_downlink 2026-11-27: a twin_ops chief.scr
+    # three scenarios dead stole the camera from the request leg, and the
+    # clobbered base took the next two benches with it). up sweeps before it
+    # writes; down must sweep after, or "quiet yard = all-parts union" is a
+    # sentence with a hole in it.
+    rm -f cfs_mission/mission/build/exe/cpu1/cf/cfe_es_startup.*.scr 2>/dev/null || true
     [ -n "${SCENARIO:-}" ] && echo "[${STEM:-?}] down" || true
 }
 

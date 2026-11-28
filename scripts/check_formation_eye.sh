@@ -48,8 +48,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# A quiet yard is a precondition, not a hope: this bench boots bare craft that
+# need organs the standing fleet's vehicles do not carry, and the shared
+# cf/cfe_es_startup.scr carries WHATEVER vehicle booted last (2026-11-25's
+# deploy-time tables made that file a landing target; formation_eye 2026-11-27
+# lost its eye to a stale landing). fleet down removes the yard - including
+# stopped containers that hold this bench's chosen --names - and re-lands the
+# union; seconds on a quiet tree.
+bash "$REPO/scripts/fleet.sh" down >/dev/null 2>&1 || true
 stale="$("$RUNTIME" ps -q --filter ancestor=orrery-cfs:dev || true)"
-[ -n "$stale" ] && "$RUNTIME" stop $stale >/dev/null || true
+[ -n "$stale" ] && "$RUNTIME" rm -f $stale >/dev/null || true
 "$RUNTIME" rm -f "$RENDERER" >/dev/null 2>&1 || true
 
 # Ports and instances: sim/fleet.py is the single authority (block INDEX =

@@ -62,10 +62,19 @@ trap cleanup EXIT
     exit 1
 }
 
+# A quiet yard is a precondition, not a hope. This bench boots craft on the
+# union wake list AND names its vehicle chief, so both halves of the shared-
+# table trap bite it: a live fleet re-lands the base table (the request leg's
+# craft carries ORRERY_VEHICLE=chief and lands its own), and a dead scenario's
+# per-vehicle tables re-arm the trap for the next boot (2026-11-27: a
+# three-scenarios-dead chief.scr stole the camera from this bench's request
+# leg). fleet down removes the yard and re-lands the union; the removal loop
+# below then has only strays left to sweep.
+bash "$REPO/scripts/fleet.sh" down >/dev/null 2>&1 || true
 stale="$("$RUNTIME" ps -q --filter ancestor=orrery-cfs:dev || true)"
 if [ -n "$stale" ]; then
-    echo "=== releasing the yard: stopping stale craft containers ==="
-    "$RUNTIME" stop -t 5 $stale >/dev/null
+    echo "=== releasing the yard: removing stale craft containers ==="
+    "$RUNTIME" rm -f $stale >/dev/null
     for _ in $(seq 1 30); do
         [ -z "$("$RUNTIME" ps -q --filter ancestor=orrery-cfs:dev || true)" ] && break
         sleep 2
