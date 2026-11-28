@@ -2,7 +2,8 @@
 
 orrery runs a complete mission loop on one workstation: Basilisk physics
 simulating the spacecraft, flight software built on NASA core Flight Software
-(cFS) running in real closed loop, and OpenC3 COSMOS as the ground station.
+(cFS) running in real closed loop, OpenC3 COSMOS as the ground station, and
+Vizard as the scene renderer behind what the cameras see.
 
 A scenario file defines the mission. Each spacecraft it declares runs as its
 own flight-software container with its own ground services, and the shared
@@ -78,7 +79,7 @@ zero. The spacecraft itself carries no fuel sensor and makes no fuel claim;
 fuel is reported only on the simulation's truth stream.
 
 **Orbital transfers.** Hohmann transfers are flown ground-side as a sequence
-of the same burn commands an operator uplinks: an initial burn raises the
+of the same burn commands an operator sends: an initial burn raises the
 apoapsis, the second burn fires at the apoapsis detected from the truth
 stream, and the result is verified from the orbit itself — eccentricity
 collapsing, radius holding steady on a confirmation coast. The deliberate
@@ -91,7 +92,10 @@ two are distinct packets on distinct wires by construction, divergence between
 them is expected under fuel exhaustion or hardware saturation, and the sim is
 the only place both are visible.
 
-**Camera operations across the airgap.** Pointing commands land on both the
+**Camera operations across the airgap.** A pinned Vizard renderer (verified
+against `vizard.lock`) generates each camera's view of the scene; limb and
+horizon estimators turn those pixels into planet vectors, so what the bus
+carries is knowledge, never image bytes. Pointing commands land on both the
 vehicle's view and the station's views; recorded image files cross to the
 ground byte-identical; the ground selects a file by name from the onboard
 store's manifest and receives it, recovering from link interruptions without
@@ -120,8 +124,8 @@ per-vehicle path — world → truth gateway (`sim/truth_gateway.py`) → COSMOS
 target `TRUTH_<vehicle>`. The satellite's own knowledge — noisy sensors →
 `bsk_link` → cFS bus → flight software → telemetry → `gs_tcp` → COSMOS — is
 `SAT_<vehicle>`. Anyone reading the station can tell which side of the sensor
-model they are looking at, and the beacon socket is outbound-only: inbound
-bytes are counted and refused over EVS, so a station wired to the beacon
+model they are looking at, and the telemetry socket is outbound-only: inbound
+bytes are counted and refused over EVS, so a station wired to telemetry
 physically cannot inject. `docs/data_provenance.md` is the full account.
 
 One box, one wire plan; port numbers are vehicle slot 0 (`chief`), each block
@@ -129,13 +133,14 @@ derived from its scenario position.
 
 | Port | Side | What |
 | --- | --- | --- |
-| `5050` | TCP (cFS → ground) | `gs_tcp` **beacon**: CCSDS telemetry out only; inbound bytes are counted and refused via EVS |
-| `5051` | TCP (ground → cFS) | `gs_tcp` **uplink**: CCSDS commands in, never answered |
+| `5050` | TCP (cFS → ground) | `gs_tcp` **telemetry**: CCSDS telemetry out only; inbound bytes are counted and refused via EVS |
+| `5051` | TCP (ground → cFS) | `gs_tcp` **command**: CCSDS commands in, never answered |
 | `5580` | ZMQ PUB (sim → cFS) | Basilisk sensor frames (EDS-encoded, onboard view: biased + noisy) |
-| `5581` | ZMQ PULL (cFS → sim) | actuator commands into the plant — `fcs` wheel torques and the per-tick burn frames, via `bsk_link` |
+| `5581` | ZMQ PULL (cFS → sim) | effector commands into the plant (`bsk_link`): wheel torques, burn quotas, and whatever the actuator registry gains next |
 | `5590` | ZMQ PUB (sim → ground) | truth state → truth gateway → `TRUTH_<vehicle>`, never through cFS |
 | `5591` | ZMQ PUB (sim) | echo of the torque the effector actually applied, frame-matched (lockstep ground proof) |
-| `5150` | TCP (ground) | truth gateway server: COSMOS's truth interface dials in; telemetry-only, truth uplink refused |
+| `5150` | TCP (ground) | truth gateway server: COSMOS's truth interface dials in; telemetry-only, inbound refused |
+| `5556` | TCP (sim ↔ renderer) | Vizard scene interface: the pinned renderer dials the world, receives scene state, returns rendered camera views |
 | `2900` | HTTP | COSMOS CE web + JSON-RPC API |
 
 ```mermaid
@@ -145,11 +150,14 @@ flowchart LR
   SAT["SAT_&lt;vehicle&gt;<br/>what the vehicle knows"]
   GW["truth gateway"]
   TRT["TRUTH_&lt;vehicle&gt;<br/>sim truth"]
+  REND["Vizard renderer<br/>pinned scene generator"]
   WORLD -- "sensors :5580 — EDS frames,<br/>biased + noisy" --> VEH
-  VEH -- "torque + burn :5581 —<br/>commands into the plant" --> WORLD
-  VEH -- "beacon :5050 — out only,<br/>inbound refused via EVS" --> SAT
-  SAT -. "uplink :5051 — a separate socket" .-> VEH
+  VEH -- "commands :5581 —<br/>effectors into the plant" --> WORLD
+  VEH -- "telemetry :5050 — out only,<br/>inbound refused via EVS" --> SAT
+  SAT -. "commands :5051 — a separate socket" .-> VEH
   WORLD -- "truth :5590 — navigator state" --> GW -- ":5150 — COSMOS dials in" --> TRT
+  WORLD -- "scene state :5556" --> REND
+  REND -- "rendered camera views" --> WORLD
 ```
 
 Every world tick checks on an ack from every vehicle (lockstep), so the diagram
@@ -173,7 +181,7 @@ scripts/fleet.sh down
 
 `fleet.sh up` performs checks a bare `compose up` skips: ports derived from the
 scenario, a boot-proof wait (each vehicle's own startup line naming its own
-beacon and uplink, not a fixed sleep), a provenance check of the binary that
+telemetry and command ports, not a fixed sleep), a provenance check of the binary that
 flew, a pre-launch sweep of stale containers and evidence — and a stop
 delivered at a tick boundary so a perpetual run still prints its digest.
 
@@ -184,7 +192,7 @@ picks a component, and the component registry (`registry/parts.toml`) defines
 what that component means in flight software and on the ground — its airgap
 topic, EDS container, MsgId, its EVS events, and the acceptance check it must
 pass. Adding a registered component is therefore a manifest edit: the topicids
-header, the frame table, the beacon table, the COSMOS defs, and the
+header, the frame table, the telemetry table, the COSMOS defs, and the
 truth-vs-flight check all arrive by generation, with zero C edits (one superset
 firmware; presence is runtime data). `docs/adding_a_sensor.md` is the procedure
 and the honest account of what remains hand-authored and why.
