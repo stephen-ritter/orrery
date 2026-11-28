@@ -20,6 +20,14 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # before the container starts (scripts/firmware.sh).
 bash "$REPO/scripts/firmware.sh" check
 RUNTIME="${RUNTIME:-docker}"
+# A quiet yard is a precondition (the doctrine the digest gates learned the
+# expensive way): this bench's world binds the classic host port block, and a
+# standing fleet's world holds it; the error message below used to SUGGEST a
+# sweep, which is folklore. fleet down IS the sweep - containers out, union
+# wake list re-landed; idempotent, seconds on a quiet tree.
+bash "$REPO/scripts/fleet.sh" down >/dev/null 2>&1 || true
+stale="$("$RUNTIME" ps -q --filter ancestor=orrery-cfs:dev || true)"
+[ -n "$stale" ] && "$RUNTIME" rm -f $stale >/dev/null || true
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-120}"
 LOG_DIR="${LOG_DIR:-/tmp/opencode}"
 
