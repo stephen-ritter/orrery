@@ -156,8 +156,8 @@ flowchart LR
   WORLD -- "sensors :5580 — biased + noisy" --> VEH
   WORLD -- "scene state :5556" --> REND
   WORLD -- "truth :5590 — navigator state" --> GW -- ":5150 — COSMOS dials in" --> TRT
-  VEH -- "telemetry :5050 — out only,<br/>inbound refused via EVS" --> SAT
-  SAT -. "commands :5051 — a separate socket" .-> VEH
+  VEH -- "telemetry :5050" --> SAT
+  SAT -. "commands :5051" .-> VEH
   VEH -- "commands :5581 — effectors into the plant" --> WORLD
   REND -- "rendered camera views" --> WORLD
 ```
