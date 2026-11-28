@@ -54,6 +54,10 @@ IMPULSE = 14  # BurnImpulseAppliedNs
 TICKS_APPLIED = 15  # BurnTicksApplied
 TICKS_SATURATED = 16  # BurnTicksSaturated
 TRUTH_BURN_ID = 17  # BurnId
+FUEL_REMAINING = 18  # FuelRemainingKg (NaN: no tank declared)
+FUEL_SPENT = 19  # FuelSpentKg (NaN: no tank declared)
+FUEL_STARVED = 20  # FuelTicksStarved
+FUEL_THROTTLED = 21  # FuelTicksThrottled
 
 MAX_NOZZLE_N = 5.0  # every device in sim/scenarios/burn.toml
 TICK_S = 1.0  # control tick the plant runs at (the claim's nominal promise)

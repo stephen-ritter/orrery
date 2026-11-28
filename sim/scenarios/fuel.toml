@@ -1,0 +1,188 @@
+# fuel bench plant: the Rung-1 burn vehicle WITH a declared tank (fuel rung).
+# Identical to sim/scenarios/burn.toml except for one table: a 50 g
+# constant-volume tank feeding the four 5 N nozzles. The story this plant
+# makes physical: burn 1 buys full service (both ledgers agree, the tank
+# drains natively), burn 2 asks for more orbit than 50 g of propellant can
+# sell, and the world goes silent mid-quota while the craft keeps claiming.
+# The tank's mass (~0.02% of the bus) is below every tolerance this bench
+# grades; the honest physics here is FINITE authority, not inertia.
+#
+#   uv run python -m sim.forge_scenario --scenario sim/scenarios/fuel.toml --duration 120
+# TOML. Pure plant on purpose - NO [spacecraft.fsw]: the flight software
+# lives in cFS and commands through the lockstep link, and the burn quota
+# rides it exactly like torque does (Rung 1: ground commands force along a
+# body axis for a duration; Basilisk's effector owns the pulse pattern).
+#
+#   uv run python -m sim.forge_scenario --scenario sim/scenarios/fuel.toml --duration 120
+#
+# The thruster lines differ from a flight cross-X in one deliberate way:
+# every device sits in the body's center-of-mass plane (position_B all
+# zeros), so a burn is PURE FORCE. Attitude interacts with thrust only when
+# the Rung-2 accelerometer law starts caring about the difference; until
+# then, a torque-coupled bench would grade the reaction wheels, not the
+# burn. Ratings: four 5 N class devices on +/-X and +/-Y, so any in-plane
+# axis up to 5 N per component is inside the plant's feasible cone.
+
+[simulation]
+name = "fuel bench plant"
+duration = 120.0
+
+[simulation.dt]
+dynamics = 0.1
+# fsw is the FSW tick: the world check, sensor frames, beacon and every
+# anchored digest ride this rate. It must stay an integer multiple of
+# dynamics, and retuning it re-anchors every baseline - full ceremony.
+fsw = 1.0
+
+[world]
+central_body = "earth"
+
+[world.sun]
+position = [1.496e11, 0.0, 0.0]
+
+[environment]
+
+[environment.magnetic_field]
+type = "centered_dipole"
+
+[[spacecraft]]
+name = "burn"  # operational identity: the COSMOS target derives from it (SAT_BURN)
+
+[spacecraft.hub]
+mass = 300.0
+
+[spacecraft.hub.inertia]
+ixx = 750.0
+iyy = 620.0
+izz = 540.0
+
+[spacecraft.orbit]
+type = "rv"
+
+[spacecraft.orbit.rv]
+position = [7.0e6, 0.0, 0.0]
+# SI - metres per second (the chief's lesson: km/s here once free-fell the
+# fleet; see the comment in chief.toml).
+velocity = [0.0, 7546.1, 0.0]
+
+[spacecraft.attitude.initial]
+sigma_BN = [0.05, -0.08, 0.11]
+omega_BN_B = [0.05, -0.04, 0.03]
+
+# --- actuators: three orthogonal reaction wheels -----------------------------
+# The burn is translation; the wheels keep owning attitude, undisturbed by a
+# line of thrust through the CoM.
+
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.2
+
+[[spacecraft.effectors.wheels]]
+direction_B = [1.0, 0.0, 0.0]
+max_speed = 628.0      # rad/s (6000 rpm)
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 1.0, 0.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 0.0, 1.0]
+max_speed = 628.0
+max_torque = 2.0
+jitter_model = "none"
+
+# --- thrusters: four 5 N devices, cross-X directions, CoM-plane lines --------
+# Co-located at the hub origin on purpose: pure force, no moment (see the
+# header). max_thrust forwards as MaxThrust; the simIncludeThruster blank
+# preset takes its characteristics from these knobs. MinOnTime keeps its
+# 20 ms default - the effector's own pulse floor, inside one tick's quota.
+
+[[spacecraft.effectors]]
+type = "thrusters"
+
+[[spacecraft.effectors.thrusters]]
+direction_B = [1.0, 0.0, 0.0]
+position_B = [0.0, 0.0, 0.0]
+max_thrust = 5.0
+
+[[spacecraft.effectors.thrusters]]
+direction_B = [-1.0, 0.0, 0.0]
+position_B = [0.0, 0.0, 0.0]
+max_thrust = 5.0
+
+[[spacecraft.effectors.thrusters]]
+direction_B = [0.0, 1.0, 0.0]
+position_B = [0.0, 0.0, 0.0]
+max_thrust = 5.0
+
+[[spacecraft.effectors.thrusters]]
+direction_B = [0.0, -1.0, 0.0]
+position_B = [0.0, 0.0, 0.0]
+max_thrust = 5.0
+
+# --- fuel: the 50 g tank that makes the fourth ask finite ------------------------
+# 3 N for 6 s costs 18.4 g at the factory Isp (100 s); the 5 N/60 s over-ask
+# prices 306 g, so the world must throttle, clamp the stock to exactly zero,
+# and starve the rest of the quota while the craft's claim ledger keeps rising.
+[spacecraft.effectors.fuel_tank]
+fuel_mass = 0.05
+
+# --- sensing: the suite the FSW gets to know the universe through -----------
+# Bias mirrors sim/detumble_scenario.GYRO_BIAS_RADS; noise seeds are derived
+# from the ModelTag by bskforge (deterministic per scenario, no Python RNG).
+
+[[spacecraft.sensors]]
+type = "imuSensor"
+name = "imu"
+gyro_bias = [2.0e-5, -1.5e-5, 1.0e-5]
+gyro_walk = [1.0e-8, 1.0e-8, 1.0e-8]
+
+[[spacecraft.sensors]]
+type = "starTracker"
+name = "st"
+sigma_SB = [0.0, 0.0, 0.0]
+white_noise = 1.0e-4
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css1"
+boresight_B = [1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css2"
+boresight_B = [-1.0, 0.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css3"
+boresight_B = [0.0, 1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css4"
+boresight_B = [0.0, -1.0, 0.0]
+fov_deg = 60.0
+noise_sigma = 0.005
+
+[[spacecraft.sensors]]
+type = "magnetometer"
+name = "mag"
+noise_sigma = 1.0e-8
+
+[[spacecraft.sensors]]
+type = "gpsReceiver"
+name = "gnss"
+
+[spacecraft.logging.state]
+sample_time = 1.0

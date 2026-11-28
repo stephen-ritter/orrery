@@ -157,20 +157,26 @@ status = "command-path"
 bskforge = "schema+builder"
 command_path = """COSMOS/ground -> FCS_BURN quota -> fcs doors (nonsense and overlap
     refused) -> one BurnCommand per tick -> BSK_LINK/BURN egress -> thruster_alloc ->
-    force world-side; claims ride FCS_HK, applied rides TRUTH (bench only)"""
+    the world's fuel door (tank priced per tick: throttle, starve) -> force
+    world-side; claims ride FCS_HK, applied AND fuel ride TRUTH (bench only)"""
 first_hop = "provider"
-scenarios = ["burn.toml"]
+scenarios = ["burn.toml", "fuel.toml"]
 owner = "authority"
 why = """The quota law flies since 2026-11-27: the ground commands
 {force, duration, axis}, the craft doors it and egresses one BurnCommand per tick
 (a silent craft stops thrusting by construction), the world allocates on-times
 group-wise against device caps and counts saturated ticks - claim 54.0 N s against
-applied 42.0 is the bench's published exhibit, not a discrepancy. What keeps this
-row command-path is knowledge, not force: the world's applied ledger rides TRUTH,
-which is the bench's stream and never the bus. The path to landed is the one the
-camera walked - a forge-sampled BurnState forwarded by bsk_link, the provider hop.
-Fuel waits behind that: Rung 1 is fuel-less constant thrust by owner decision, and
-FuelTank + mass depletion are native-but-unwired until the Hohmann earns them."""
+applied 42.0 is the bench's published exhibit, not a discrepancy. Since the fuel
+rung (2026-11-28) the plant can declare a tank (bskforge fuel_tank): the world
+prices every tick's ask against the tank's native books, throttles what it cannot
+cover, and starves whole ticks at EXACT zero - while the craft, fuel-blind by
+design (no sensor, no fuel claim), keeps claiming what it was given. The fuel
+bench's published exhibit: claim 327 N s against applied 49.1, tank EXACTLY 0.0 kg,
+55 starved ticks.
+What keeps this row command-path is knowledge, not force: the world's applied
+ledger rides TRUTH, which is the bench's stream and never the bus. The path to
+landed is the one the camera walked - a forge-sampled BurnState (fuel rows
+included) forwarded by bsk_link, the provider hop."""
 
 [[type]]
 name = "drag"
