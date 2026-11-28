@@ -153,11 +153,13 @@ flowchart LR
     SAT["SAT_&lt;vehicle&gt;<br/>what the vehicle knows"]
     TRT["TRUTH_&lt;vehicle&gt;<br/>sim truth"]
   end
-  WORLD <-->|"sensors :5580 — biased + noisy<br/>commands :5581 — effectors into the plant"| VEH
-  WORLD <-->|"scene state :5556<br/>rendered camera views return"| REND
-  VEH <-->|"telemetry :5050 — out only,<br/>inbound refused via EVS<br/>commands :5051 — a separate socket"| SAT
-  WORLD -- "truth :5590 — navigator state" --> GW
-  GW -- ":5150 — COSMOS dials in" --> TRT
+  WORLD -- "sensors :5580 — biased + noisy" --> VEH
+  WORLD -- "scene state :5556" --> REND
+  WORLD -- "truth :5590 — navigator state" --> GW -- ":5150 — COSMOS dials in" --> TRT
+  VEH -- "telemetry :5050 — out only,<br/>inbound refused via EVS" --> SAT
+  SAT -. "commands :5051 — a separate socket" .-> VEH
+  VEH -- "commands :5581 — effectors into the plant" --> WORLD
+  REND -- "rendered camera views" --> WORLD
 ```
 
 Every world tick checks on an ack from every vehicle (lockstep), so the diagram
